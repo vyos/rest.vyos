@@ -1,0 +1,5 @@
+# Unit test runner
+pytest-ansible
+pytest-xdist
+pytest-cov
+typing_extensions

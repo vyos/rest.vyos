@@ -1,0 +1,11 @@
+# requires_ansible: ">=2.16.0"
+
+# plugin_routing:
+
+#   httpapi:
+#     vyos:
+#       redirect: vyos.rest.plugins.httpapi.vyos
+
+#   modules:
+#     vyos_ntp_global:
+#       redirect: vyos.rest.plugins.modules.vyos_ntp_global
