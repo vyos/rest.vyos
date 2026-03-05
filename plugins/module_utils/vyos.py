@@ -155,10 +155,12 @@ class VyOSModule:
             commands=payload_commands
         )
 
+        self.save_config()
+
         self.module.exit_json(
             changed=True,
             commands=commands,
-            response=response
+            response=response,
         )
     #
     # Delete config
@@ -175,3 +177,12 @@ class VyOSModule:
             commands=cmds,
             response=response
         )
+    
+    def save_config(self):
+
+        response = self._send(
+            path="/config-file",
+            op="save"
+        )
+
+        return True
