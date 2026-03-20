@@ -3,22 +3,25 @@
 
 from __future__ import absolute_import, division, print_function
 
+
 __metaclass__ = type
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
 from ansible_collections.vyos.rest.plugins.module_utils.utils import normalize_to_list
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+
 
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
+
 
 def normalize_config(config):
 
     result = {
         "allow_clients": sorted(config.get("allow_clients", [])),
         "listen_addresses": sorted(config.get("listen_addresses", [])),
-        "servers": {}
+        "servers": {},
     }
 
     for s in config.get("servers", []):
@@ -28,6 +31,7 @@ def normalize_config(config):
         result["servers"][name] = sorted(s.get("options", []))
 
     return result
+
 
 def normalize_servers(value):
     result = {}
@@ -64,7 +68,7 @@ def get_running_config(vyos):
     result = {
         "allow_clients": [],
         "listen_addresses": [],
-        "servers": {}
+        "servers": {},
     }
 
     if not raw:
@@ -80,6 +84,7 @@ def get_running_config(vyos):
     result["servers"] = normalize_servers(servers_raw)
 
     return result
+
 
 def build_commands(desired, existing, state):
 
@@ -100,25 +105,27 @@ def build_commands(desired, existing, state):
         state = "merged"
 
     cmds += diff_list(
-        "allow-client", "address",  # singular
+        "allow-client",
+        "address",  # singular
         desired["allow_clients"],
         existing["allow_clients"],
-        state
+        state,
     )
 
     # listen_addresses
     cmds += diff_list(
-        "listen-address", None,
+        "listen-address",
+        None,
         desired["listen_addresses"],
         existing["listen_addresses"],
-        state
+        state,
     )
 
     # servers
     cmds += diff_servers(
         desired["servers"],
         existing["servers"],
-        state
+        state,
     )
 
     return cmds
@@ -183,7 +190,7 @@ def diff_servers(desired, existing, state):
             for opt in desired_opts - existing_opts:
 
                 cmds.append(
-                    ("set", ["service", "ntp", "server", server, opt])
+                    ("set", ["service", "ntp", "server", server, opt]),
                 )
 
             # remove options (replaced only)
@@ -192,7 +199,7 @@ def diff_servers(desired, existing, state):
                 for opt in existing_opts - desired_opts:
 
                     cmds.append(
-                        ("delete", ["service", "ntp", "server", server, opt])
+                        ("delete", ["service", "ntp", "server", server, opt]),
                     )
 
     # delete
@@ -210,7 +217,7 @@ def parse_running_config(text):
     result = {
         "allow_clients": [],
         "listen_addresses": [],
-        "servers": {}
+        "servers": {},
     }
 
     for line in text.splitlines():
@@ -246,8 +253,8 @@ def render_commands(config):
     for c in config["allow_clients"]:
         cmds.append(f"set service ntp allow-clients address {c}")
 
-    for l in config["listen_addresses"]:
-        cmds.append(f"set service ntp listen-address {l}")
+    for la in config["listen_addresses"]:
+        cmds.append(f"set service ntp listen-address {la}")
 
     for server, opts in config["servers"].items():
 
@@ -259,14 +266,15 @@ def render_commands(config):
 
     return cmds
 
+
 # ------------------------------------------------------------
 # Main
 # ------------------------------------------------------------
 
+
 def main():
 
     argument_spec = dict(
-
         config=dict(
             type="dict",
             options=dict(
@@ -277,14 +285,12 @@ def main():
                     elements="dict",
                     options=dict(
                         server=dict(type="str", required=True),
-                        options=dict(type="list", elements="str")
-                    )
-                )
-            )
+                        options=dict(type="list", elements="str"),
+                    ),
+                ),
+            ),
         ),
-
         running_config=dict(type="str"),
-
         state=dict(
             default="merged",
             choices=[
@@ -294,9 +300,9 @@ def main():
                 "deleted",
                 "gathered",
                 "rendered",
-                "parsed"
-            ]
-        )
+                "parsed",
+            ],
+        ),
     )
 
     module = AnsibleModule(argument_spec, supports_check_mode=True)
@@ -307,7 +313,7 @@ def main():
     config = module.params.get("config") or {}
 
     result = {
-        "changed": False
+        "changed": False,
     }
 
     # --------------------------------------------------------
@@ -349,7 +355,7 @@ def main():
         desired = {
             "allow_clients": [],
             "listen_addresses": [],
-            "servers": {}
+            "servers": {},
         }
 
     # --------------------------------------------------------

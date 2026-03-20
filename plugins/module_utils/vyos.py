@@ -1,5 +1,4 @@
 from ansible.module_utils.connection import Connection
-import json
 
 
 class VyOSModule:
@@ -32,11 +31,11 @@ class VyOSModule:
         if commands:
             payload["commands"] = commands
 
-        response = self.connection.send_request(
-            path=path,
-            method="POST",
-            data=payload
-        )
+            response = self.connection.send_request(
+                path=path,
+                method="POST",
+                data=payload,
+            )
 
         if not response:
             self.module.fail_json(msg="Empty response from device")
@@ -54,7 +53,7 @@ class VyOSModule:
         self.existing = self._send(
             path="/retrieve",
             op="showConfig",
-            path_list=path_list
+            path_list=path_list,
         )
 
         return self.existing
@@ -105,6 +104,7 @@ class VyOSModule:
                     diff.append(cmd)
 
         return diff
+
     #
     # Apply config
     #
@@ -113,18 +113,18 @@ class VyOSModule:
         if not diff:
             self.module.exit_json(
                 changed=False,
-                msg="Already configured"
+                msg="Already configured",
             )
 
         response = self._send(
             path="/configure",
-            commands=diff
+            commands=diff,
         )
 
         self.module.exit_json(
             changed=True,
             commands=diff,
-            response=response
+            response=response,
         )
 
     #
@@ -136,7 +136,7 @@ class VyOSModule:
             self.module.exit_json(
                 changed=False,
                 commands=[],
-                msg="Already configured"
+                msg="Already configured",
             )
 
         # convert tuples to dicts for API
@@ -152,7 +152,7 @@ class VyOSModule:
 
         response = self._send(
             path="/configure",
-            commands=payload_commands
+            commands=payload_commands,
         )
 
         self.save_config()
@@ -162,6 +162,7 @@ class VyOSModule:
             commands=commands,
             response=response,
         )
+
     #
     # Delete config
     #
@@ -169,20 +170,20 @@ class VyOSModule:
 
         response = self._send(
             path="/configure",
-            commands=cmds
+            commands=cmds,
         )
 
         self.module.exit_json(
             changed=True,
             commands=cmds,
-            response=response
+            response=response,
         )
-    
+
     def save_config(self):
 
-        response = self._send(
+        response = self._send(  # noqa: F841
             path="/config-file",
-            op="save"
+            op="save",
         )
 
         return True

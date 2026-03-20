@@ -1,14 +1,17 @@
-from ansible.plugins.httpapi import HttpApiBase
-from urllib.parse import urlencode
 import json
 
+from urllib.parse import urlencode
 
-DOCUMENTATION = r'''
+from ansible.plugins.httpapi import HttpApiBase
+
+
+DOCUMENTATION = r"""
 ---
 httpapi: vyos
 short_description: VyOS REST API
 description:
   - HTTPAPI plugin for interacting with VyOS REST API.
+author: Evgeny Molotkov (@eomnom62)
 options:
   api_key:
     description: VyOS API key
@@ -20,13 +23,17 @@ options:
     ini:
       - section: httpapi
         key: api_key
-'''
+"""
 
 
 class HttpApi(HttpApiBase):
 
     def set_options(self, task_keys=None, var_options=None, direct=None):
-        super().set_options(task_keys=task_keys, var_options=var_options, direct=direct)
+        super().set_options(
+            task_keys=task_keys,
+            var_options=var_options,
+            direct=direct,
+        )
 
     def send_request(self, path, data=None, method="POST", headers=None):
 
@@ -59,7 +66,7 @@ class HttpApi(HttpApiBase):
             path,
             body,
             method=method,
-            headers=headers
+            headers=headers,
         )
 
         if hasattr(response, "read"):

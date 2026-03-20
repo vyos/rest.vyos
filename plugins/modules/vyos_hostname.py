@@ -20,6 +20,7 @@ def get_running_config(vyos):
 
     return {"hostname": hostname}
 
+
 def build_commands(want, have, state):
 
     commands = []
@@ -30,18 +31,22 @@ def build_commands(want, have, state):
     if state in ["merged", "replaced", "overridden"]:
 
         if want_host and want_host != have_host:
-            commands.append({
-                "op": "set",
-                "path": ["system", "host-name", want_host]
-            })
+            commands.append(
+                {
+                    "op": "set",
+                    "path": ["system", "host-name", want_host],
+                },
+            )
 
     elif state == "deleted":
 
         if have_host:
-            commands.append({
-                "op": "delete",
-                "path": ["system", "host-name"]
-            })
+            commands.append(
+                {
+                    "op": "delete",
+                    "path": ["system", "host-name"],
+                },
+            )
 
     return commands
 
@@ -52,8 +57,8 @@ def main():
         config=dict(
             type="dict",
             options=dict(
-                hostname=dict(type="str")
-            )
+                hostname=dict(type="str"),
+            ),
         ),
         state=dict(
             default="merged",
@@ -82,7 +87,7 @@ def main():
     if state == "gathered":
         module.exit_json(
             changed=False,
-            gathered=have
+            gathered=have,
         )
 
     commands = build_commands(want, have, state)
@@ -90,7 +95,7 @@ def main():
     if module.check_mode:
         module.exit_json(
             changed=bool(commands),
-            commands=commands
+            commands=commands,
         )
 
     if commands:
@@ -106,13 +111,13 @@ def main():
             after=want,
             commands=commands,
             saved=saved,
-            response=response
+            response=response,
         )
 
     module.exit_json(
         changed=False,
         before=have,
-        after=have
+        after=have,
     )
 
 
