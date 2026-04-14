@@ -6,6 +6,259 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
+DOCUMENTATION = r"""
+---
+module: vyos_ntp_global
+short_description: Manage NTP configuration on VyOS devices using REST API
+description:
+  - Manages NTP server, allow-client, and listen-address configuration on
+    VyOS devices via the REST API.
+  - Supports idempotent operation using structured data.
+  - Uses REST API (C(connection=httpapi)) instead of CLI.
+  - Targets VyOS 1.4+ where NTP is managed by chronyd under C(service ntp).
+version_added: "1.0.0"
+author:
+  - Varshitha Yataluru (@YVarshitha)
+
+options:
+  config:
+    description: NTP configuration.
+    type: dict
+    suboptions:
+      allow_clients:
+        description:
+          - List of client networks or addresses allowed to query this NTP server.
+          - Maps to C(service ntp allow-client address) on the device.
+        type: list
+        elements: str
+      listen_addresses:
+        description:
+          - Local IP addresses the NTP service should listen on.
+          - Maps to C(service ntp listen-address) on the device.
+        type: list
+        elements: str
+      servers:
+        description:
+          - List of upstream NTP servers to synchronise from.
+        type: list
+        elements: dict
+        suboptions:
+          server:
+            description: Server hostname or IP address.
+            type: str
+            required: true
+          options:
+            description:
+              - Per-server options.
+              - C(pool) replaces C(dynamic) in VyOS 1.3+.
+              - C(nts) was added in VyOS 1.4.
+              - C(ptp) and C(interleave) were added in VyOS 1.5.
+              - C(preempt) is only available in VyOS 1.3 and earlier.
+            type: list
+            elements: str
+            choices:
+              - dynamic
+              - noselect
+              - pool
+              - preempt
+              - prefer
+              - nts
+              - ptp
+              - interleave
+
+  running_config:
+    description:
+      - Used only with state C(parsed).
+      - Provide the output of C(show configuration commands | grep ntp)
+        as a string. The module parses it into structured data and returns
+        the result in the C(parsed) key.
+      - No device connection is required for this state.
+    type: str
+
+  state:
+    description:
+      - The desired state of the NTP configuration.
+      - C(merged) adds or updates the provided configuration without removing
+        existing entries not mentioned in the task.
+      - C(replaced) fully replaces the running NTP configuration with the
+        provided config, removing entries not present in the task.
+      - C(overridden) deletes all existing allow-client, listen-address, and
+        server entries then applies the desired config from scratch.
+      - C(deleted) removes all NTP allow-client, listen-address, and server
+        entries managed by this module.
+      - C(gathered) retrieves and returns the current NTP configuration as
+        structured data. No changes are made to the device.
+      - C(rendered) returns the CLI commands that would be generated for the
+        provided config without connecting to the device.
+      - C(parsed) parses the CLI output provided via C(running_config) into
+        structured data without connecting to the device.
+    type: str
+    default: merged
+    choices:
+      - merged
+      - replaced
+      - overridden
+      - deleted
+      - gathered
+      - rendered
+      - parsed
+
+notes:
+  - Tested against VyOS 1.4 (sagitta) and 1.5.
+  - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
+  - C(ansible_network_os) must be set to C(vyos.rest.vyos).
+  - C(replaced) and C(overridden) differ. C(replaced) performs a surgical diff
+    removing only entries not in the task. C(overridden) deletes entire subtrees
+    first then re-applies, which is safer when option ordering matters.
+  - The C(rendered) and C(parsed) states do not require a device connection.
+"""
+
+EXAMPLES = r"""
+# Before state:
+# -------------
+# set service ntp server time1.vyos.net
+# set service ntp server time2.vyos.net
+# set service ntp server time3.vyos.net
+
+- name: Merge NTP configuration
+  vyos.rest.vyos_ntp_global:
+    config:
+      allow_clients:
+        - 10.6.6.0/24
+      listen_addresses:
+        - 10.1.3.1
+      servers:
+        - server: 203.0.113.0
+          options:
+            - prefer
+    state: merged
+
+# After state:
+# ------------
+# set service ntp allow-client address '10.6.6.0/24'
+# set service ntp listen-address '10.1.3.1'
+# set service ntp server 203.0.113.0 prefer
+# set service ntp server time1.vyos.net
+# set service ntp server time2.vyos.net
+# set service ntp server time3.vyos.net
+
+# ------------------------------------------------------------------------
+
+- name: Replace NTP configuration
+  vyos.rest.vyos_ntp_global:
+    config:
+      allow_clients:
+        - 10.6.6.0/24
+      listen_addresses:
+        - 10.1.3.1
+      servers:
+        - server: 203.0.113.0
+          options:
+            - prefer
+    state: replaced
+
+# ------------------------------------------------------------------------
+
+- name: Override NTP configuration
+  vyos.rest.vyos_ntp_global:
+    config:
+      allow_clients:
+        - 10.3.3.0/24
+      listen_addresses:
+        - 10.7.8.1
+      servers:
+        - server: server1
+          options:
+            - dynamic
+            - prefer
+        - server: server2
+          options:
+            - noselect
+            - preempt
+        - server: serv
+    state: overridden
+
+# ------------------------------------------------------------------------
+
+- name: Delete all managed NTP configuration
+  vyos.rest.vyos_ntp_global:
+    state: deleted
+
+# ------------------------------------------------------------------------
+
+- name: Gather current NTP configuration
+  vyos.rest.vyos_ntp_global:
+    state: gathered
+
+# ------------------------------------------------------------------------
+
+- name: Render NTP configuration commands offline
+  vyos.rest.vyos_ntp_global:
+    config:
+      allow_clients:
+        - 10.7.7.0/24
+        - 10.8.8.0/24
+      listen_addresses:
+        - 10.7.9.1
+      servers:
+        - server: server7
+        - server: server45
+          options:
+            - noselect
+            - prefer
+            - pool
+    state: rendered
+
+# ------------------------------------------------------------------------
+
+- name: Parse NTP configuration from CLI output
+  vyos.rest.vyos_ntp_global:
+    running_config: "{{ lookup('file', './ntp_config.cfg') }}"
+    state: parsed
+"""
+
+RETURN = r"""
+before:
+  description: NTP configuration on the device before this module ran.
+  returned: when I(state) is C(merged), C(replaced), C(overridden) or C(deleted)
+  type: dict
+
+after:
+  description: NTP configuration after this module ran.
+  returned: when changed
+  type: dict
+
+commands:
+  description: List of API command tuples or dicts sent to the device.
+  returned: always
+  type: list
+
+gathered:
+  description: Current NTP configuration retrieved from the device as structured data.
+  returned: when I(state) is C(gathered)
+  type: dict
+
+rendered:
+  description: CLI commands generated for the provided configuration (offline, no device needed).
+  returned: when I(state) is C(rendered)
+  type: list
+
+parsed:
+  description: Structured data parsed from the C(running_config) CLI output.
+  returned: when I(state) is C(parsed)
+  type: dict
+
+saved:
+  description: Result of save_config after applying changes.
+  returned: when changes are applied
+  type: bool
+
+response:
+  description: Raw API response from the VyOS REST API.
+  returned: when changes are applied
+  type: dict
+"""
+
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.vyos.rest.plugins.module_utils.utils import normalize_to_list
 from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule

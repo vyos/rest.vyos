@@ -13,6 +13,7 @@ Name | Description
 --- | ---
 [vyos.rest.vyos_banner](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_banner_module.rst)|Manage login banners on VyOS devices using REST API
 [vyos.rest.vyos_hostname](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_hostname_module.rst)|Manage the hostname of a VyOS device using REST API
+[vyos.rest.vyos_ntp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
 [vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
 
 <!--end collection content-->
