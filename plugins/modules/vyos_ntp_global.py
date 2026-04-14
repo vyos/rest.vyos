@@ -362,23 +362,52 @@ def main():
     # diff engine
     # --------------------------------------------------------
 
+    # commands = build_commands(desired, existing, state)
+
+    # result["before"] = existing
+
+    # result["commands"] = commands
+
+    # if commands:
+
+    #     result["changed"] = True
+
+    #     if not module.check_mode:
+
+    #         vyos.apply_commands(commands)
+
+    #     result["after"] = desired
+
+    # module.exit_json(**result)
+
     commands = build_commands(desired, existing, state)
 
-    result["before"] = existing
-
-    result["commands"] = commands
+    if module.check_mode:
+        module.exit_json(
+            changed=bool(commands),
+            commands=commands,
+            before=existing,
+        )
 
     if commands:
+        response = vyos.apply_commands(commands)
+        saved = vyos.save_config()
 
-        result["changed"] = True
+        module.exit_json(
+            changed=True,
+            before=existing,
+            after=desired,
+            commands=commands,
+            saved=saved,
+            response=response,
+        )
 
-        if not module.check_mode:
-
-            vyos.apply_commands(commands)
-
-        result["after"] = desired
-
-    module.exit_json(**result)
+    module.exit_json(
+        changed=False,
+        before=existing,
+        after=existing,
+        commands=[],
+    )
 
 
 if __name__ == "__main__":

@@ -19,8 +19,9 @@ Synopsis
 --------
 - Configure pre-login and post-login banners on VyOS devices via REST API.
 - Supports idempotent configuration using structured data.
-- Multiline banner text is supported.
+- Multiline banner text is supported via YAML block scalars.
 - Uses REST API (``connection=httpapi``) instead of CLI.
+- VyOS stores multiline banners as a single string with literal ``\\n`` separators.
 
 
 
@@ -86,7 +87,8 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Banner text (supports multiline string).</div>
+                        <div>Banner text. Supports multiline strings via YAML block scalar (|).</div>
+                        <div>Internally, real newlines are converted to literal <code>\\n</code> as VyOS expects.</div>
                 </td>
             </tr>
 
@@ -122,6 +124,8 @@ Notes
 .. note::
    - This module requires ``ansible_connection=httpapi``.
    - Banner text comparison is whitespace-normalized for idempotency.
+   - VyOS stores banner text as a leaf string value with literal ``\\n`` for newlines.
+   - For ``merged``, ``replaced``, and ``overridden`` states, the behaviour is identical for this single-leaf resource — the banner value is set to the desired text.
 
 
 
@@ -130,21 +134,28 @@ Examples
 
 .. code-block:: yaml
 
-    - name: Configure pre-login banner
+    - name: Configure single-line pre-login banner
       vyos.rest.vyos_banner:
         config:
           banner: pre-login
+          text: "Unauthorized access is prohibited"
+        state: merged
+
+    - name: Configure multiline post-login banner
+      vyos.rest.vyos_banner:
+        config:
+          banner: post-login
           text: |
-            Unauthorized access is prohibited
-            Disconnect immediately
+            Welcome to VyOS
+            Authorized users only
+            Disconnect if you are not authorized
         state: merged
 
     - name: Replace post-login banner
       vyos.rest.vyos_banner:
         config:
           banner: post-login
-          text: |
-            Welcome to VyOS
+          text: "Welcome to VyOS"
         state: replaced
 
     - name: Remove pre-login banner
@@ -184,8 +195,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changed</td>
                 <td>
-                            <div>Configuration after changes.</div>
+                            <div>Configuration after changes (text uses real newlines).</div>
                     <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">{&#x27;banner&#x27;: &#x27;pre-login&#x27;, &#x27;text&#x27;: &#x27;New banner text&#x27;}</div>
                 </td>
             </tr>
             <tr>
@@ -199,8 +212,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-                            <div>Configuration before changes.</div>
+                            <div>Configuration before changes (text uses real newlines).</div>
                     <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">{&#x27;banner&#x27;: &#x27;pre-login&#x27;, &#x27;text&#x27;: &#x27;Old banner text&#x27;}</div>
                 </td>
             </tr>
             <tr>
@@ -214,8 +229,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changes are required</td>
                 <td>
-                            <div>List of commands sent to the device.</div>
+                            <div>List of API command dicts sent to the device.</div>
                     <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">[{&#x27;op&#x27;: &#x27;set&#x27;, &#x27;path&#x27;: [&#x27;system&#x27;, &#x27;login&#x27;, &#x27;banner&#x27;, &#x27;pre-login&#x27;], &#x27;value&#x27;: &#x27;New banner text&#x27;}]</div>
                 </td>
             </tr>
             <tr>
@@ -229,8 +246,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when state is gathered</td>
                 <td>
-                            <div>Current device configuration.</div>
+                            <div>Current device configuration (text uses real newlines).</div>
                     <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">{&#x27;banner&#x27;: &#x27;pre-login&#x27;, &#x27;text&#x27;: &#x27;Current banner text&#x27;}</div>
                 </td>
             </tr>
             <tr>
@@ -245,6 +264,21 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 <td>when changes are applied</td>
                 <td>
                             <div>Raw response from VyOS REST API.</div>
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+                    <b>saved</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">dictionary</span>
+                    </div>
+                </td>
+                <td>when changes are applied</td>
+                <td>
+                            <div>Result of save_config call after applying changes.</div>
                     <br/>
                 </td>
             </tr>
