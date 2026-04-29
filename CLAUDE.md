@@ -47,7 +47,3 @@ No mirror twin (no `VyOS-Networks/rest.vyos`). Sole home is here.
 
 - Treat the VyOS HTTP API as the contract: changes in `vyos-1x/src/services/` may require synchronized updates here. There is no CI-enforced contract test today.
 - Old name "rest.vyos" reflects the Galaxy-collection naming (`vyos.rest`); don't rename to `vyos-rest` casually — it's a Galaxy identifier.
-
----
-
-This file is mirrored on Confluence: [`vyos/rest.vyos`](https://internal.confluence.vyos.com/wiki/spaces/VYOS/pages/818479438). The Confluence page also carries the per-repo audit data (settings, workflows, secret counts, hygiene) that complements this CLAUDE.md. Edit either side; resync via the documentation pipeline.
