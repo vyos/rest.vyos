@@ -1,310 +1,187 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from __future__ import absolute_import, division, print_function
 
+
+__metaclass__ = type
 
 DOCUMENTATION = r"""
 ---
 module: vyos_hostname
-short_description: Manage the hostname of a VyOS device using REST API
+short_description: Manage the system hostname on a VyOS device via the REST API.
 description:
-  - Configures the system hostname on VyOS network devices via the REST API.
-  - Supports idempotent configuration — no change is made if the desired
-    hostname already matches the running configuration.
-  - Uses REST API (C(connection=httpapi)) instead of CLI.
+  - Manages the C(set system host-name) configuration on a VyOS device
+    using the HTTPS REST API.
+  - Mirrors the behaviour of C(vyos.vyos.vyos_hostname) but uses the HTTP
+    API instead of SSH/network_cli.
 version_added: "1.0.0"
 author:
-  - Your Name (@yourhandle)
-
+  - VyOS Community (@vyos)
 options:
   config:
     description:
-      - Hostname configuration dictionary.
+      - Hostname configuration.
     type: dict
     suboptions:
       hostname:
         description:
-          - The hostname to set on the VyOS device.
-          - Must be a valid RFC 1123 hostname.
+        - System hostname (max 63 characters, no underscores).
         type: str
-
+        required: true
   state:
     description:
-      - The desired state of the hostname configuration.
-      - C(merged), C(replaced), and C(overridden) are identical for this
-        single-value resource — all three ensure the hostname is set to
-        the value specified in C(config).
-      - C(deleted) removes the configured hostname, reverting to the
-        device default.
-      - C(gathered) retrieves the current hostname from the device and
-        returns it as structured data in the C(gathered) key. No changes
-        are made to the device.
+      - C(merged) - Ensure the hostname is set to the value in I(config).
+      - C(deleted) - Remove the configured hostname (resets to default).
+      - C(gathered) - Read the current hostname from the device and return it
+        in I(gathered) without making changes.
     type: str
+    choices: [merged, deleted, gathered]
     default: merged
-    choices:
-      - merged
-      - replaced
-      - overridden
-      - deleted
-      - gathered
-
-notes:
-  - Tested against VyOS 1.3 (equuleus) and 1.4 (sagitta).
-  - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
-  - The C(ansible_network_os) inventory variable must be set to C(vyos.rest.vyos).
-"""
-
-EXAMPLES = r"""
-# Before state:
-# -------------
-# vyos@router:~$ show configuration commands | grep host-name
-# set system host-name 'vyostest'
-
-- name: Set hostname using merged state
-  vyos.rest.vyos_hostname:
-    config:
-      hostname: vyos
-    state: merged
-
-# After state:
-# ------------
-# set system host-name 'vyos'
-
-# ------------------------------------------------------------------------
-
-# Before state:
-# -------------
-# set system host-name 'vyos'
-
-- name: Override hostname (identical behaviour to merged for this resource)
-  vyos.rest.vyos_hostname:
-    config:
-      hostname: vyosTest
-    state: overridden
-
-# After state:
-# ------------
-# set system host-name 'vyosTest'
-
-# ------------------------------------------------------------------------
-
-# Before state:
-# -------------
-# set system host-name 'vyos'
-
-- name: Replace hostname
-  vyos.rest.vyos_hostname:
-    config:
-      hostname: vyosRouter
-    state: replaced
-
-# After state:
-# ------------
-# set system host-name 'vyosRouter'
-
-# ------------------------------------------------------------------------
-
-# Before state:
-# -------------
-# set system host-name 'vyos'
-
-- name: Delete configured hostname
-  vyos.rest.vyos_hostname:
-    state: deleted
-
-# After state:
-# ------------
-# (no host-name entry — device reverts to default)
-
-# ------------------------------------------------------------------------
-
-- name: Gather current hostname from device
-  vyos.rest.vyos_hostname:
-    state: gathered
-
-# Module result:
-# --------------
-# "gathered": {
-#     "hostname": "vyos"
-# }
-
-# ------------------------------------------------------------------------
-
-- name: Idempotency — no change when hostname already matches
-  vyos.rest.vyos_hostname:
-    config:
-      hostname: vyos
-    state: merged
-
-# Module result (hostname already 'vyos'):
-# ----------------------------------------
-# "changed": false
+  hostname:
+    description:
+    - IP address or FQDN of the VyOS device.
+    type: str
+    required: true
+  port:
+    description:
+    - HTTPS port for the REST API.
+    type: int
+    default: 443
+  api_key:
+    description:
+    - API key configured on the device.
+    type: str
+    required: true
+    no_log: true
+  timeout:
+    description:
+    - Request timeout in seconds.
+    type: int
+    default: 30
+  verify_ssl:
+    description:
+    - Validate the device's TLS certificate.
+    type: bool
+    default: false
+requirements:
+  - VyOS 1.3+
+seealso:
+  - module: vyos.vyos.vyos_hostname
 """
 
 RETURN = r"""
 before:
-  description: Hostname configuration on the device before this module ran.
-  returned: when I(state) is C(merged), C(replaced), C(overridden) or C(deleted)
+  description: Configuration on the device before the module ran.
+  returned: always
   type: dict
-  sample:
-    hostname: vyostest
-
 after:
-  description: Hostname configuration on the device after this module ran.
+  description: Configuration on the device after the module ran.
   returned: when changed
   type: dict
-  sample:
-    hostname: vyos
-
-commands:
-  description: List of API command dicts sent to the device.
-  returned: when I(state) is C(merged), C(replaced), C(overridden) or C(deleted)
-  type: list
-  sample:
-    - op: set
-      path: ["system", "host-name", "vyos"]
-
 gathered:
-  description: >
-    Current hostname configuration retrieved from the device as structured
-    data. Returned only when I(state) is C(gathered).
-  returned: when I(state) is C(gathered)
+  description: Hostname read from the device (state=gathered only).
+  returned: when state is gathered
   type: dict
-  sample:
-    hostname: vyos
-
-response:
-  description: Raw response returned by the VyOS REST API.
-  returned: when changes are applied
-  type: dict
-  sample:
-    success: true
-    data: null
-    error: null
-
-saved:
-  description: Result of the save_config call issued after applying changes.
-  returned: when changes are applied
-  type: dict
+commands:
+  description: REST API commands dispatched.
+  returned: always
+  type: list
 """
 
 
-def get_running_config(vyos):
+EXAMPLES = r"""
+- name: Set hostname
+  vyos.rest.vyos_hostname:
+    config:
+      hostname: vyos-core-01
+    state: merged
 
-    raw = vyos.get_config(["system", "host-name"])
+- name: Gather current hostname
+  vyos.rest.vyos_hostname:
+    state: gathered
+  register: result
 
-    hostname = None
+- name: Delete hostname configuration
+  vyos.rest.vyos_hostname:
+    state: deleted
+"""
 
-    if isinstance(raw, dict):
-        hostname = raw.get("host-name")
-
-    elif isinstance(raw, str):
-        hostname = raw.strip()
-    else:
-        hostname = None
-
-    return {"hostname": hostname}
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos_rest import (
+    VYOS_REST_CONNECTION_ARGSPEC,
+    VyOSRestClient,
+    VyOSRestError,
+)
 
 
-def build_commands(want, have, state):
+_PATH = ["system", "host-name"]
 
-    commands = []
 
-    want_host = want.get("hostname")
-    have_host = have.get("hostname")
-
-    if state in ["merged", "replaced", "overridden"]:
-
-        if want_host and want_host != have_host:
-            commands.append(
-                {
-                    "op": "set",
-                    "path": ["system", "host-name", want_host],
-                },
-            )
-
-    elif state == "deleted":
-
-        if have_host:
-            commands.append(
-                {
-                    "op": "delete",
-                    "path": ["system", "host-name"],
-                },
-            )
-
-    return commands
+def _get_hostname(client):
+    try:
+        result = client.retrieve_return_value(_PATH)
+        return result.get("data", "")
+    except VyOSRestError:
+        return ""
 
 
 def main():
-
     argument_spec = dict(
         config=dict(
             type="dict",
             options=dict(
-                hostname=dict(type="str"),
+                hostname=dict(type="str", required=True),
             ),
         ),
         state=dict(
+            type="str",
             default="merged",
-            choices=[
-                "merged",
-                "replaced",
-                "overridden",
-                "deleted",
-                "gathered",
-            ],
+            choices=["merged", "deleted", "gathered"],
         ),
     )
+    argument_spec.update(VYOS_REST_CONNECTION_ARGSPEC)
 
     module = AnsibleModule(
         argument_spec=argument_spec,
+        required_if=[("state", "merged", ["config"])],
         supports_check_mode=True,
     )
 
-    vyos = VyOSModule(module)
-
+    client = VyOSRestClient(module)
     state = module.params["state"]
-    want = module.params.get("config") or {}
+    commands = []
+    changed = False
 
-    have = get_running_config(vyos)
+    current = _get_hostname(client)
+    before = {"hostname": current}
 
     if state == "gathered":
-        module.exit_json(
-            changed=False,
-            gathered=have,
-        )
-
-    commands = build_commands(want, have, state)
+        module.exit_json(changed=False, gathered=before, before=before, commands=[])
 
     if module.check_mode:
-        module.exit_json(
-            changed=bool(commands),
-            commands=commands,
-        )
+        module.exit_json(changed=True, before=before, commands=["(check mode)"])
 
-    if commands:
+    try:
+        if state == "merged":
+            desired = module.params["config"]["hostname"]
+            if current != desired:
+                client.configure_set(_PATH, desired)
+                commands.append(
+                    "set system host-name '{h}'".format(h=desired),
+                )
+                changed = True
+        elif state == "deleted":
+            if current:
+                client.configure_delete(_PATH)
+                commands.append("delete system host-name")
+                changed = True
+    except VyOSRestError as exc:
+        module.fail_json(msg=str(exc))
 
-        response = vyos.apply_commands(commands)
-
-        # save config if change applied
-        saved = vyos.save_config()
-
-        module.exit_json(
-            changed=True,
-            before=have,
-            after=want,
-            commands=commands,
-            saved=saved,
-            response=response,
-        )
-
-    module.exit_json(
-        changed=False,
-        before=have,
-        after=have,
-    )
+    after = {"hostname": _get_hostname(client)} if changed else before
+    module.exit_json(changed=changed, before=before, after=after, commands=commands)
 
 
 if __name__ == "__main__":

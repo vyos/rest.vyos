@@ -5,9 +5,10 @@
 vyos.rest.vyos
 **************
 
-**VyOS REST API**
+**HttpApi plugin for VyOS REST API**
 
 
+Version added: 1.0.0
 
 .. contents::
    :local:
@@ -16,7 +17,9 @@ vyos.rest.vyos
 
 Synopsis
 --------
-- HTTPAPI plugin for interacting with VyOS REST API.
+- This HttpApi plugin provides methods to connect to VyOS devices via their HTTPS REST API.
+- Use with ``ansible_connection=ansible.netcommon.httpapi`` and ``ansible_network_os=vyos.rest.vyos``.
+- The VyOS REST API must be enabled with ``set service https api keys id ansible key YOUR_KEY``, ``set service https api rest``, then ``commit && save``.
 
 
 
@@ -45,14 +48,13 @@ Parameters
                 <td>
                 </td>
                     <td>
-                            <div> ini entries:
-                                    <p>[httpapi]<br>api_key = VALUE</p>
-                            </div>
-                                <div>env:ANSIBLE_HTTPAPI_API_KEY</div>
+                                <div>env:VYOS_API_KEY</div>
                                 <div>var: ansible_httpapi_api_key</div>
+                                <div>var: ansible_vyos_api_key</div>
                     </td>
                 <td>
-                        <div>VyOS API key</div>
+                        <div>The API key configured on the VyOS device.</div>
+                        <div>Set <code>ansible_httpapi_api_key</code> in inventory or the <code>VYOS_API_KEY</code> environment variable.</div>
                 </td>
             </tr>
     </table>
@@ -72,7 +74,7 @@ Status
 Authors
 ~~~~~~~
 
-- Evgeny Molotkov (@eomnom62)
+- VyOS Community (@vyos)
 
 
 .. hint::

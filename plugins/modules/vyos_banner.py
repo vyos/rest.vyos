@@ -1,33 +1,35 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
+# GNU General Public License v3.0+
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from __future__ import absolute_import, division, print_function
 
+
+__metaclass__ = type
 
 DOCUMENTATION = r"""
 ---
 module: vyos_banner
-short_description: Manage login banners on VyOS devices using REST API
+short_description: Manage multiline banners on VyOS devices via REST API.
 description:
-  - Configure pre-login and post-login banners on VyOS devices via REST API.
-  - Supports idempotent configuration using structured data.
-  - Multiline banner text is supported via YAML block scalars.
-  - Uses REST API (C(connection=httpapi)) instead of CLI.
-  - VyOS stores multiline banners as a single string with literal C(\\n) separators.
+  - Manages pre-login and post-login banners on VyOS devices using the HTTPS
+    REST API.
+  - Works with C(ansible_connection=ansible.netcommon.httpapi) (recommended)
+    or with direct C(hostname)/C(api_key) task parameters.
+  - VyOS stores banner newlines as literal C(\n) in its config; this module
+    handles that conversion automatically.
 version_added: "1.0.0"
 author:
-  - Your Name (@yourhandle)
-
+  - VyOS Community (@vyos)
 options:
   config:
     description:
       - Banner configuration.
     type: dict
-    required: true
     suboptions:
       banner:
         description:
-          - Banner type to configure.
+          - Which banner to configure.
         type: str
         required: true
         choices:
@@ -35,53 +37,64 @@ options:
           - post-login
       text:
         description:
-          - Banner text. Supports multiline strings via YAML block scalar (|).
-          - Internally, real newlines are converted to literal C(\\n) as VyOS expects.
+          - The banner text. Required when I(state=merged) or I(state=replaced).
+          - Use a YAML block scalar (C(|)) for multi-line banners.
+          - Real newline characters are converted to the C(\n) escape sequence
+            that VyOS stores internally; this is transparent to the user.
         type: str
-
   state:
     description:
-      - Desired state of the configuration.
+      - Desired state of the banner configuration.
+      - C(merged) - set the banner if it differs from the current value.
+      - C(replaced) - replace the banner text unconditionally.
+      - C(deleted) - remove the banner.
+      - C(gathered) - return the current banner in I(gathered) without
+        making any changes.
     type: str
     default: merged
     choices:
       - merged
       - replaced
-      - overridden
       - deleted
       - gathered
-
-notes:
-  - This module requires C(ansible_connection=httpapi).
-  - Banner text comparison is whitespace-normalized for idempotency.
-  - VyOS stores banner text as a leaf string value with literal C(\\n) for newlines.
-  - For C(merged), C(replaced), and C(overridden) states, the behaviour is identical
-    for this single-leaf resource — the banner value is set to the desired text.
+  hostname:
+    description: Device IP or FQDN (not needed with httpapi inventory).
+    type: str
+  port:
+    description: HTTPS port (local mode only).
+    type: int
+    default: 443
+  api_key:
+    description: REST API key (not needed when ansible_httpapi_api_key is set).
+    type: str
+    no_log: true
+  timeout:
+    description: Request timeout in seconds.
+    type: int
+    default: 30
+  verify_ssl:
+    description: Validate the device TLS certificate.
+    type: bool
+    default: false
+seealso:
+  - module: vyos.vyos.vyos_banner
 """
 
 EXAMPLES = r"""
-- name: Configure single-line pre-login banner
+- name: Set pre-login banner (merged — only changes if different)
   vyos.rest.vyos_banner:
     config:
       banner: pre-login
-      text: "Unauthorized access is prohibited"
-    state: merged
-
-- name: Configure multiline post-login banner
-  vyos.rest.vyos_banner:
-    config:
-      banner: post-login
       text: |
-        Welcome to VyOS
-        Authorized users only
-        Disconnect if you are not authorized
+        Junk pre-login banner
+        over multiple lines
     state: merged
 
-- name: Replace post-login banner
+- name: Replace post-login banner unconditionally
   vyos.rest.vyos_banner:
     config:
       banner: post-login
-      text: "Welcome to VyOS"
+      text: "Welcome. Authorised access only."
     state: replaced
 
 - name: Remove pre-login banner
@@ -90,236 +103,84 @@ EXAMPLES = r"""
       banner: pre-login
     state: deleted
 
-- name: Gather banner configuration
+- name: Read current pre-login banner without changing it
   vyos.rest.vyos_banner:
     config:
       banner: pre-login
     state: gathered
+  register: result
+
+- name: Print gathered banner
+  ansible.builtin.debug:
+    msg: "Current banner: {{ result.gathered.text }}"
 """
 
 RETURN = r"""
 before:
-  description: Configuration before changes (text uses real newlines).
+  description: Banner configuration before the module ran.
   returned: always
   type: dict
   sample:
     banner: pre-login
-    text: "Old banner text"
-
+    text: "Old banner text\nline two\n"
 after:
-  description: Configuration after changes (text uses real newlines).
+  description: Banner configuration after the module ran.
   returned: when changed
   type: dict
-  sample:
-    banner: pre-login
-    text: "New banner text"
-
-commands:
-  description: List of API command dicts sent to the device.
-  returned: when changes are required
-  type: list
-  sample:
-    - op: set
-      path: ["system", "login", "banner", "pre-login"]
-      value: "New banner text"
-
 gathered:
-  description: Current device configuration (text uses real newlines).
+  description: Current banner configuration read from the device (state=gathered).
   returned: when state is gathered
   type: dict
   sample:
     banner: pre-login
-    text: "Current banner text"
-
-response:
-  description: Raw response from VyOS REST API.
-  returned: when changes are applied
-  type: dict
-
-saved:
-  description: Result of save_config call after applying changes.
-  returned: when changes are applied
-  type: dict
+    text: "Current banner\nline two\n"
+commands:
+  description: Configuration commands issued.
+  returned: always
+  type: list
 """
 
-
-# ------------------------------------------------------------
-# Text conversion helpers
-#
-# Internal canonical form: real Python newlines (\n), stripped.
-#
-# VyOS wire format: literal backslash-n (\\n) sequences within
-# a single quoted string, e.g. 'line one\nline two\nline three'.
-#
-# Rule: convert FROM wire format on read, TO wire format on write,
-#       always compare in canonical (internal) form.
-# ------------------------------------------------------------
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos_rest import (
+    VYOS_REST_CONNECTION_ARGSPEC,
+    VyOSRestClient,
+    VyOSRestError,
+)
 
 
-def normalize_text(text):
-    """
-    Normalize text to canonical internal form.
-
-    - Converts to str if needed
-    - Strips each line
-    - Removes leading/trailing blank lines
-    - Joins with real newlines
-    - Returns None if result is empty
-    """
-    if text is None:
-        return None
-    lines = [line.strip() for line in text.strip().splitlines()]
-    # Trim leading blank lines
-    while lines and not lines[0]:
-        lines.pop(0)
-    # Trim trailing blank lines
-    while lines and not lines[-1]:
-        lines.pop()
-    return "\n".join(lines) if lines else None
+_BANNER_PATH = {
+    "pre-login": ["system", "login", "banner", "pre-login"],
+    "post-login": ["system", "login", "banner", "post-login"],
+}
 
 
-def text_from_api_value(raw):
-    """
-    Convert VyOS API/device value to canonical internal form.
-
-    VyOS returns multiline banners with literal \\n sequences:
-      'line one\\nline two\\nline three'
-
-    Convert those to real newlines first, then normalize.
-    """
-    if raw is None:
-        return None
-    return normalize_text(raw.replace("\\n", "\n"))
+def _encode_banner(text):
+    """Convert real newlines to literal \\n for the VyOS REST API value field."""
+    return text.replace("\n", "\\n")
 
 
-def text_to_api_value(text):
-    """
-    Convert canonical internal form to VyOS wire format.
-
-    Real newlines become literal \\n sequences as VyOS expects.
-    Returns None if input normalizes to None.
-    """
-    normalized = normalize_text(text)
-    if normalized is None:
-        return None
-    return normalized.replace("\n", "\\n")
+def _decode_banner(text):
+    """Convert literal \\n back to real newlines for display and comparison."""
+    return text.replace("\\n", "\n")
 
 
-# ------------------------------------------------------------
-# Device interaction
-# ------------------------------------------------------------
-
-
-def get_running_config(vyos, banner):
-    """
-    Fetch current banner configuration from the device.
-
-    The VyOS showConfig API returns banner text as a plain string value:
-      {"pre-login": "test1"}
-      {"post-login": "line one\\nline two\\nline three"}
-
-    Returns:
-      {"banner": <str>, "text": <normalized str or None>}
-    """
+def _get_current(client, banner_type):
+    """Return current banner as a config dict, or empty dict if not set."""
+    path = _BANNER_PATH[banner_type]
     try:
-        raw = vyos.get_config(["system", "login", "banner"])
-    except Exception as e:
-        if "Configuration under specified path is empty" in str(e):
-            return {"banner": banner, "text": None}
-        raise
-
-    if not raw or not isinstance(raw, dict):
-        return {"banner": banner, "text": None}
-
-    val = raw.get(banner)
-
-    if val is None:
-        return {"banner": banner, "text": None}
-
-    if isinstance(val, str):
-        # Convert from wire format (literal \n) to internal form (real newlines)
-        return {"banner": banner, "text": text_from_api_value(val)}
-
-    # Unexpected type — surface clearly rather than silently swallowing
-    raise ValueError(
-        "Unexpected banner value type '{t}' returned by API (value={v!r}). "
-        "Expected a plain string. Please file a bug.".format(
-            t=type(val).__name__,
-            v=val,
-        ),
-    )
-
-
-def build_commands(want, have, state):
-    """
-    Build list of VyOS REST API command dicts.
-
-    VyOS banner API payload structure:
-      SET:    {"op": "set",    "path": ["system","login","banner","<type>"], "value": "<text>"}
-      DELETE: {"op": "delete", "path": ["system","login","banner","<type>"]}
-
-    The banner text is always a leaf VALUE on the path, never a path segment.
-
-    All text comparison is done in canonical internal form (real newlines).
-    Conversion to wire format (literal \\n) happens only when building the
-    final API command value.
-    """
-    banner = want["banner"]
-
-    # Canonical internal form for comparison
-    want_text = normalize_text(want.get("text"))
-    have_text = have.get("text")  # already in canonical form from get_running_config
-
-    base_path = ["system", "login", "banner", banner]
-    banner_exists = have_text is not None
-
-    # --------------------------------------------------------
-    # deleted: remove the banner node if it exists
-    # --------------------------------------------------------
-    if state == "deleted":
-        if banner_exists:
-            return [{"op": "delete", "path": base_path}]
-        return []
-
-    # --------------------------------------------------------
-    # merged / replaced / overridden
-    #
-    # For this single leaf-value resource all three states are
-    # semantically equivalent: ensure the desired value is set.
-    # Idempotency: skip if the normalized value already matches.
-    # --------------------------------------------------------
-    if state in ("merged", "replaced", "overridden"):
-        if want_text is None:
-            # No text provided with a non-delete state — nothing to do
-            return []
-
-        if want_text == have_text:
-            # Already correct — idempotent, no change needed
-            return []
-
-        # Convert to wire format only at the point of building the payload
-        return [
-            {
-                "op": "set",
-                "path": base_path,
-                "value": text_to_api_value(want_text),
-            },
-        ]
-
-    return []
-
-
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
+        result = client.retrieve_return_value(path)
+        raw = result.get("data") or ""
+        if raw:
+            return {"banner": banner_type, "text": _decode_banner(raw)}
+    except VyOSRestError:
+        pass
+    return {"banner": banner_type, "text": ""}
 
 
 def main():
-
     argument_spec = dict(
         config=dict(
             type="dict",
-            required=True,
             options=dict(
                 banner=dict(
                     type="str",
@@ -330,86 +191,61 @@ def main():
             ),
         ),
         state=dict(
+            type="str",
             default="merged",
-            choices=[
-                "merged",
-                "replaced",
-                "overridden",
-                "deleted",
-                "gathered",
-            ],
+            choices=["merged", "replaced", "deleted", "gathered"],
         ),
     )
+    argument_spec.update(VYOS_REST_CONNECTION_ARGSPEC)
 
     module = AnsibleModule(
         argument_spec=argument_spec,
+        required_if=[
+            ("state", "merged", ["config"]),
+            ("state", "replaced", ["config"]),
+            ("state", "deleted", ["config"]),
+            ("state", "gathered", ["config"]),
+        ],
         supports_check_mode=True,
     )
 
-    vyos = VyOSModule(module)
-
+    client = VyOSRestClient(module)
     state = module.params["state"]
-    config = module.params.get("config") or {}
-    banner = config.get("banner")
+    config = module.params["config"]
+    banner_type = config["banner"]
+    desired_text = config.get("text") or ""
+    path = _BANNER_PATH[banner_type]
+    commands = []
+    changed = False
 
-    if not banner:
-        module.fail_json(msg="banner is required in config")
+    before = _get_current(client, banner_type)
 
-    # Fetch current device state (text in canonical internal form)
-    have = get_running_config(vyos, banner)
-
-    # --------------------------------------------------------
-    # gathered: return current state, no changes
-    # --------------------------------------------------------
     if state == "gathered":
-        module.exit_json(changed=False, gathered=have)
+        module.exit_json(changed=False, gathered=before, before=before, commands=[])
 
-    want = {
-        "banner": banner,
-        "text": config.get("text"),
-    }
-
-    commands = build_commands(want, have, state)
-
-    # --------------------------------------------------------
-    # check mode: report what would change, make no API calls
-    # --------------------------------------------------------
     if module.check_mode:
-        module.exit_json(
-            changed=bool(commands),
-            commands=commands,
-            before=have,
-        )
+        module.exit_json(changed=True, before=before, commands=["(check mode)"])
 
-    # --------------------------------------------------------
-    # apply changes
-    # --------------------------------------------------------
-    if commands:
-        response = vyos.apply_commands(commands)
-        saved = vyos.save_config()
+    try:
+        if state in ("merged", "replaced"):
+            if state == "merged" and before.get("text") == desired_text:
+                module.exit_json(changed=False, before=before, commands=[])
+            client.configure_set(path, _encode_banner(desired_text))
+            commands.append("set {p} '...'".format(p=" ".join(path)))
+            changed = True
 
-        module.exit_json(
-            changed=True,
-            before=have,
-            # Report after-state in canonical form (real newlines, human-readable)
-            after=want,
-            # after={
-            #     "banner": banner,
-            #     "text": normalize_text(want["text"]),
-            # },
-            commands=commands,
-            saved=saved,
-            response=response,
-        )
+        elif state == "deleted":
+            if not before.get("text"):
+                module.exit_json(changed=False, before=before, commands=[])
+            client.configure_delete(path)
+            commands.append("delete {p}".format(p=" ".join(path)))
+            changed = True
 
-    # --------------------------------------------------------
-    # no changes needed
-    # --------------------------------------------------------
-    module.exit_json(
-        changed=False,
-        before=have,
-        after=have,
-    )
+    except VyOSRestError as exc:
+        module.fail_json(msg=str(exc), before=before)
+
+    after = _get_current(client, banner_type) if changed else before
+    module.exit_json(changed=changed, before=before, after=after, commands=commands)
 
 
 if __name__ == "__main__":

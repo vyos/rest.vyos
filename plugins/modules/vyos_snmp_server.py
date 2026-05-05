@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# Copyright 2024 Red Hat
 # GNU General Public License v3.0+
-# (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 
@@ -15,12 +13,11 @@ module: vyos_snmp_server
 short_description: Manage SNMP server configuration on VyOS devices using REST API
 description:
   - Manages SNMP server configuration on VyOS devices via the REST API.
-  - Supports communities, listen addresses, contact/location/description scalar
-    fields, trap target, and SNMPv3 (engine ID, groups, users, views).
+  - Supports communities, listen addresses, contact/location/description,
+    trap target, and SNMPv3 (engine ID, groups, users, views).
   - Uses REST API (C(connection=httpapi)) instead of CLI.
 version_added: "1.0.0"
 author: your_name (@yourhandle)
-
 options:
   config:
     description: SNMP server configuration.
@@ -79,13 +76,10 @@ options:
         type: dict
         suboptions:
           address:
-            description: IP address of trap target.
             type: str
           community:
-            description: Community string for traps.
             type: str
           port:
-            description: Destination port for trap notifications.
             type: int
       snmp_v3:
         description: SNMPv3 configuration.
@@ -95,150 +89,108 @@ options:
             description: EngineID as a hex string.
             type: str
           groups:
-            description: SNMPv3 groups.
             type: list
             elements: dict
             suboptions:
               group:
-                description: Group name.
                 type: str
                 required: true
               mode:
-                description: Access mode.
                 type: str
                 choices: ['ro', 'rw']
               seclevel:
-                description: Security level.
                 type: str
                 choices: ['auth', 'priv']
               view:
-                description: View name for this group.
                 type: str
           users:
-            description: SNMPv3 users.
             type: list
             elements: dict
             suboptions:
               user:
-                description: Username.
                 type: str
                 required: true
               authentication:
-                description: Authentication configuration.
                 type: dict
                 suboptions:
                   type:
-                    description: Authentication protocol.
                     type: str
                     choices: ['md5', 'sha']
                   encrypted_key:
-                    description: Encrypted authentication password.
+                    description: Encrypted key (stored as encrypted-password on device).
                     type: str
                   plaintext_key:
-                    description: Plaintext authentication password (will be encrypted on device).
+                    description: Plaintext key (device encrypts it; recommended for 1.5+).
                     type: str
                     no_log: true
               privacy:
-                description: Privacy configuration.
                 type: dict
                 suboptions:
                   type:
-                    description: Privacy protocol.
                     type: str
                     choices: ['des', 'aes']
                   encrypted_key:
-                    description: Encrypted privacy password.
                     type: str
                   plaintext_key:
-                    description: Plaintext privacy password (will be encrypted on device).
                     type: str
                     no_log: true
               group:
-                description: Group membership for this user.
                 type: str
               mode:
-                description: Access mode.
                 type: str
                 choices: ['ro', 'rw']
               tsm_key:
-                description: TSM certificate fingerprint or filename.
                 type: str
           trap_targets:
-            description: SNMPv3 trap/inform targets.
             type: list
             elements: dict
             suboptions:
               address:
-                description: IP/IPv6 address of trap target.
                 type: str
               port:
-                description: TCP/UDP port for traps/informs.
                 type: int
               protocol:
-                description: Notification protocol.
                 type: str
                 choices: ['tcp', 'udp']
               type:
-                description: Notification type.
                 type: str
                 choices: ['inform', 'trap']
               authentication:
-                description: Authentication for this trap target.
                 type: dict
                 suboptions:
                   type:
-                    description: Authentication protocol.
                     type: str
-                    choices: ['md5', 'sha']
                   encrypted_key:
-                    description: Encrypted authentication password.
                     type: str
                   plaintext_key:
-                    description: Plaintext authentication password (will be encrypted on device).
                     type: str
                     no_log: true
               privacy:
-                description: Privacy for this trap target.
                 type: dict
                 suboptions:
                   type:
-                    description: Privacy protocol.
                     type: str
-                    choices: ['des', 'aes']
                   encrypted_key:
-                    description: Encrypted privacy password.
                     type: str
                   plaintext_key:
-                    description: Plaintext privacy password (will be encrypted on device).
                     type: str
                     no_log: true
           views:
-            description: SNMPv3 views.
             type: list
             elements: dict
             suboptions:
               view:
-                description: View name.
                 type: str
                 required: true
               oid:
-                description: OID for this view.
                 type: str
               exclude:
-                description: Excluded OID subtree.
                 type: str
               mask:
-                description: Bit-mask for OID subidentifiers.
                 type: str
-
   state:
     description:
       - Desired state of SNMP configuration.
-      - C(merged) adds or updates provided config without removing existing entries.
-      - C(replaced) and C(overridden) perform a full replacement — entries not in
-        the task config are removed.
-      - C(deleted) removes all SNMP configuration with a single delete command.
-      - C(gathered) returns current device config as structured data, no changes made.
     type: str
     default: merged
     choices:
@@ -247,9 +199,6 @@ options:
       - overridden
       - deleted
       - gathered
-
-notes:
-  - Tested against VyOS 1.5q2.
 """
 
 EXAMPLES = r"""
@@ -279,45 +228,9 @@ EXAMPLES = r"""
               type: aes
     state: merged
 
-# ------------------------------------------------------------------------
-
-- name: Replace SNMP configuration
-  vyos.rest.vyos_snmp_server:
-    config:
-      communities:
-        - name: bridges
-          networks:
-            - 1.1.1.0/24
-            - 12.1.1.0/24
-      location: "RDU, NC"
-      listen_addresses:
-        - address: 100.1.2.1
-          port: 33
-      snmp_v3:
-        groups:
-          - group: default
-            view: default
-        users:
-          - user: admin_user
-            authentication:
-              encrypted_key: 33f8bfd6b69ee03a184818a4daea503c9e579633
-              type: sha
-            privacy:
-              encrypted_key: 33f8bfd6b69ee03a184818a4daea503c9e579633
-              type: aes
-            group: default
-        views:
-          - view: default
-            oid: "1"
-    state: replaced
-
-# ------------------------------------------------------------------------
-
 - name: Delete all SNMP configuration
   vyos.rest.vyos_snmp_server:
     state: deleted
-
-# ------------------------------------------------------------------------
 
 - name: Gather current SNMP configuration
   vyos.rest.vyos_snmp_server:
@@ -327,46 +240,32 @@ EXAMPLES = r"""
 RETURN = r"""
 before:
   description: SNMP configuration before this module ran.
-  returned: when I(state) is C(merged), C(replaced), C(overridden) or C(deleted)
+  returned: when state is merged, replaced, overridden or deleted
   type: dict
-
 after:
   description: SNMP configuration after this module ran.
   returned: when changed
   type: dict
-
 commands:
   description: List of API command dicts sent to the device.
   returned: always
   type: list
-
 gathered:
   description: Current SNMP configuration as structured data.
-  returned: when I(state) is C(gathered)
+  returned: when state is gathered
   type: dict
-
-response:
-  description: Raw API response.
-  returned: when changes are applied
-  type: dict
-
 saved:
-  description: Result of save_config after applying changes.
+  description: Whether the config was saved after changes.
   returned: when changes are applied
-  type: dict
+  type: bool
 """
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
 
 
-# ------------------------------------------------------------
-# Constants
-# ------------------------------------------------------------
-
 SNMP_BASE = ["service", "snmp"]
 
-# Scalar fields that map directly: argspec_key → api_key
 SCALAR_FIELDS = {
     "contact": "contact",
     "description": "description",
@@ -376,13 +275,7 @@ SCALAR_FIELDS = {
 }
 
 
-# ------------------------------------------------------------
-# Generic helpers
-# ------------------------------------------------------------
-
-
 def to_list(value):
-    """Coerce None / str / list → list."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -394,16 +287,19 @@ def to_list(value):
     return [str(value)]
 
 
-# ------------------------------------------------------------
-# Parsing: API response → Ansible argspec dict
-# ------------------------------------------------------------
+def _cmd(op, path):
+    return {"op": op, "path": path}
+
+
+def _set(path):
+    return _cmd("set", path)
+
+
+def _delete(path):
+    return _cmd("delete", path)
 
 
 def _parse_communities(raw):
-    """
-    API: {"bridges": {"client": [...], "network": [...]}, "switches": {"authorization": "rw"}}
-    → [{"name": "bridges", "clients": [...], ...}, ...]
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -423,10 +319,6 @@ def _parse_communities(raw):
 
 
 def _parse_listen_addresses(raw):
-    """
-    API: {"198.51.100.10": {"port": "33"}, "203.0.113.65": {}}
-    → [{"address": "198.51.100.10", "port": 33}, {"address": "203.0.113.65"}]
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -439,9 +331,6 @@ def _parse_listen_addresses(raw):
 
 
 def _parse_trap_target(raw):
-    """
-    API: {"address": "x.x.x.x"} or plain string address, optional port/community.
-    """
     if not raw:
         return None
     if isinstance(raw, str):
@@ -457,19 +346,12 @@ def _parse_trap_target(raw):
 
 
 def _parse_v3_auth_privacy(raw, key):
-    """
-    Parse auth or privacy block.
-    API key is 'auth', argspec key is 'authentication'.
-    API key is 'privacy', argspec key is 'privacy'.
-    Returns dict with type and encrypted_key (never plaintext — device never returns it).
-    """
     block = raw.get(key) if isinstance(raw, dict) else None
     if not block:
         return None
     result = {}
     if "type" in block:
         result["type"] = block["type"]
-    # API uses 'encrypted-password'; map to argspec 'encrypted_key'
     if "encrypted-password" in block:
         result["encrypted_key"] = block["encrypted-password"]
     if "plaintext-key" in block:
@@ -478,10 +360,6 @@ def _parse_v3_auth_privacy(raw, key):
 
 
 def _parse_v3_users(raw):
-    """
-    API: {"adminuser": {"auth": {...}, "group": "testgroup", "privacy": {...}}}
-    → [{"user": "adminuser", "authentication": {...}, "group": "testgroup", "privacy": {...}}]
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -505,10 +383,6 @@ def _parse_v3_users(raw):
 
 
 def _parse_v3_groups(raw):
-    """
-    API: {"testgroup": {"mode": "ro", "view": "default"}}
-    → [{"group": "testgroup", "mode": "ro", "view": "default"}]
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -523,12 +397,6 @@ def _parse_v3_groups(raw):
 
 
 def _parse_v3_views(raw):
-    """
-    API: {"default": {"oid": {"1": {}}}}
-    → [{"view": "default", "oid": "1"}]
-
-    OID is stored as a dict key with an empty dict value.
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -537,7 +405,6 @@ def _parse_v3_views(raw):
         if isinstance(data, dict) and "oid" in data:
             oid_data = data["oid"]
             if isinstance(oid_data, dict) and oid_data:
-                # Extract the first (and usually only) OID key
                 entry["oid"] = str(list(oid_data.keys())[0])
             elif isinstance(oid_data, str):
                 entry["oid"] = oid_data
@@ -551,10 +418,6 @@ def _parse_v3_views(raw):
 
 
 def _parse_v3_trap_targets(raw):
-    """
-    API: {"x.x.x.x": {"auth": {...}, "privacy": {...}, "port": "162", ...}}
-    → [{"address": "x.x.x.x", ...}]
-    """
     if not raw or not isinstance(raw, dict):
         return []
     result = []
@@ -578,35 +441,21 @@ def _parse_v3_trap_targets(raw):
 
 
 def parse_snmp_config(raw):
-    """
-    Convert full API SNMP response dict → Ansible argspec dict.
-    """
     if not raw or not isinstance(raw, dict):
         return {}
-
     result = {}
-
-    # Scalar fields
     for argspec_key, api_key in SCALAR_FIELDS.items():
         if api_key in raw:
             result[argspec_key] = raw[api_key]
-
-    # Communities
     communities = _parse_communities(raw.get("community"))
     if communities:
         result["communities"] = communities
-
-    # Listen addresses
     listen = _parse_listen_addresses(raw.get("listen-address"))
     if listen:
         result["listen_addresses"] = listen
-
-    # Trap target
     trap = _parse_trap_target(raw.get("trap-target"))
     if trap:
         result["trap_target"] = trap
-
-    # SNMPv3
     v3_raw = raw.get("v3")
     if v3_raw and isinstance(v3_raw, dict):
         v3 = {}
@@ -626,12 +475,10 @@ def parse_snmp_config(raw):
             v3["trap_targets"] = trap_targets
         if v3:
             result["snmp_v3"] = v3
-
     return result
 
 
 def get_running_config(vyos):
-    """Fetch and parse current SNMP config from device."""
     try:
         raw = vyos.get_config(SNMP_BASE)
     except Exception as e:
@@ -641,25 +488,7 @@ def get_running_config(vyos):
     return parse_snmp_config(raw)
 
 
-# ------------------------------------------------------------
-# Command builders: Ansible argspec dict → API command list
-# ------------------------------------------------------------
-
-
-def _cmd(op, path):
-    return {"op": op, "path": path}
-
-
-def _set(path):
-    return _cmd("set", path)
-
-
-def _delete(path):
-    return _cmd("delete", path)
-
-
 def _build_scalar_commands(want, have, state):
-    """Build commands for simple string scalar fields."""
     cmds = []
     for argspec_key, api_key in SCALAR_FIELDS.items():
         want_val = want.get(argspec_key)
@@ -675,90 +504,69 @@ def _build_scalar_commands(want, have, state):
 
 
 def _build_community_commands(want_list, have_list, state):
-    """Build commands for SNMP communities."""
     cmds = []
     want_map = {c["name"]: c for c in (want_list or [])}
     have_map = {c["name"]: c for c in (have_list or [])}
-
     if state in ("replaced", "overridden"):
-        # Delete communities not in want
         for name in have_map:
             if name not in want_map:
                 cmds.append(_delete(SNMP_BASE + ["community", name]))
-
     for name, want_comm in want_map.items():
         have_comm = have_map.get(name, {})
         base = SNMP_BASE + ["community", name]
-
-        if state in ("merged", "replaced", "overridden"):
-            # authorization_type
-            want_auth = want_comm.get("authorization_type")
-            have_auth = have_comm.get("authorization_type")
-            if want_auth and want_auth != have_auth:
-                cmds.append(_set(base + ["authorization", want_auth]))
-            if state in ("replaced", "overridden") and have_auth and want_auth != have_auth:
-                cmds.append(_delete(base + ["authorization"]))
-
-            # clients
-            want_clients = set(want_comm.get("clients") or [])
-            have_clients = set(have_comm.get("clients") or [])
-            for c in want_clients - have_clients:
-                cmds.append(_set(base + ["client", c]))
-            if state in ("replaced", "overridden"):
-                for c in have_clients - want_clients:
-                    cmds.append(_delete(base + ["client", c]))
-
-            # networks
-            want_nets = set(want_comm.get("networks") or [])
-            have_nets = set(have_comm.get("networks") or [])
-            for n in want_nets - have_nets:
-                cmds.append(_set(base + ["network", n]))
-            if state in ("replaced", "overridden"):
-                for n in have_nets - want_nets:
-                    cmds.append(_delete(base + ["network", n]))
-
+        want_auth = want_comm.get("authorization_type")
+        have_auth = have_comm.get("authorization_type")
+        if want_auth and want_auth != have_auth:
+            cmds.append(_set(base + ["authorization", want_auth]))
+        if state in ("replaced", "overridden") and have_auth and want_auth != have_auth:
+            cmds.append(_delete(base + ["authorization"]))
+        want_clients = set(want_comm.get("clients") or [])
+        have_clients = set(have_comm.get("clients") or [])
+        for c in want_clients - have_clients:
+            cmds.append(_set(base + ["client", c]))
+        if state in ("replaced", "overridden"):
+            for c in have_clients - want_clients:
+                cmds.append(_delete(base + ["client", c]))
+        want_nets = set(want_comm.get("networks") or [])
+        have_nets = set(have_comm.get("networks") or [])
+        for n in want_nets - have_nets:
+            cmds.append(_set(base + ["network", n]))
+        if state in ("replaced", "overridden"):
+            for n in have_nets - want_nets:
+                cmds.append(_delete(base + ["network", n]))
     return cmds
 
 
 def _build_listen_address_commands(want_list, have_list, state):
-    """Build commands for listen-address entries."""
     cmds = []
     want_map = {e["address"]: e for e in (want_list or [])}
     have_map = {e["address"]: e for e in (have_list or [])}
     base = SNMP_BASE + ["listen-address"]
-
     if state in ("replaced", "overridden"):
         for addr in have_map:
             if addr not in want_map:
                 cmds.append(_delete(base + [addr]))
-
     for addr, want_entry in want_map.items():
         have_entry = have_map.get(addr, {})
         want_port = want_entry.get("port")
         have_port = have_entry.get("port")
-
         if addr not in have_map:
-            # New address
             if want_port:
                 cmds.append(_set(base + [addr, "port", str(want_port)]))
             else:
                 cmds.append(_set(base + [addr]))
         elif want_port != have_port:
-            # Address exists but port changed — delete and re-set
             cmds.append(_delete(base + [addr]))
             if want_port:
                 cmds.append(_set(base + [addr, "port", str(want_port)]))
             else:
                 cmds.append(_set(base + [addr]))
-
     return cmds
 
 
 def _build_trap_target_commands(want, have, state):
-    """Build commands for the v2 trap-target scalar dict."""
     cmds = []
     base = SNMP_BASE + ["trap-target"]
-
     if state in ("merged", "replaced", "overridden"):
         if want:
             want_addr = want.get("address")
@@ -769,25 +577,18 @@ def _build_trap_target_commands(want, have, state):
                 cmds.append(_set(base + [want_addr, "community", want["community"]]))
             if want.get("port"):
                 cmds.append(_set(base + [want_addr, "port", str(want["port"])]))
-
     if state in ("replaced", "overridden"):
         if have and (not want or have.get("address") != (want or {}).get("address")):
             cmds.append(_delete(base))
-
     return cmds
 
 
 def _build_v3_auth_privacy_commands(base, want_block, have_block, api_key):
-    """
-    Build set commands for a v3 auth or privacy block.
-    api_key: 'auth' or 'privacy'
-    """
     cmds = []
     if not want_block:
         return cmds
     block_base = base + [api_key]
     have_block = have_block or {}
-
     if want_block.get("type") and want_block["type"] != have_block.get("type"):
         cmds.append(_set(block_base + ["type", want_block["type"]]))
     if want_block.get("encrypted_key") and want_block["encrypted_key"] != have_block.get(
@@ -795,28 +596,22 @@ def _build_v3_auth_privacy_commands(base, want_block, have_block, api_key):
     ):
         cmds.append(_set(block_base + ["encrypted-password", want_block["encrypted_key"]]))
     if want_block.get("plaintext_key"):
-        # Always set plaintext — we cannot compare it to the stored encrypted value
         cmds.append(_set(block_base + ["plaintext-key", want_block["plaintext_key"]]))
-
     return cmds
 
 
 def _build_v3_user_commands(want_list, have_list, state):
-    """Build commands for SNMPv3 users."""
     cmds = []
     want_map = {u["user"]: u for u in (want_list or [])}
     have_map = {u["user"]: u for u in (have_list or [])}
     base = SNMP_BASE + ["v3", "user"]
-
     if state in ("replaced", "overridden"):
         for username in have_map:
             if username not in want_map:
                 cmds.append(_delete(base + [username]))
-
     for username, want_user in want_map.items():
         have_user = have_map.get(username, {})
         user_base = base + [username]
-
         cmds += _build_v3_auth_privacy_commands(
             user_base,
             want_user.get("authentication"),
@@ -829,33 +624,27 @@ def _build_v3_user_commands(want_list, have_list, state):
             have_user.get("privacy"),
             "privacy",
         )
-
         if want_user.get("group") and want_user["group"] != have_user.get("group"):
             cmds.append(_set(user_base + ["group", want_user["group"]]))
         if want_user.get("mode") and want_user["mode"] != have_user.get("mode"):
             cmds.append(_set(user_base + ["mode", want_user["mode"]]))
         if want_user.get("tsm_key") and want_user["tsm_key"] != have_user.get("tsm_key"):
             cmds.append(_set(user_base + ["tsm-key", want_user["tsm_key"]]))
-
     return cmds
 
 
 def _build_v3_group_commands(want_list, have_list, state):
-    """Build commands for SNMPv3 groups."""
     cmds = []
     want_map = {g["group"]: g for g in (want_list or [])}
     have_map = {g["group"]: g for g in (have_list or [])}
     base = SNMP_BASE + ["v3", "group"]
-
     if state in ("replaced", "overridden"):
         for name in have_map:
             if name not in want_map:
                 cmds.append(_delete(base + [name]))
-
     for name, want_group in want_map.items():
         have_group = have_map.get(name, {})
         group_base = base + [name]
-
         for key, api_key in [("mode", "mode"), ("seclevel", "seclevel"), ("view", "view")]:
             want_val = want_group.get(key)
             have_val = have_group.get(key)
@@ -863,74 +652,56 @@ def _build_v3_group_commands(want_list, have_list, state):
                 cmds.append(_set(group_base + [api_key, want_val]))
             if state in ("replaced", "overridden") and have_val and want_val != have_val:
                 cmds.append(_delete(group_base + [api_key]))
-
     return cmds
 
 
 def _build_v3_view_commands(want_list, have_list, state):
-    """Build commands for SNMPv3 views."""
     cmds = []
     want_map = {v["view"]: v for v in (want_list or [])}
     have_map = {v["view"]: v for v in (have_list or [])}
     base = SNMP_BASE + ["v3", "view"]
-
     if state in ("replaced", "overridden"):
         for name in have_map:
             if name not in want_map:
                 cmds.append(_delete(base + [name]))
-
     for name, want_view in want_map.items():
         have_view = have_map.get(name, {})
         view_base = base + [name]
-
         want_oid = str(want_view["oid"]) if want_view.get("oid") else None
         have_oid = str(have_view.get("oid")) if have_view.get("oid") else None
-
         if want_oid and want_oid != have_oid:
             cmds.append(_set(view_base + ["oid", want_oid]))
         if state in ("replaced", "overridden") and have_oid and want_oid != have_oid:
             cmds.append(_delete(view_base + ["oid", have_oid]))
-
         for key in ("exclude", "mask"):
             want_val = want_view.get(key)
             have_val = have_view.get(key)
             if want_val and want_val != have_val:
                 cmds.append(_set(view_base + [key, want_val]))
-
     return cmds
 
 
 def _build_v3_commands(want_v3, have_v3, state):
-    """Build all SNMPv3 commands."""
     cmds = []
     want_v3 = want_v3 or {}
     have_v3 = have_v3 or {}
-
-    # engine_id (maps to API key 'engineid')
     want_eid = want_v3.get("engine_id")
     have_eid = have_v3.get("engine_id")
     if want_eid and want_eid != have_eid:
         cmds.append(_set(SNMP_BASE + ["v3", "engineid", want_eid]))
     if state in ("replaced", "overridden") and have_eid and want_eid != have_eid:
         cmds.append(_delete(SNMP_BASE + ["v3", "engineid"]))
-
     cmds += _build_v3_group_commands(want_v3.get("groups"), have_v3.get("groups"), state)
     cmds += _build_v3_user_commands(want_v3.get("users"), have_v3.get("users"), state)
     cmds += _build_v3_view_commands(want_v3.get("views"), have_v3.get("views"), state)
-
     return cmds
 
 
 def build_commands(want, have, state):
-    """
-    Build the full list of API command dicts to move from have → want.
-    For deleted state, a single delete of the entire SNMP subtree is issued.
-    """
     if state == "deleted":
         if have:
             return [_delete(SNMP_BASE)]
         return []
-
     cmds = []
     cmds += _build_scalar_commands(want, have, state)
     cmds += _build_community_commands(want.get("communities"), have.get("communities"), state)
@@ -942,11 +713,6 @@ def build_commands(want, have, state):
     cmds += _build_trap_target_commands(want.get("trap_target"), have.get("trap_target"), state)
     cmds += _build_v3_commands(want.get("snmp_v3"), have.get("snmp_v3"), state)
     return cmds
-
-
-# ------------------------------------------------------------
-# Argument spec
-# ------------------------------------------------------------
 
 
 def _auth_privacy_spec():
@@ -1052,17 +818,8 @@ ARGUMENT_SPEC = dict(
 )
 
 
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
-
-
 def main():
-    module = AnsibleModule(
-        argument_spec=ARGUMENT_SPEC,
-        supports_check_mode=True,
-    )
-
+    module = AnsibleModule(argument_spec=ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
     state = module.params["state"]
     config = module.params.get("config") or {}
@@ -1072,8 +829,7 @@ def main():
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    want = config  # already in argspec shape from AnsibleModule
-
+    want = config
     commands = build_commands(want, have, state)
 
     if module.check_mode:

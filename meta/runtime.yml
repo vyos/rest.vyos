@@ -1,11 +1,51 @@
-requires_ansible: ">=2.16.0"
+---
+requires_ansible: ">=2.15.0"
 
-# plugin_routing:
-
-#   httpapi:
-#     vyos:
-#       redirect: vyos.rest.plugins.httpapi.vyos
-
-#   modules:
-#     vyos_ntp_global:
-#       redirect: vyos.rest.plugins.modules.vyos_ntp_global
+# action_groups allow users to set shared connection params once using
+# module_defaults:
+#
+#   - hosts: vyos_devices
+#     module_defaults:
+#       group/vyos.rest.api:
+#         api_key: "{{ vyos_api_key }}"
+#         verify_ssl: false
+#
+# This sets hostname/api_key/port/verify_ssl/timeout for ALL modules in
+# the group without repeating them on every task.
+action_groups:
+  api:
+    - vyos_banner
+    - vyos_bgp_address_family
+    - vyos_bgp_global
+    - vyos_config_file
+    - vyos_configure
+    - vyos_facts
+    - vyos_firewall_global
+    - vyos_firewall_interfaces
+    - vyos_firewall_rules
+    - vyos_generate
+    - vyos_hostname
+    - vyos_image
+    - vyos_info
+    - vyos_interfaces
+    - vyos_l3_interfaces
+    - vyos_lag_interfaces
+    - vyos_lldp_global
+    - vyos_lldp_interfaces
+    - vyos_logging_global
+    - vyos_ntp_global
+    - vyos_ospf_interfaces
+    - vyos_ospfv2
+    - vyos_ospfv3
+    - vyos_ping
+    - vyos_prefix_lists
+    - vyos_reboot
+    - vyos_reset
+    - vyos_retrieve
+    - vyos_route_maps
+    - vyos_show
+    - vyos_snmp_server
+    - vyos_static_routes
+    - vyos_system
+    - vyos_user
+    - vyos_vlan
