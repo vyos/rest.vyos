@@ -77,8 +77,7 @@ def _get(vyos):
                 list(v.keys()) if isinstance(v, dict) else ([v] if isinstance(v, str) else list(v))
             )
         if "snmp" in raw:
-            snmp = raw["snmp"]
-            result["snmp"] = list(snmp.keys())[0] if isinstance(snmp, dict) else str(snmp)
+            result["snmp"] = "enable"
         if "legacy-protocols" in raw:
             v = raw["legacy-protocols"]
             result["legacy_protocols"] = (
@@ -98,7 +97,10 @@ def _build(want, have, state):
     for addr in want.get("addresses") or []:
         cmds.append(("set", _BASE + ["management-address", addr]))
     if want.get("snmp"):
-        cmds.append(("set", _BASE + ["snmp", want["snmp"]]))
+        if want["snmp"] == "disable":
+            cmds.append(("delete", _BASE + ["snmp"]))
+        else:
+            cmds.append(("set", _BASE + ["snmp"]))
     for p in want.get("legacy_protocols") or []:
         cmds.append(("set", _BASE + ["legacy-protocols", p]))
     return cmds
