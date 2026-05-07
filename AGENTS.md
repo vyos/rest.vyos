@@ -17,7 +17,7 @@ Ansible Galaxy collection `vyos.rest` — modules and an httpapi plugin to manag
 ansible-galaxy collection build       # produces vyos-rest-<ver>.tar.gz
 ansible-galaxy collection install vyos-rest-<ver>.tar.gz
 pytest                                # runs collection tests
-black .                               # format
+black.                               # format
 ```
 
 ## Repository layout
