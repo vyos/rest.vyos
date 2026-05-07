@@ -39,10 +39,6 @@ Companion to `vyos/vyos.vyos` (the SSH-based Ansible collection). Both target Vy
 - Format: `black` (line length 100). Test runner: `pytest` with `pytest-xdist`.
 - Has `CODEOWNERS` (audit baseline). Public, GPL-licensed.
 
-## Mirror relationship
-
-No mirror twin (no `VyOS-Networks/rest.vyos`). Sole home is here.
-
 ## Notes for future contributors
 
 - Treat the VyOS HTTP API as the contract: changes in `vyos-1x/src/services/` may require synchronized updates here. There is no CI-enforced contract test today.
