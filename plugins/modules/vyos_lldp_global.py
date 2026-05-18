@@ -74,35 +74,53 @@ def _get(vyos):
         if "management-address" in raw:
             v = raw["management-address"]
             result["addresses"] = (
-                list(v.keys()) if isinstance(v, dict) else ([v] if isinstance(v, str) else list(v))
+                sorted(list(v.keys()))
+                if isinstance(v, dict)
+                else ([v] if isinstance(v, str) else sorted(list(v)))
             )
         if "snmp" in raw:
             result["snmp"] = "enable"
         if "legacy-protocols" in raw:
             v = raw["legacy-protocols"]
             result["legacy_protocols"] = (
-                list(v.keys()) if isinstance(v, dict) else ([v] if isinstance(v, str) else list(v))
+                sorted(list(v.keys()))
+                if isinstance(v, dict)
+                else ([v] if isinstance(v, str) else sorted(list(v)))
             )
     return result
 
 
 def _build(want, have, state):
     cmds = []
+
     if state in ("replaced", "deleted") and have:
         cmds.append(("delete", _BASE))
         if state == "deleted":
             return cmds
-    if want.get("enable") is not False:
+
+    # enable — only set if not already enabled
+    if want.get("enable") is not False and not have.get("enable"):
         cmds.append(("set", _BASE))
+
+    # addresses — only add missing ones
+    have_addrs = set(have.get("addresses") or [])
     for addr in want.get("addresses") or []:
-        cmds.append(("set", _BASE + ["management-address", addr]))
+        if addr not in have_addrs:
+            cmds.append(("set", _BASE + ["management-address", addr]))
+
+    # snmp
     if want.get("snmp"):
-        if want["snmp"] == "disable":
+        if want["snmp"] == "disable" and have.get("snmp"):
             cmds.append(("delete", _BASE + ["snmp"]))
-        else:
+        elif want["snmp"] != "disable" and not have.get("snmp"):
             cmds.append(("set", _BASE + ["snmp"]))
+
+    # legacy_protocols — only add missing ones
+    have_protos = set(have.get("legacy_protocols") or [])
     for p in want.get("legacy_protocols") or []:
-        cmds.append(("set", _BASE + ["legacy-protocols", p]))
+        if p not in have_protos:
+            cmds.append(("set", _BASE + ["legacy-protocols", p]))
+
     return cmds
 
 

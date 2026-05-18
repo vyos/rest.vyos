@@ -23,7 +23,6 @@ Name | Description
 [vyos.rest.vyos_generate](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_generate_module.rst)|Execute generate commands on a VyOS device via REST API.
 [vyos.rest.vyos_hostname](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_hostname_module.rst)|Manage the system hostname on a VyOS device via the REST API.
 [vyos.rest.vyos_image](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_image_module.rst)|Manage VyOS system images via the REST API.
-[vyos.rest.vyos_info](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_info_module.rst)|Retrieve system information from a VyOS device via the REST API.
 [vyos.rest.vyos_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_interfaces_module.rst)|Manage interface attributes on a VyOS device via the REST API.
 [vyos.rest.vyos_l3_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_l3_interfaces_module.rst)|Manage L3 interface attributes on VyOS via the REST API.
 [vyos.rest.vyos_lag_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lag_interfaces_module.rst)|LAG/bonding interfaces resource module via REST API.
