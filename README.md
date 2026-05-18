@@ -34,9 +34,9 @@ Name | Description
 [vyos.rest.vyos_ospfv2](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv2_module.rst)|OSPFv2 resource module via REST API.
 [vyos.rest.vyos_ospfv3](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv3_module.rst)|OSPFv3 resource module via REST API.
 [vyos.rest.vyos_ping](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ping_module.rst)|Test reachability using ping via VyOS REST API.
-[vyos.rest.vyos_prefix_lists](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_prefix_lists_module.rst)|Prefix-Lists resource module via REST API.
+[vyos.rest.vyos_prefix_lists](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_prefix_lists_module.rst)|Manage prefix-list configuration on VyOS devices using REST API
 [vyos.rest.vyos_reset](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_reset_module.rst)|Execute reset commands on a VyOS device via REST API.
-[vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Route Map resource module via REST API.
+[vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
 [vyos.rest.vyos_show](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_show_module.rst)|Execute op-mode show commands on a VyOS device via REST API.
 [vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
 [vyos.rest.vyos_static_routes](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_static_routes_module.rst)|Manage static routes on VyOS via the REST API.
