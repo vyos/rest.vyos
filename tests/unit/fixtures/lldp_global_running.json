@@ -1,0 +1,10 @@
+{
+  "management-address": {
+    "192.0.2.17": {}
+  },
+  "snmp": {},
+  "legacy-protocols": {
+    "cdp": {},
+    "sonmp": {}
+  }
+}

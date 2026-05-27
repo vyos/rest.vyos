@@ -1,0 +1,133 @@
+---
+# tests/integration/targets/vyos_logging_global/tasks/main.yaml
+
+- name: TEARDOWN — delete all syslog config before tests
+  vyos.rest.vyos_logging_global:
+    state: deleted
+
+# ------------------------------------------------------------------
+# MERGED
+# ------------------------------------------------------------------
+
+- name: MERGED — set initial logging config
+  register: result
+  vyos.rest.vyos_logging_global:
+    config:
+      console:
+        facilities:
+          - facility: local7
+            severity: err
+      hosts:
+        - hostname: 172.16.0.1
+          port: 514
+          facilities:
+            - facility: local7
+              severity: all
+      global_params:
+        facilities:
+          - facility: cron
+            severity: debug
+        preserve_fqdn: true
+    state: merged
+
+- name: ASSERT — merged changed
+  assert:
+    that:
+      - result.changed == true
+
+- name: MERGED — idempotency check
+  register: result
+  vyos.rest.vyos_logging_global:
+    config:
+      console:
+        facilities:
+          - facility: local7
+            severity: err
+      hosts:
+        - hostname: 172.16.0.1
+          port: 514
+          facilities:
+            - facility: local7
+              severity: all
+      global_params:
+        facilities:
+          - facility: cron
+            severity: debug
+        preserve_fqdn: true
+    state: merged
+
+- name: ASSERT — merged idempotent
+  assert:
+    that:
+      - result.changed == false
+      - result.commands | length == 0
+
+# ------------------------------------------------------------------
+# GATHERED
+# ------------------------------------------------------------------
+
+- name: GATHERED — read current config
+  register: result
+  vyos.rest.vyos_logging_global:
+    state: gathered
+
+- name: ASSERT — gathered returns expected data
+  assert:
+    that:
+      - result.gathered is defined
+
+# ------------------------------------------------------------------
+# REPLACED
+# ------------------------------------------------------------------
+
+- name: REPLACED — replace with minimal config
+  register: result
+  vyos.rest.vyos_logging_global:
+    config:
+      console:
+        facilities:
+          - facility: local6
+    state: replaced
+
+- name: ASSERT — replaced changed
+  assert:
+    that:
+      - result.changed == true
+
+- name: REPLACED — idempotency check
+  register: result
+  vyos.rest.vyos_logging_global:
+    config:
+      console:
+        facilities:
+          - facility: local6
+    state: replaced
+
+- name: ASSERT — replaced idempotent
+  assert:
+    that:
+      - result.changed == false
+
+# ------------------------------------------------------------------
+# DELETED
+# ------------------------------------------------------------------
+
+- name: DELETED — remove all syslog config
+  register: result
+  vyos.rest.vyos_logging_global:
+    state: deleted
+
+- name: ASSERT — deleted changed
+  assert:
+    that:
+      - result.changed == true
+
+- name: DELETED — idempotency check
+  register: result
+  vyos.rest.vyos_logging_global:
+    state: deleted
+
+- name: ASSERT — deleted idempotent
+  assert:
+    that:
+      - result.changed == false
