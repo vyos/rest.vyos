@@ -1,0 +1,21 @@
+---
+- name: Populate NTP config for testing
+  vyos.rest.vyos_ntp_global:
+    config:
+      allow_clients:
+        - 10.4.9.0/24
+        - 10.4.7.0/24
+      listen_addresses:
+        - 10.1.9.16
+      servers:
+        - server: 10.3.6.5
+          options:
+            - noselect
+            - prefer
+        - server: server4.example.com
+          options:
+            - pool
+            - noselect
+        - server: server5.example.com
+    state: merged
+  ignore_errors: true
