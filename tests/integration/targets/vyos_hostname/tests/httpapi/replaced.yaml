@@ -1,0 +1,30 @@
+---
+- debug:
+    msg: START vyos_hostname replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace hostname configuration
+      register: result
+      vyos.rest.vyos_hostname: &id001
+        config:
+          hostname: ansible-replaced-host
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace hostname configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_hostname: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,36 +1,5 @@
 """
 VyOS REST API client utility — supports both connection modes.
-
-**httpapi mode (recommended)**::
-
-    # inventory
-    vyos15x ansible_host=192.168.122.194
-             ansible_network_os=vyos.rest.vyos
-             ansible_connection=ansible.netcommon.httpapi
-             ansible_httpapi_use_ssl=true
-             ansible_httpapi_port=443
-             ansible_httpapi_validate_certs=false
-             ansible_httpapi_api_key=vyos123
-
-    # playbook — no connection params needed on any task
-    - vyos.rest.vyos_banner:
-        banner: pre-login
-        text: "Authorised use only."
-        state: present
-
-**local mode (alternative, no inventory network_os required)**::
-
-    - vyos.rest.vyos_banner:
-        hostname: 192.168.122.194
-        api_key: vyos123
-        verify_ssl: false
-        banner: pre-login
-        text: "Authorised use only."
-        state: present
-
-Both modes call the same VyOS endpoints.  The httpapi mode routes calls
-through the persistent connection daemon (better for large inventories);
-the local mode opens a new HTTPS connection per task.
 """
 
 from __future__ import absolute_import, division, print_function
@@ -45,7 +14,7 @@ import os
 try:
     from urllib.parse import urlencode
 except ImportError:
-    from urllib import urlencode  # Python 2
+    from urllib import urlencode
 
 try:
     import urllib3
@@ -217,6 +186,21 @@ class VyOSRestClient:
 
     def image_delete(self, name):
         return self._post("/image", {"op": "delete", "name": name})
+
+    def configure_batch(self, commands):
+        """Send all commands as a single atomic commit."""
+        if self._mode == "httpapi":
+            try:
+                return self._conn.send_request(
+                    endpoint="/configure",
+                    _raw_list=commands,
+                )
+            except ConnectionError as exc:
+                raise VyOSRestError(str(exc))
+            except Exception as exc:
+                raise VyOSRestError(
+                    "configure_batch failed: {e}".format(e=str(exc)),
+                )
 
     def config_file_save(self, path=None):
         payload = {"op": "save"}

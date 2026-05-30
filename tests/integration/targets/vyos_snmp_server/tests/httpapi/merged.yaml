@@ -1,0 +1,38 @@
+---
+- debug:
+    msg: START vyos_snmp_server merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge snmp_server configuration
+      register: result
+      vyos.rest.vyos_snmp_server: &id001
+        config:
+          communities:
+            - name: switches
+              authorization_type: rw
+            - name: bridges
+              clients:
+                - 1.1.1.1
+          contact: admin@example.com
+          listen_addresses:
+            - address: 20.1.1.1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge snmp_server configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_snmp_server: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

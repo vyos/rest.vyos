@@ -1,0 +1,34 @@
+---
+- debug:
+    msg: START vyos_snmp_server replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace snmp_server configuration
+      register: result
+      vyos.rest.vyos_snmp_server: &id001
+        config:
+          communities:
+            - name: routers
+              authorization_type: ro
+          location: "RDU, NC"
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace snmp_server configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_snmp_server: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

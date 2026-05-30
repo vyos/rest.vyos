@@ -62,58 +62,75 @@ class VyOSModule:
     # Write
     # ------------------------------------------------------------------
 
+    # def apply_commands(self, commands):
+    #     """Execute a list of ``(op, path)`` command tuples against the device.
+
+    #     Args:
+    #         commands (list): Each item is a 2-tuple ``(op, path)`` where:
+    #             - *op* is ``"set"`` or ``"delete"``
+    #             - *path* is a list of config path tokens
+
+    #             Optionally a 3-tuple ``(op, path, value)`` for leaf nodes
+    #             that carry a value.
+
+    #     Returns:
+    #         list: Results from each command (dicts with ``op`` and ``path``).
+
+    #     Raises:
+    #         VyOSRestError: If a command fails and cannot be recovered.
+
+    #     Notes:
+    #         **Version-adaptive set:** if a ``set`` is rejected by the device,
+    #         the method retries once with the last path segment removed.
+    #         This handles schema simplifications between VyOS releases
+    #         (e.g. ``allow-client address <prefix>`` -> ``allow-client <prefix>``
+    #         in VyOS 1.5+).
+
+    #         **Idempotent delete:** ``delete`` failures are silently ignored
+    #         (the path is already absent).
+    #     """
+    #     results = []
+
+    #     for cmd in commands:
+    #         # Support two command formats:
+    #         # Tuple: ("set", ["path", "tokens"])  or  ("set", ["path"], "value")
+    #         # Dict:  {"op": "set", "path": ["path", "tokens"]}
+    #         if isinstance(cmd, dict):
+    #             op = cmd["op"]
+    #             path = list(cmd["path"])
+    #             value = cmd.get("value")
+    #         else:
+    #             op = cmd[0]
+    #             path = list(cmd[1])
+    #             value = cmd[2] if len(cmd) > 2 else None
+
+    #         if op == "set":
+    #             results.append(self._apply_set(path, value))
+    #         elif op == "delete":
+    #             results.append(self._apply_delete(path))
+    #         else:
+    #             self._module.fail_json(
+    #                 msg="Unknown command op '{op}' in apply_commands".format(op=op),
+    #             )
+
+    #     return results
+
     def apply_commands(self, commands):
-        """Execute a list of ``(op, path)`` command tuples against the device.
-
-        Args:
-            commands (list): Each item is a 2-tuple ``(op, path)`` where:
-                - *op* is ``"set"`` or ``"delete"``
-                - *path* is a list of config path tokens
-
-                Optionally a 3-tuple ``(op, path, value)`` for leaf nodes
-                that carry a value.
-
-        Returns:
-            list: Results from each command (dicts with ``op`` and ``path``).
-
-        Raises:
-            VyOSRestError: If a command fails and cannot be recovered.
-
-        Notes:
-            **Version-adaptive set:** if a ``set`` is rejected by the device,
-            the method retries once with the last path segment removed.
-            This handles schema simplifications between VyOS releases
-            (e.g. ``allow-client address <prefix>`` -> ``allow-client <prefix>``
-            in VyOS 1.5+).
-
-            **Idempotent delete:** ``delete`` failures are silently ignored
-            (the path is already absent).
-        """
-        results = []
-
+        if not commands:
+            return []
+        payload = []
         for cmd in commands:
-            # Support two command formats:
-            # Tuple: ("set", ["path", "tokens"])  or  ("set", ["path"], "value")
-            # Dict:  {"op": "set", "path": ["path", "tokens"]}
             if isinstance(cmd, dict):
-                op = cmd["op"]
-                path = list(cmd["path"])
-                value = cmd.get("value")
+                op, path = cmd["op"], list(cmd["path"])
             else:
-                op = cmd[0]
-                path = list(cmd[1])
-                value = cmd[2] if len(cmd) > 2 else None
-
-            if op == "set":
-                results.append(self._apply_set(path, value))
-            elif op == "delete":
-                results.append(self._apply_delete(path))
-            else:
-                self._module.fail_json(
-                    msg="Unknown command op '{op}' in apply_commands".format(op=op),
-                )
-
-        return results
+                op, path = cmd[0], list(cmd[1])
+            payload.append({"op": op, "path": path})
+        try:
+            return self._client.configure_batch(payload)
+        except VyOSRestError as exc:
+            self._module.fail_json(
+                msg="apply_commands failed: {e}".format(e=str(exc)),
+            )
 
     def _apply_set(self, path, value=None):
         """Set a config path, retrying with a shortened path on failure."""

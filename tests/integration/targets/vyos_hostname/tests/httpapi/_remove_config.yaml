@@ -1,0 +1,7 @@
+---
+- name: Reset hostname to default
+  vyos.rest.vyos_hostname:
+    config:
+      hostname: vyos
+    state: merged
+  ignore_errors: true

@@ -1,0 +1,19 @@
+---
+- debug:
+    msg: START vyos_hostname gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather hostname configuration
+      register: result
+      vyos.rest.vyos_hostname:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered.hostname == "ansible-test-host"
+
+  always:
+    - include_tasks: _remove_config.yaml

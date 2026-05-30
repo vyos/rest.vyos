@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_snmp_server deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete all snmp_server configuration
+      register: result
+      vyos.rest.vyos_snmp_server: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete snmp_server configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_snmp_server: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

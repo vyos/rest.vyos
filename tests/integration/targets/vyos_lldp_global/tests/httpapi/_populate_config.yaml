@@ -1,0 +1,13 @@
+---
+- name: Populate lldp_global config for testing
+  vyos.rest.vyos_lldp_global:
+    config:
+      enable: true
+      addresses:
+        - 192.0.2.17
+      snmp: enable
+      legacy_protocols:
+        - cdp
+        - sonmp
+    state: merged
+  ignore_errors: true

@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_lldp_global merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge lldp_global configuration
+      register: result
+      vyos.rest.vyos_lldp_global: &id001
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.17
+          snmp: enable
+          legacy_protocols:
+            - cdp
+            - sonmp
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge lldp_global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_global: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

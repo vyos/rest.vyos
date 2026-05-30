@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing lldp_global config
+  vyos.rest.vyos_lldp_global:
+    state: deleted
+  ignore_errors: true

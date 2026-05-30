@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_logging_global deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete all logging_global configuration
+      register: result
+      vyos.rest.vyos_logging_global: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete logging_global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_logging_global: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

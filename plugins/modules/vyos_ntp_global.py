@@ -218,13 +218,12 @@ def build_commands(desired, existing, state):
     cmds = []
 
     if state == "overridden":
-        if existing["allow_clients"]:
-            cmds.append(("delete", ["service", "ntp", "allow-client"]))
-        if existing["listen_addresses"]:
-            cmds.append(("delete", ["service", "ntp", "listen-address"]))
-        if existing["servers"]:
-            cmds.append(("delete", ["service", "ntp", "server"]))
-        state = "merged"
+        state = "replaced"
+
+    if state == "deleted":
+        if existing["servers"] or existing["allow_clients"] or existing["listen_addresses"]:
+            cmds.append(("delete", ["service", "ntp"]))
+        return cmds
 
     cmds += diff_list(
         "allow-client",

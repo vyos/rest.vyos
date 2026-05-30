@@ -1,0 +1,32 @@
+---
+- debug:
+    msg: START vyos_banner merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge banner configuration
+      register: result
+      vyos.rest.vyos_banner: &id001
+        config:
+          banners:
+            - banner: pre-login
+              text: "Ansible test pre-login banner"
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge banner configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_banner: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

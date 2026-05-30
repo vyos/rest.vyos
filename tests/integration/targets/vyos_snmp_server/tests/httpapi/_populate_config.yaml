@@ -1,0 +1,15 @@
+---
+- name: Populate snmp_server config for testing
+  vyos.rest.vyos_snmp_server:
+    config:
+      communities:
+        - name: switches
+          authorization_type: rw
+        - name: bridges
+          clients:
+            - 1.1.1.1
+      contact: admin@example.com
+      listen_addresses:
+        - address: 20.1.1.1
+    state: merged
+  ignore_errors: true

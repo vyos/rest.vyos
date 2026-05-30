@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_route_maps replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace route_maps configuration
+      register: result
+      vyos.rest.vyos_route_maps: &id001
+        config:
+          - route_map: RM-TEST-EXPORT-POLICY
+            entries:
+              - sequence: 10
+                action: permit
+                set:
+                  metric: "10"
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace route_maps configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_route_maps: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

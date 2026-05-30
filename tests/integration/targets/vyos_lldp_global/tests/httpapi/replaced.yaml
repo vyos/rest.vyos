@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_lldp_global replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace lldp_global configuration
+      register: result
+      vyos.rest.vyos_lldp_global: &id001
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.99
+          legacy_protocols:
+            - cdp
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace lldp_global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_global: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

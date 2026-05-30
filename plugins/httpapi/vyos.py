@@ -105,11 +105,15 @@ class HttpApi(HttpApiBase):
         Raises:
             ConnectionError: on HTTP error or VyOS success=false response.
         """
+
         try:
             api_key = self._get_api_key()
-            body = json.dumps(payload)
-            form_data = urlencode({"data": body, "key": api_key})
+            if "_raw_list" in payload:
+                body = json.dumps(payload["_raw_list"])
+            else:
+                body = json.dumps(payload)
 
+            form_data = urlencode({"data": body, "key": api_key})
             response, response_data = self.connection.send(
                 endpoint,
                 data=form_data,

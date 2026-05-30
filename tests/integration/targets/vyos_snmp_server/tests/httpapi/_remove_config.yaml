@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing snmp_server config
+  vyos.rest.vyos_snmp_server:
+    state: deleted
+  ignore_errors: true
