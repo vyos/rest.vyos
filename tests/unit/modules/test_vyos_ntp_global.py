@@ -138,26 +138,28 @@ class TestVyOSNtpGlobalBuildCommands(unittest.TestCase):
         )
 
     def test_deleted_removes_all(self):
-        want = self._want(servers={}, allow_clients=[], listen_addresses=[])
         have = self._have(
             servers={"time1.vyos.net": []},
             allow_clients=["10.0.0.0/24"],
             listen_addresses=["192.168.1.1"],
         )
-        cmds = build_commands(want, have, "deleted")
-        paths = [c[1] for c in cmds]
-        self.assertIn(["service", "ntp", "server", "time1.vyos.net"], paths)
-        self.assertIn(["service", "ntp", "allow-client", "address", "10.0.0.0/24"], paths)
+        cmds = build_commands({}, have, "deleted")
+        self.assertEqual(len(cmds), 1)
+        self.assertEqual(cmds[0], ("delete", ["service", "ntp"]))
+
+    def test_deleted_idempotent_when_empty(self):
+        have = self._have(servers={}, allow_clients=[], listen_addresses=[])
+        cmds = build_commands({}, have, "deleted")
+        self.assertEqual(cmds, [])
 
     def test_overridden_deletes_then_merges(self):
         want = self._want(servers={"new.server.com": []})
         have = self._have(servers={"old.server.com": []})
         cmds = build_commands(want, have, "overridden")
-        paths = [c[1] for c in cmds]
-        # overridden deletes existing server subtree first
-        self.assertIn(["service", "ntp", "server"], paths)
-        # then adds new server
-        self.assertIn(["service", "ntp", "server", "new.server.com"], paths)
+        ops_paths = [(c[0], c[1]) for c in cmds]
+        self.assertIn(("delete", ["service", "ntp", "server", "old.server.com"]), ops_paths)
+        self.assertIn(("set", ["service", "ntp", "server", "new.server.com"]), ops_paths)
+        self.assertNotIn(("delete", ["service", "ntp", "server"]), ops_paths)
 
     def test_no_commands_when_already_correct(self):
         state = {"allow_clients": ["10.0.0.0/24"], "listen_addresses": [], "servers": {}}
