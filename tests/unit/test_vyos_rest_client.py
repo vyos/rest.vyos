@@ -3,6 +3,7 @@
 import json
 
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs
 
 import pytest
 
@@ -40,6 +41,14 @@ def _ok_response(data):
     return mock_resp
 
 
+def _get_payload(mock_open):
+    """Extract and decode the JSON payload from a mocked open_url call."""
+    call_args = mock_open.call_args
+    data_field = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
+    parsed = parse_qs(data_field)
+    return json.loads(parsed["data"][0])
+
+
 class TestVyOSRestClientInit:
     def test_base_url(self):
         client = _make_client()
@@ -58,10 +67,10 @@ class TestConfigureSet:
             return_value=_ok_response(None),
         ) as mock_open:
             client.configure_set(["interfaces", "ethernet", "eth0"])
-            call_args = mock_open.call_args
-            data_field = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
-            assert '"op": "set"' in data_field
-            assert '"interfaces"' in data_field
+            payload = _get_payload(mock_open)
+            assert payload["op"] == "set"
+            assert payload["path"] == ["interfaces", "ethernet", "eth0"]
+            assert "value" not in payload
 
     def test_set_path_with_value(self):
         client = _make_client()
@@ -70,9 +79,10 @@ class TestConfigureSet:
             return_value=_ok_response(None),
         ) as mock_open:
             client.configure_set(["system", "host-name"], "vyos")
-            call_args = mock_open.call_args
-            data_field = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
-            assert '"value": "vyos"' in data_field
+            payload = _get_payload(mock_open)
+            assert payload["op"] == "set"
+            assert payload["path"] == ["system", "host-name"]
+            assert payload["value"] == "vyos"
 
 
 class TestConfigureDelete:
@@ -83,9 +93,9 @@ class TestConfigureDelete:
             return_value=_ok_response(None),
         ) as mock_open:
             client.configure_delete(["protocols", "static", "route"])
-            call_args = mock_open.call_args
-            data_field = call_args[1]["data"] if "data" in call_args[1] else call_args[0][1]
-            assert '"op": "delete"' in data_field
+            payload = _get_payload(mock_open)
+            assert payload["op"] == "delete"
+            assert payload["path"] == ["protocols", "static", "route"]
 
 
 class TestRetrieve:
@@ -105,7 +115,7 @@ class TestRetrieve:
             "ansible_collections.vyos.rest.plugins.module_utils.vyos_rest.open_url",
             return_value=_ok_response(True),
         ):
-            assert client.retrieve_exists(["service", "ntp"]) is True
+            assert client.retrieve_exists(["service", "ssh"]) is True
 
     def test_exists_false(self):
         client = _make_client()
