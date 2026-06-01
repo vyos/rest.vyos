@@ -4,12 +4,11 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
+import json
 import os
-import sys
 import unittest
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+from unittest.mock import MagicMock
 
 from ansible_collections.vyos.rest.plugins.modules.vyos_route_maps import (
     _want_to_api_match,
@@ -18,7 +17,21 @@ from ansible_collections.vyos.rest.plugins.modules.vyos_route_maps import (
     get_running_config,
 )
 
-from tests.unit.modules.base import VyOSModuleTestCase, load_fixture
+
+def load_fixture(filename):
+    fixtures_dir = os.path.join(os.path.dirname(__file__), "..", "fixtures")
+    path = os.path.join(fixtures_dir, filename)
+    with open(path) as f:
+        return json.load(f)
+
+
+class VyOSModuleTestCase(unittest.TestCase):
+    def setUp(self):
+        self.mock_vyos = MagicMock()
+        self.mock_vyos.get_config = MagicMock(return_value={})
+
+    def set_running_config(self, data):
+        self.mock_vyos.get_config.return_value = data
 
 
 class TestVyOSRouteMapsGetRunning(VyOSModuleTestCase):
