@@ -34,7 +34,7 @@ Companion to `vyos/vyos.vyos` (the SSH-based Ansible collection). Both target Vy
 
 ## Conventions
 
-- Default branch `current`.
+- Default branch `production`.
 - Commit / PR title format: `component: T12345: description` (Phorge task ID at https://vyos.dev).
 - Format: `black` (line length 100). Test runner: `pytest` with `pytest-xdist`.
 - Has `CODEOWNERS` (audit baseline). Public, GPL-licensed.
