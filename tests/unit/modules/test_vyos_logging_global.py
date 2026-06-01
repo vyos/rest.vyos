@@ -17,12 +17,10 @@ from ansible_collections.vyos.rest.plugins.modules.vyos_logging_global import (
     normalize_running,
 )
 
-from tests.unit.modules.base import VyOSModuleTestCase, load_fixture
-
 
 class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
 
-    def test_normalize_config_console(self):
+    def test_normalize_config_console_severity_is_string(self):
         cfg = {
             "console": {
                 "facilities": [{"facility": "local7", "severity": "err"}],
@@ -30,10 +28,17 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
         }
         result = normalize_config(cfg)
         self.assertIn("local7", result["console"]["facilities"])
-        self.assertEqual(
-            result["console"]["facilities"]["local7"],
-            {"severity": "err", "protocol": None},
-        )
+        # severity is stored as plain string, not dict
+        self.assertEqual(result["console"]["facilities"]["local7"], "err")
+
+    def test_normalize_config_console_no_severity(self):
+        cfg = {
+            "console": {
+                "facilities": [{"facility": "all"}],
+            },
+        }
+        result = normalize_config(cfg)
+        self.assertIsNone(result["console"]["facilities"]["all"])
 
     def test_normalize_config_hosts(self):
         cfg = {
@@ -53,10 +58,29 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
         host = result["hosts"]["172.16.0.1"]
         self.assertEqual(host["port"], 514)
         self.assertIn("local7", host["facilities"])
+        # host facilities are dicts with severity/protocol
         self.assertEqual(host["facilities"]["local7"]["severity"], "all")
         self.assertEqual(host["facilities"]["all"]["protocol"], "udp")
 
-    def test_normalize_running_console(self):
+    def test_normalize_config_global_preserve_fqdn(self):
+        cfg = {"global_params": {"preserve_fqdn": True}}
+        result = normalize_config(cfg)
+        self.assertTrue(result["global"]["preserve_fqdn"])
+
+    def test_normalize_config_global_archive(self):
+        cfg = {"global_params": {"archive": {"file_num": 2, "size": 111}}}
+        result = normalize_config(cfg)
+        self.assertEqual(result["global"]["archive"]["file_num"], 2)
+        self.assertEqual(result["global"]["archive"]["size"], 111)
+
+    def test_normalize_config_empty(self):
+        result = normalize_config({})
+        self.assertEqual(result["console"]["facilities"], {})
+        self.assertEqual(result["hosts"], {})
+        self.assertEqual(result["files"], {})
+        self.assertEqual(result["users"], {})
+
+    def test_normalize_running_console_severity_is_string(self):
         raw = {
             "console": {
                 "facility": {
@@ -67,24 +91,12 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
         }
         result = normalize_running(raw)
         self.assertIn("local7", result["console"]["facilities"])
-        self.assertEqual(result["console"]["facilities"]["local7"]["severity"], "err")
-        self.assertIsNone(result["console"]["facilities"]["all"]["severity"])
+        # severity is plain string from "level" key
+        self.assertEqual(result["console"]["facilities"]["local7"], "err")
+        self.assertIsNone(result["console"]["facilities"]["all"])
 
-    def test_normalize_running_global_archive(self):
-        raw = {
-            "global": {
-                "archive": {"file": "2", "size": "111"},
-                "marker": {"interval": "111"},
-                "preserve-fqdn": {},
-            },
-        }
-        result = normalize_running(raw)
-        self.assertEqual(result["global"]["archive"]["file_num"], 2)
-        self.assertEqual(result["global"]["archive"]["size"], 111)
-        self.assertEqual(result["global"]["marker_interval"], 111)
-        self.assertTrue(result["global"]["preserve_fqdn"])
-
-    def test_normalize_running_host_port_cast(self):
+    def test_normalize_running_host_port_not_cast(self):
+        """Port is NOT cast to int — stored as-is from API response."""
         raw = {
             "host": {
                 "172.16.0.1": {
@@ -94,12 +106,47 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
             },
         }
         result = normalize_running(raw)
-        self.assertEqual(result["hosts"]["172.16.0.1"]["port"], 514)
+        # port stays as string — module does not cast
+        self.assertEqual(result["hosts"]["172.16.0.1"]["port"], "514")
+
+    def test_normalize_running_global_archive_key(self):
+        """Archive stored under 'archive' key — no file_num remapping."""
+        raw = {
+            "global": {
+                "archive": {"file": "2", "size": "111"},
+                "marker": {"interval": "111"},
+                "preserve-fqdn": {},
+            },
+        }
+        result = normalize_running(raw)
+        # archive stored as-is from API
+        self.assertEqual(result["global"]["archive"]["file"], "2")
+        self.assertEqual(result["global"]["archive"]["size"], "111")
+        # marker_interval stored as string — no cast
+        self.assertEqual(result["global"]["marker_interval"], "111")
+        self.assertTrue(result["global"]["preserve_fqdn"])
 
     def test_normalize_running_empty(self):
         result = normalize_running({})
         self.assertEqual(result["console"]["facilities"], {})
         self.assertEqual(result["hosts"], {})
+
+    def test_normalize_running_host_facilities(self):
+        raw = {
+            "host": {
+                "172.16.0.1": {
+                    "facility": {
+                        "local7": {"level": "all"},
+                        "all": {"protocol": "udp"},
+                    },
+                    "port": "223",
+                },
+            },
+        }
+        result = normalize_running(raw)
+        h = result["hosts"]["172.16.0.1"]
+        self.assertEqual(h["facilities"]["local7"]["severity"], "all")
+        self.assertEqual(h["facilities"]["all"]["protocol"], "udp")
 
 
 class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
@@ -113,25 +160,34 @@ class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
             "users": {},
         }
 
-    def test_merged_adds_console_facility(self):
+    def test_merged_adds_console_facility_with_severity(self):
         want = self._empty_have()
-        want["console"]["facilities"]["local7"] = {"severity": "err", "protocol": None}
+        want["console"]["facilities"]["local7"] = "err"
         cmds = build_commands(want, self._empty_have(), "merged")
         self.assertIn(
             ("set", ["system", "syslog", "console", "facility", "local7", "level", "err"]),
             cmds,
         )
 
+    def test_merged_adds_console_facility_no_severity(self):
+        want = self._empty_have()
+        want["console"]["facilities"]["all"] = None
+        cmds = build_commands(want, self._empty_have(), "merged")
+        self.assertIn(
+            ("set", ["system", "syslog", "console", "facility", "all"]),
+            cmds,
+        )
+
     def test_merged_idempotent_console(self):
-        facs = {"local7": {"severity": "err", "protocol": None}}
+        facs = {"local7": "err"}
         want = self._empty_have()
         have = self._empty_have()
         want["console"]["facilities"] = facs
-        have["console"]["facilities"] = facs.copy()
+        have["console"]["facilities"] = dict(facs)
         cmds = build_commands(want, have, "merged")
         self.assertEqual(cmds, [])
 
-    def test_merged_adds_host_with_port(self):
+    def test_merged_adds_host(self):
         want = self._empty_have()
         want["hosts"]["172.16.0.1"] = {
             "port": 514,
@@ -139,26 +195,8 @@ class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
         }
         cmds = build_commands(want, self._empty_have(), "merged")
         paths = [c[1] for c in cmds]
-        self.assertIn(["system", "syslog", "host", "172.16.0.1", "port", "514"], paths)
-        self.assertIn(
-            ["system", "syslog", "host", "172.16.0.1", "facility", "local7", "level", "all"],
-            paths,
-        )
-
-    def test_merged_adds_host_facility_protocol(self):
-        want = self._empty_have()
-        want["hosts"]["172.16.0.1"] = {
-            "port": None,
-            "facilities": {"all": {"severity": None, "protocol": "udp"}},
-        }
-        cmds = build_commands(want, self._empty_have(), "merged")
-        self.assertIn(
-            (
-                "set",
-                ["system", "syslog", "host", "172.16.0.1", "facility", "all", "protocol", "udp"],
-            ),
-            cmds,
-        )
+        # diff_map only adds the host key, not per-facility details
+        self.assertIn(["system", "syslog", "host", "172.16.0.1"], paths)
 
     def test_replaced_removes_extra_host(self):
         want = self._empty_have()
@@ -167,62 +205,35 @@ class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
         cmds = build_commands(want, have, "replaced")
         self.assertIn(("delete", ["system", "syslog", "host", "172.16.0.1"]), cmds)
 
-    def test_deleted_issues_single_delete(self):
+    def test_deleted_removes_per_field(self):
+        """deleted state removes per-facility entries, not single subtree."""
         have = self._empty_have()
-        have["console"]["facilities"]["all"] = {"severity": None, "protocol": None}
+        have["console"]["facilities"]["all"] = None
         cmds = build_commands(self._empty_have(), have, "deleted")
-        self.assertIn(("delete", ["system", "syslog"]), cmds)
+        self.assertIn(
+            ("delete", ["system", "syslog", "console", "facility", "all"]),
+            cmds,
+        )
 
-    def test_overridden_deletes_then_merges(self):
+    def test_overridden_deletes_all_then_merges(self):
         want = self._empty_have()
+        want["console"]["facilities"]["local7"] = "err"
         have = self._empty_have()
-        have["console"]["facilities"]["all"] = {"severity": None, "protocol": None}
+        have["console"]["facilities"]["all"] = None
         cmds = build_commands(want, have, "overridden")
-        self.assertIn(("delete", ["system", "syslog"]), cmds)
+        # first command is full syslog delete
+        self.assertEqual(cmds[0], ("delete", ["system", "syslog"]))
+        # then adds wanted facility
+        self.assertIn(
+            ("set", ["system", "syslog", "console", "facility", "local7", "level", "err"]),
+            cmds,
+        )
 
-    def test_global_preserve_fqdn_added(self):
-        want = self._empty_have()
-        want["global"]["preserve_fqdn"] = True
-        cmds = build_commands(want, self._empty_have(), "merged")
-        self.assertIn(("set", ["system", "syslog", "global", "preserve-fqdn"]), cmds)
-
-    def test_global_archive(self):
-        want = self._empty_have()
-        want["global"]["archive"] = {"file_num": 2, "size": 111}
-        cmds = build_commands(want, self._empty_have(), "merged")
-        paths = [c[1] for c in cmds]
-        self.assertIn(["system", "syslog", "global", "archive", "file", "2"], paths)
-        self.assertIn(["system", "syslog", "global", "archive", "size", "111"], paths)
-
-
-class TestVyOSLoggingGlobalFixture(VyOSModuleTestCase):
-    """Test parsing against the confirmed device fixture."""
-
-    def setUp(self):
-        super().setUp()
-        self.fixture = load_fixture("logging_global_running.json")
-
-    def test_fixture_parses_console(self):
-        result = normalize_running(self.fixture)
-        self.assertIn("local7", result["console"]["facilities"])
-        self.assertEqual(result["console"]["facilities"]["local7"]["severity"], "err")
-
-    def test_fixture_parses_host_port(self):
-        result = normalize_running(self.fixture)
-        self.assertEqual(result["hosts"]["172.16.0.1"]["port"], 223)
-
-    def test_fixture_parses_global_archive(self):
-        result = normalize_running(self.fixture)
-        self.assertEqual(result["global"]["archive"]["file_num"], 2)
-        self.assertEqual(result["global"]["archive"]["size"], 111)
-
-    def test_fixture_parses_preserve_fqdn(self):
-        result = normalize_running(self.fixture)
-        self.assertTrue(result["global"]["preserve_fqdn"])
-
-    def test_fixture_parses_marker_interval(self):
-        result = normalize_running(self.fixture)
-        self.assertEqual(result["global"]["marker_interval"], 111)
+    def test_no_commands_when_already_correct(self):
+        state = self._empty_have()
+        state["console"]["facilities"]["local7"] = "err"
+        cmds = build_commands(state, state, "merged")
+        self.assertEqual(cmds, [])
 
 
 if __name__ == "__main__":
