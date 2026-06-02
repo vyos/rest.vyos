@@ -143,7 +143,6 @@ from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
 
 _BASE = ["policy", "route-map"]
 
-# Argspec key → API path segments under "set"
 _SET_MAP = {
     "as_path_prepend": ["as-path", "prepend"],
     "as_path_exclude": ["as-path", "exclude"],
@@ -161,7 +160,6 @@ _SET_MAP = {
     "table": ["table"],
 }
 
-# Argspec key → API path segments under "match"
 _MATCH_MAP = {
     "interface": ["interface"],
     "metric": ["metric"],
@@ -171,23 +169,11 @@ _MATCH_MAP = {
 }
 
 
-# ------------------------------------------------------------
-# Parsing: API response → argspec list
-# ------------------------------------------------------------
-
-
 def get_running_config(vyos):
-    """
-    Fetch current route map config in argspec list format.
-
-    API returns: {"route-map": {"RM-NAME": {"rule": {"10": {...}}}}}
-    Note the extra "route-map" nesting level that must be unwrapped.
-    """
     raw = vyos.get_config(["policy", "route-map"])
     if not raw or not isinstance(raw, dict):
         return []
 
-    # API wraps everything under a "route-map" key — unwrap it
     rm_data = raw.get("route-map", raw)
     if not isinstance(rm_data, dict):
         return []
@@ -211,7 +197,6 @@ def get_running_config(vyos):
                 rule["call"] = rule_data["call"]
             if rule_data.get("continue"):
                 rule["continue_sequence"] = int(rule_data["continue"])
-            # match and set returned as raw API dicts
             if rule_data.get("match"):
                 rule["match"] = rule_data["match"]
             if rule_data.get("set"):
@@ -223,13 +208,7 @@ def get_running_config(vyos):
     return result
 
 
-# ------------------------------------------------------------
-# Command builders
-# ------------------------------------------------------------
-
-
 def _match_cmds(rbase, match):
-    """Convert match dict to API path commands."""
     cmds = []
     if not match:
         return cmds
@@ -259,7 +238,6 @@ def _match_cmds(rbase, match):
 
 
 def _set_cmds(rbase, setv):
-    """Convert set dict to API path commands."""
     cmds = []
     if not setv:
         return cmds
@@ -297,14 +275,6 @@ def _set_cmds(rbase, setv):
 
 
 def _want_to_api_set(setv):
-    """
-    Convert argspec set dict to the nested API shape for comparison with have.
-
-    API stores:
-      as_path_exclude "111" → {"as-path": {"exclude": "111"}}
-      metric "5"           → {"metric": "5"}
-      aggregator.as 100    → {"aggregator": {"as": "100"}}
-    """
     if not setv:
         return {}
     api = {}
@@ -325,10 +295,6 @@ def _want_to_api_set(setv):
 
 
 def _want_to_api_match(match):
-    """
-    Convert argspec match dict to API shape for comparison with have.
-    Flat fields map directly; prefix_list nests under ip.address.
-    """
     if not match:
         return {}
     api = {}
@@ -343,15 +309,10 @@ def _want_to_api_match(match):
 
 
 def _rule_cmds(rm_name, rule, have_rule):
-    """
-    Build commands for a single rule, comparing against have_rule to skip
-    fields that are already correctly configured (idempotency).
-    """
     cmds = []
     seq = str(rule["sequence"])
     rbase = _BASE + [rm_name, "rule", seq]
 
-    # Scalar fields
     if rule.get("action") and rule["action"] != have_rule.get("action"):
         cmds.append(("set", rbase + ["action", rule["action"]]))
     if rule.get("description") and rule["description"] != have_rule.get("description"):
@@ -363,12 +324,10 @@ def _rule_cmds(rm_name, rule, have_rule):
     ):
         cmds.append(("set", rbase + ["continue", str(rule["continue_sequence"])]))
 
-    # match — convert want to API shape, compare top-level keys against have
     want_match_api = _want_to_api_match(rule.get("match"))
     have_match = have_rule.get("match") or {}
     changed_match = {k: v for k, v in want_match_api.items() if have_match.get(k) != v}
     if changed_match:
-        # rebuild from original argspec for changed keys only
         match = rule.get("match") or {}
         changed_keys = set(changed_match.keys())
         partial_match = {
@@ -382,19 +341,15 @@ def _rule_cmds(rm_name, rule, have_rule):
             partial_match = match
         cmds += _match_cmds(rbase, partial_match)
 
-    # set — convert want to API shape, compare top-level keys against have
     want_set_api = _want_to_api_set(rule.get("set"))
     have_set = have_rule.get("set") or {}
     if want_set_api != have_set:
-        # something changed — regenerate all set commands
-        # (simpler than surgical per-key diff for deeply nested structures)
         cmds += _set_cmds(rbase, rule.get("set"))
 
     return cmds
 
 
 def build_commands(config, have_raw, state):
-    """Build command tuples to move from have → want."""
     cmds = []
 
     if state == "deleted":
@@ -418,10 +373,20 @@ def build_commands(config, have_raw, state):
         have_rm = have_map.get(rm_name, {})
 
         if state == "replaced" and rm_name in have_map:
-            cmds.append(("delete", _BASE + [rm_name]))
-            have_rm = {}
+            # Only delete and rebuild if something actually differs
+            have_entries = {str(r["sequence"]): r for r in (have_rm.get("entries") or [])}
+            want_seqs = {str(r["sequence"]) for r in (rm.get("entries") or [])}
+            extra_seqs = set(have_entries) - want_seqs
+            test_cmds = []
+            for rule in rm.get("entries") or []:
+                have_rule = have_entries.get(str(rule["sequence"]), {})
+                test_cmds += _rule_cmds(rm_name, rule, have_rule)
+            if test_cmds or extra_seqs:
+                cmds.append(("delete", _BASE + [rm_name]))
+                have_rm = {}
+            else:
+                continue  # already matches — idempotent
 
-        # Index have entries by sequence for O(1) lookup
         have_entries = {str(r["sequence"]): r for r in (have_rm.get("entries") or [])}
 
         for rule in rm.get("entries") or []:
@@ -430,10 +395,6 @@ def build_commands(config, have_raw, state):
 
     return cmds
 
-
-# ------------------------------------------------------------
-# Argument spec — minimal, VyOS API validates field values
-# ------------------------------------------------------------
 
 ARGUMENT_SPEC = dict(
     config=dict(type="list", elements="dict"),
@@ -444,13 +405,7 @@ ARGUMENT_SPEC = dict(
 )
 
 
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
-
-
 def main():
-
     module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
 
     vyos = VyOSModule(module)
