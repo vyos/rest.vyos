@@ -1,11 +1,14 @@
 ---
-- name: Populate banner config for testing
+- name: Populate pre-login banner for testing
   vyos.rest.vyos_banner:
     config:
-      banners:
-        - banner: pre-login
-          text: "Ansible test pre-login banner"
-        - banner: post-login
-          text: "Ansible test post-login banner"
+      banner: pre-login
+      text: "Ansible test pre-login banner"
     state: merged
-  ignore_errors: true
+
+- name: Populate post-login banner for testing
+  vyos.rest.vyos_banner:
+    config:
+      banner: post-login
+      text: "Ansible test post-login banner"
+    state: merged

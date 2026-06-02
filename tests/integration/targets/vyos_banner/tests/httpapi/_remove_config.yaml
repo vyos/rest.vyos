@@ -1,5 +1,5 @@
 ---
-- name: Remove pre-existing banner config
+- name: Remove all banners
   vyos.rest.vyos_banner:
     state: deleted
   ignore_errors: true

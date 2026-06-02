@@ -6,16 +6,18 @@
 - include_tasks: _populate_config.yaml
 
 - block:
-    - name: Delete all banner configuration
+    - name: Delete pre-login banner
       register: result
       vyos.rest.vyos_banner: &id001
+        config:
+          banner: pre-login
         state: deleted
 
     - assert:
         that:
           - result.changed == true
 
-    - name: Delete banner configuration (IDEMPOTENT)
+    - name: Delete pre-login banner (IDEMPOTENT)
       register: result
       vyos.rest.vyos_banner: *id001
 

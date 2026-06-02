@@ -73,7 +73,6 @@ Parameters
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
@@ -157,8 +156,8 @@ Parameters
                         <div>Desired state of the banner configuration.</div>
                         <div><code>merged</code> - set the banner if it differs from the current value.</div>
                         <div><code>replaced</code> - replace the banner text unconditionally.</div>
-                        <div><code>deleted</code> - remove the banner.</div>
-                        <div><code>gathered</code> - return the current banner in <em>gathered</em> without making any changes.</div>
+                        <div><code>deleted</code> - remove the banner. If <code>config.banner</code> is omitted, both pre-login and post-login banners are removed.</div>
+                        <div><code>gathered</code> - return the current banner in <em>gathered</em> without making any changes. If <code>config.banner</code> is omitted, all banners are returned.</div>
                 </td>
             </tr>
             <tr>
@@ -231,16 +230,25 @@ Examples
           text: "Welcome. Authorised access only."
         state: replaced
 
-    - name: Remove pre-login banner
+    - name: Remove pre-login banner only
       vyos.rest.vyos_banner:
         config:
           banner: pre-login
+        state: deleted
+
+    - name: Remove all banners
+      vyos.rest.vyos_banner:
         state: deleted
 
     - name: Read current pre-login banner without changing it
       vyos.rest.vyos_banner:
         config:
           banner: pre-login
+        state: gathered
+      register: result
+
+    - name: Read all banners
+      vyos.rest.vyos_banner:
         state: gathered
       register: result
 
