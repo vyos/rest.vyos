@@ -10,7 +10,7 @@ import json
 import os
 import unittest
 
-from unittest.mock import MagicMock, patch  # noqa: F401
+from unittest.mock import MagicMock  # noqa: F401
 
 
 def load_fixture(filename):

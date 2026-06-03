@@ -73,7 +73,6 @@ options:
     description:
       - API key configured on the device.
     type: str
-    no_log: true
   timeout:
     description:
       - Request timeout in seconds.

@@ -68,7 +68,6 @@ options:
   api_key:
     description: REST API key (not needed when ansible_httpapi_api_key is set).
     type: str
-    no_log: true
   timeout:
     description: Request timeout in seconds.
     type: int
