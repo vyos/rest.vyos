@@ -1,4 +1,6 @@
 ---
+- ansible.builtin.include_tasks: _remove_config.yaml
+
 - name: Populate snmp_server config for testing
   vyos.rest.vyos_snmp_server:
     config:
@@ -12,4 +14,3 @@
       listen_addresses:
         - address: 20.1.1.1
     state: merged
-  ignore_errors: true

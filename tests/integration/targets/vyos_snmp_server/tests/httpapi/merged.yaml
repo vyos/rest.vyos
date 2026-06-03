@@ -2,8 +2,6 @@
 - debug:
     msg: START vyos_snmp_server merged integration tests on connection={{ ansible_connection }}
 
-- include_tasks: _remove_config.yaml
-
 - block:
     - name: Merge snmp_server configuration
       register: result
