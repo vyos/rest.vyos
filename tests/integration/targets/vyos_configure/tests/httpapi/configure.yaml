@@ -1,0 +1,52 @@
+---
+- debug:
+    msg: START vyos_configure integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Set a loopback address via vyos_configure
+      register: result
+      vyos.rest.vyos_configure:
+        commands:
+          - set interfaces loopback lo address 192.0.2.100/32
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length == 1
+          - result.commands[0][0] == "set"
+          - result.commands[0][1] == ["interfaces", "loopback", "lo", "address", "192.0.2.100/32"]
+
+    - name: Set multiple commands in one atomic commit
+      register: result
+      vyos.rest.vyos_configure:
+        commands:
+          - set interfaces loopback lo address 192.0.2.101/32
+          - set interfaces loopback lo address 192.0.2.102/32
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length == 2
+
+    - name: Delete loopback addresses
+      register: result
+      vyos.rest.vyos_configure:
+        commands:
+          - delete interfaces loopback lo address 192.0.2.100/32
+          - delete interfaces loopback lo address 192.0.2.101/32
+          - delete interfaces loopback lo address 192.0.2.102/32
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length == 3
+          - result.commands[0][0] == "delete"
+
+  always:
+    - name: Cleanup — remove test loopback addresses
+      vyos.rest.vyos_configure:
+        commands:
+          - delete interfaces loopback lo address 192.0.2.100/32
+          - delete interfaces loopback lo address 192.0.2.101/32
+          - delete interfaces loopback lo address 192.0.2.102/32
+      ignore_errors: true
