@@ -1,0 +1,5 @@
+---
+- name: Add dummy loopback address for SNMP listen test
+  vyos.rest.vyos_configure:
+    commands:
+      - set interfaces loopback lo address 20.1.1.1/32

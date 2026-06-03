@@ -1,0 +1,31 @@
+{
+  "route-map": {
+    "RM-TEST-EXPORT-POLICY": {
+      "rule": {
+        "10": {
+          "action": "permit",
+          "match": { "peer": "192.0.2.32" },
+          "set": {
+            "aggregator": { "as": "100" },
+            "as-path": { "exclude": "111" },
+            "metric": "5"
+          }
+        }
+      }
+    },
+    "rm1": {
+      "rule": {
+        "10": {
+          "action": "permit",
+          "match": { "peer": "192.0.2.32" },
+          "set": {
+            "aggregator": { "as": "100" },
+            "as-path": { "exclude": "111" },
+            "large-community": { "none": {} },
+            "metric": "5"
+          }
+        }
+      }
+    }
+  }
+}

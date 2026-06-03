@@ -1,0 +1,5 @@
+---
+- name: Remove dummy loopback address
+  vyos.rest.vyos_configure:
+    commands:
+      - delete interfaces loopback lo address 20.1.1.1/32

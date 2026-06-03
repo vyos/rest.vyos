@@ -1,0 +1,24 @@
+---
+- name: Collect all httpapi test cases
+  ansible.builtin.find:
+    paths: "{{ role_path }}/tests/httpapi"
+    patterns: "{{ testcase }}.yaml"
+    use_regex: true
+  register: test_cases
+  delegate_to: localhost
+
+- name: Set test_items
+  ansible.builtin.set_fact:
+    test_items: "{{ test_cases.files | map(attribute='path') | list }}"
+
+- name: Run test case (connection=httpapi)
+  ansible.builtin.include_tasks: "{{ test_case_to_run }}"
+  vars:
+    ansible_connection: ansible.netcommon.httpapi
+    ansible_network_os: vyos.rest.vyos
+  with_items: "{{ test_items }}"
+  loop_control:
+    loop_var: test_case_to_run
+
+- name: Post-test cleanup
+  ansible.builtin.include_tasks: cleanup.yaml

@@ -18,6 +18,7 @@ Version added: 1.0.0
 Synopsis
 --------
 - Manage LLDP global configuration on VyOS via REST API.
+- Uses ``ansible_connection=ansible.netcommon.httpapi``.
 
 
 
@@ -45,6 +46,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>LLDP global configuration.</div>
                 </td>
             </tr>
                                 <tr>
@@ -61,6 +63,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of management addresses to advertise.</div>
                 </td>
             </tr>
             <tr>
@@ -80,6 +83,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Enable LLDP service.</div>
                 </td>
             </tr>
             <tr>
@@ -102,6 +106,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Legacy protocols to support.</div>
                 </td>
             </tr>
             <tr>
@@ -117,7 +122,9 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div><code>enable</code> or <code>disable</code>.</div>
+                        <div><code>enable</code> to enable LLDP SNMP subagent.</div>
+                        <div><code>disable</code> to disable it.</div>
+                        <div>Requires SNMP service to be configured on the device.</div>
                 </td>
             </tr>
 
@@ -139,6 +146,10 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div><code>merged</code> - merge config with existing.</div>
+                        <div><code>replaced</code> - replace existing config with provided.</div>
+                        <div><code>deleted</code> - delete LLDP configuration.</div>
+                        <div><code>gathered</code> - return current config without changes.</div>
                 </td>
             </tr>
     </table>
@@ -152,13 +163,33 @@ Examples
 
 .. code-block:: yaml
 
-    - vyos.rest.vyos_lldp_global:
+    - name: Enable LLDP with management address and legacy protocols
+      vyos.rest.vyos_lldp_global:
         config:
           enable: true
-          addresses: [192.0.2.17]
-          snmp: enable
-          legacy_protocols: [cdp, fdp]
+          addresses:
+            - 192.0.2.17
+          legacy_protocols:
+            - cdp
+            - fdp
         state: merged
+
+    - name: Replace LLDP configuration
+      vyos.rest.vyos_lldp_global:
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.99
+        state: replaced
+
+    - name: Delete all LLDP configuration
+      vyos.rest.vyos_lldp_global:
+        state: deleted
+
+    - name: Gather current LLDP configuration
+      vyos.rest.vyos_lldp_global:
+        state: gathered
+      register: result
 
 
 
@@ -185,6 +216,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changed</td>
                 <td>
+                            <div>LLDP configuration after the module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -199,6 +231,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
+                            <div>LLDP configuration before the module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -213,6 +246,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
+                            <div>List of commands sent to the device.</div>
                     <br/>
                 </td>
             </tr>
@@ -227,6 +261,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when state is gathered</td>
                 <td>
+                            <div>Current LLDP configuration from the device.</div>
                     <br/>
                 </td>
             </tr>

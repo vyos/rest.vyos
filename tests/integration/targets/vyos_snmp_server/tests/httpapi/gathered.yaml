@@ -1,0 +1,19 @@
+---
+- debug:
+    msg: START vyos_snmp_server gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather snmp_server configuration
+      register: result
+      vyos.rest.vyos_snmp_server:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered is defined
+
+  always:
+    - include_tasks: _remove_config.yaml

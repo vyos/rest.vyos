@@ -1,0 +1,17 @@
+---
+- name: Populate route_maps config for testing
+  vyos.rest.vyos_route_maps:
+    config:
+      - route_map: RM-TEST-EXPORT-POLICY
+        entries:
+          - sequence: 10
+            action: permit
+            match:
+              peer: 192.0.2.32
+            set:
+              metric: "5"
+              as_path_exclude: "111"
+              aggregator:
+                as: 100
+    state: merged
+  ignore_errors: true

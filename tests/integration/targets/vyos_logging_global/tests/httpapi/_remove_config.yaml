@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing logging_global config
+  vyos.rest.vyos_logging_global:
+    state: deleted
+  ignore_errors: true

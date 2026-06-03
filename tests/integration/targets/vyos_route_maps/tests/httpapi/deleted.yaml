@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_route_maps deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete all route_maps configuration
+      register: result
+      vyos.rest.vyos_route_maps: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete route_maps configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_route_maps: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing route_maps config
+  vyos.rest.vyos_route_maps:
+    state: deleted
+  ignore_errors: true

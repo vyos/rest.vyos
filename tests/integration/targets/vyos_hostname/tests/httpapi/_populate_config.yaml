@@ -1,0 +1,6 @@
+---
+- name: Populate hostname for testing
+  vyos.rest.vyos_hostname:
+    config:
+      hostname: ansible-test-host
+    state: merged

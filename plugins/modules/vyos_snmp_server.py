@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 
@@ -41,7 +41,7 @@ options:
             type: list
             elements: str
           authorization_type:
-            description: Authorization type.
+            description: Authorization type (ro=read-only, rw=read-write).
             type: str
             choices: ['ro', 'rw']
       contact:
@@ -65,7 +65,7 @@ options:
         elements: dict
         suboptions:
           address:
-            description: IP address.
+            description: IP address to listen on.
             type: str
             required: true
           port:
@@ -76,10 +76,13 @@ options:
         type: dict
         suboptions:
           address:
+            description: IP address of the trap target host.
             type: str
           community:
+            description: Community name to use for traps.
             type: str
           port:
+            description: UDP port on the trap target host.
             type: int
       snmp_v3:
         description: SNMPv3 configuration.
@@ -89,104 +92,132 @@ options:
             description: EngineID as a hex string.
             type: str
           groups:
+            description: SNMPv3 group configuration.
             type: list
             elements: dict
             suboptions:
               group:
+                description: Group name.
                 type: str
                 required: true
               mode:
+                description: Access mode (ro=read-only, rw=read-write).
                 type: str
                 choices: ['ro', 'rw']
               seclevel:
+                description: Minimum security level required for group members.
                 type: str
                 choices: ['auth', 'priv']
               view:
+                description: View name the group has access to.
                 type: str
           users:
+            description: SNMPv3 user configuration.
             type: list
             elements: dict
             suboptions:
               user:
+                description: Username.
                 type: str
                 required: true
               authentication:
+                description: Authentication parameters for this user.
                 type: dict
                 suboptions:
                   type:
+                    description: Authentication algorithm.
                     type: str
-                    choices: ['md5', 'sha']
                   encrypted_key:
-                    description: Encrypted key (stored as encrypted-password on device).
+                    description: Encrypted authentication key (stored as encrypted-password on device).
                     type: str
                   plaintext_key:
-                    description: Plaintext key (device encrypts it; recommended for 1.5+).
+                    description: Plaintext authentication key (device encrypts it).
                     type: str
-                    no_log: true
               privacy:
+                description: Privacy (encryption) parameters for this user.
                 type: dict
                 suboptions:
                   type:
+                    description: Privacy algorithm.
                     type: str
-                    choices: ['des', 'aes']
                   encrypted_key:
+                    description: Encrypted privacy key.
                     type: str
                   plaintext_key:
+                    description: Plaintext privacy key (device encrypts it).
                     type: str
-                    no_log: true
               group:
+                description: Group this user belongs to.
                 type: str
               mode:
+                description: Access mode for this user.
                 type: str
                 choices: ['ro', 'rw']
               tsm_key:
+                description: TSM fingerprint of the certificate mapped to this user.
                 type: str
           trap_targets:
+            description: SNMPv3 trap target configuration.
             type: list
             elements: dict
             suboptions:
               address:
+                description: IP address of the SNMPv3 trap target.
                 type: str
               port:
+                description: UDP port on the trap target host.
                 type: int
               protocol:
+                description: Transport protocol for traps.
                 type: str
                 choices: ['tcp', 'udp']
               type:
+                description: Trap type.
                 type: str
                 choices: ['inform', 'trap']
               authentication:
+                description: Authentication parameters for trap target.
                 type: dict
                 suboptions:
                   type:
+                    description: Authentication algorithm.
                     type: str
                   encrypted_key:
+                    description: Encrypted authentication key.
                     type: str
                   plaintext_key:
+                    description: Plaintext authentication key.
                     type: str
-                    no_log: true
               privacy:
+                description: Privacy parameters for trap target.
                 type: dict
                 suboptions:
                   type:
+                    description: Privacy algorithm.
                     type: str
                   encrypted_key:
+                    description: Encrypted privacy key.
                     type: str
                   plaintext_key:
+                    description: Plaintext privacy key.
                     type: str
-                    no_log: true
           views:
+            description: SNMPv3 view configuration.
             type: list
             elements: dict
             suboptions:
               view:
+                description: View name.
                 type: str
                 required: true
               oid:
+                description: OID subtree included in this view.
                 type: str
               exclude:
+                description: OID subtree excluded from this view.
                 type: str
               mask:
+                description: OID mask for the view.
                 type: str
   state:
     description:
@@ -781,7 +812,7 @@ ARGUMENT_SPEC = dict(
                             privacy=dict(type="dict", options=_auth_privacy_spec()),
                             group=dict(type="str"),
                             mode=dict(type="str", choices=["ro", "rw"]),
-                            tsm_key=dict(type="str"),
+                            tsm_key=dict(type="str", no_log=True),
                         ),
                     ),
                     trap_targets=dict(

@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 
@@ -218,13 +219,12 @@ def build_commands(desired, existing, state):
     cmds = []
 
     if state == "overridden":
-        if existing["allow_clients"]:
-            cmds.append(("delete", ["service", "ntp", "allow-client"]))
-        if existing["listen_addresses"]:
-            cmds.append(("delete", ["service", "ntp", "listen-address"]))
-        if existing["servers"]:
-            cmds.append(("delete", ["service", "ntp", "server"]))
-        state = "merged"
+        state = "replaced"
+
+    if state == "deleted":
+        if existing["servers"] or existing["allow_clients"] or existing["listen_addresses"]:
+            cmds.append(("delete", ["service", "ntp"]))
+        return cmds
 
     cmds += diff_list(
         "allow-client",
@@ -339,7 +339,20 @@ def main():
                     elements="dict",
                     options=dict(
                         server=dict(type="str", required=True),
-                        options=dict(type="list", elements="str"),
+                        options=dict(
+                            type="list",
+                            elements="str",
+                            choices=[
+                                "dynamic",
+                                "noselect",
+                                "pool",
+                                "preempt",
+                                "prefer",
+                                "nts",
+                                "ptp",
+                                "interleave",
+                            ],
+                        ),
                     ),
                 ),
             ),

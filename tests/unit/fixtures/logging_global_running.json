@@ -1,0 +1,42 @@
+{
+  "console": {
+    "facility": {
+      "all": {},
+      "local7": { "level": "err" }
+    }
+  },
+  "file": {
+    "logFile": {
+      "archive": { "file": "2" },
+      "facility": {
+        "local6": { "level": "emerg" }
+      }
+    }
+  },
+  "global": {
+    "archive": { "file": "2", "size": "111" },
+    "facility": {
+      "cron": { "level": "debug" },
+      "all": { "level": "info" },
+      "local7": { "level": "debug" }
+    },
+    "marker": { "interval": "111" },
+    "preserve-fqdn": {}
+  },
+  "host": {
+    "172.16.0.1": {
+      "facility": {
+        "local7": { "level": "all" },
+        "all": { "protocol": "udp" }
+      },
+      "port": "223"
+    }
+  },
+  "user": {
+    "vyos": {
+      "facility": {
+        "local7": { "level": "debug" }
+      }
+    }
+  }
+}

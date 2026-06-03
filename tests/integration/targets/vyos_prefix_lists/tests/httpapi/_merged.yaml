@@ -1,0 +1,42 @@
+---
+- debug:
+    msg: START vyos_prefix_lists merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge prefix_lists configuration
+      register: result
+      vyos.rest.vyos_prefix_lists: &id001
+        config:
+          - afi: ipv4
+            prefix_lists:
+              - name: AnsibleIPv4PrefixList
+                description: PL configured by ansible
+                entries:
+                  - sequence: 2
+                    action: permit
+                    prefix: 92.168.10.0/26
+                    le: 32
+                  - sequence: 3
+                    action: deny
+                    prefix: 72.168.2.0/24
+                    ge: 26
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge prefix_lists configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_prefix_lists: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

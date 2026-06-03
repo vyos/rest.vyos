@@ -1,0 +1,34 @@
+---
+- debug:
+    msg: START vyos_banner gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather all banners (no config specified)
+      register: result
+      vyos.rest.vyos_banner:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered is defined
+          - "'pre-login' in result.gathered"
+          - "'post-login' in result.gathered"
+
+    - name: Gather specific pre-login banner
+      register: result
+      vyos.rest.vyos_banner:
+        config:
+          banner: pre-login
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered.text == "Ansible test pre-login banner"
+
+  always:
+    - include_tasks: _remove_config.yaml

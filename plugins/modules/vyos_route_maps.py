@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 # GNU General Public License v3.0+
-
 from __future__ import absolute_import, division, print_function
 
 
@@ -10,12 +9,14 @@ __metaclass__ = type
 DOCUMENTATION = r"""
 ---
 module: vyos_route_maps
-short_description: Route Map resource module via REST API.
+short_description: Manage route-map configuration on VyOS devices using REST API
 description:
-  - Manages route maps on VyOS via the HTTPS REST API.
+  - Manages route maps on VyOS via the REST API.
+  - Uses REST API (C(connection=httpapi)) instead of CLI.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
+
 options:
   config:
     description: List of route-map configurations.
@@ -25,351 +26,416 @@ options:
       route_map:
         description: Route map name.
         type: str
+        required: true
       entries:
         description: Route map rules.
         type: list
         elements: dict
         suboptions:
           sequence:
-            description: Rule number (1-65535).
+            description: Rule sequence number (1-65535).
             type: int
+            required: true
           action:
-            description: permit or deny.
+            description: Permit or deny.
             type: str
-            choices: [permit, deny]
           description:
+            description: Rule description.
             type: str
           call:
             description: Call another route map.
             type: str
           continue_sequence:
-            description: Continue at a different sequence.
+            description: Continue at a different sequence number.
             type: int
           match:
-            description: Match conditions.
+            description: Match conditions (passed through to VyOS API).
             type: dict
-            suboptions:
-              prefix_list:
-                type: str
-              prefix_list6:
-                type: str
-              interface:
-                type: str
-              metric:
-                type: int
-              origin:
-                type: str
-              ip:
-                type: dict
-                suboptions:
-                  nexthop_address:
-                    type: str
-                  nexthop_prefix_list:
-                    type: str
-              ipv6:
-                type: dict
-                suboptions:
-                  nexthop_address:
-                    type: str
           set:
-            description: Route parameters to set.
+            description: Route parameters to set (passed through to VyOS API).
             type: dict
-            suboptions:
-              aggregator:
-                type: dict
-                suboptions:
-                  as:
-                    type: str
-                  ip:
-                    type: str
-              as_path_prepend:
-                type: str
-              atomic_aggregate:
-                type: bool
-              bgp_extcommunity_rt:
-                type: str
-              community:
-                type: dict
-                suboptions:
-                  value:
-                    type: str
-              ip_next_hop:
-                type: str
-              ipv6_next_hop:
-                type: dict
-                suboptions:
-                  ip_type:
-                    type: str
-                    choices: [global, local]
-                  value:
-                    type: str
-              large_community:
-                type: str
-              local_preference:
-                type: int
-              metric:
-                type: str
-              metric_type:
-                type: str
-              origin:
-                type: str
-              originator_id:
-                type: str
-              src:
-                type: str
-              tag:
-                type: str
-              weight:
-                type: int
+
   state:
+    description:
+      - Desired state of the route-map configuration.
+      - C(merged) adds or updates entries without removing existing ones.
+      - C(replaced) replaces each named route map mentioned in config.
+      - C(overridden) replaces all route maps.
+      - C(deleted) removes route maps. Without config removes all.
+      - C(gathered) returns current configuration as structured data.
     type: str
     choices: [merged, replaced, overridden, deleted, gathered]
     default: merged
-  hostname:
-    type: str
-    required: true
-  port:
-    type: int
-    default: 443
-  api_key:
-    type: str
-    required: true
-    no_log: true
-  timeout:
-    type: int
-    default: 30
-  verify_ssl:
-    type: bool
-    default: false
+
+notes:
+  - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
+  - C(ansible_network_os) must be set to C(vyos.rest.vyos).
+  - Input validation is delegated to the VyOS API.
+"""
+
+EXAMPLES = r"""
+- name: Merge route map configuration
+  vyos.rest.vyos_route_maps:
+    config:
+      - route_map: RM-TEST-EXPORT-POLICY
+        entries:
+          - sequence: 10
+            action: permit
+            match:
+              peer: 192.0.2.32
+            set:
+              metric: "5"
+              as_path_exclude: "111"
+              aggregator:
+                as: 100
+    state: merged
+
+- name: Delete all route maps
+  vyos.rest.vyos_route_maps:
+    state: deleted
+
+- name: Delete a specific route map
+  vyos.rest.vyos_route_maps:
+    config:
+      - route_map: RM-TEST-EXPORT-POLICY
+    state: deleted
+
+- name: Gather current route map configuration
+  vyos.rest.vyos_route_maps:
+    state: gathered
 """
 
 RETURN = r"""
 before:
+  description: Route map configuration before this module ran.
   returned: always
   type: list
+
 after:
+  description: Route map configuration after this module ran.
   returned: when changed
   type: list
+
 commands:
+  description: List of API command tuples sent to the device.
   returned: always
   type: list
+
+gathered:
+  description: Current route map configuration as structured data.
+  returned: when state is gathered
+  type: list
+
+saved:
+  description: Whether the config was saved after changes.
+  returned: when changes are applied
+  type: bool
+
+response:
+  description: Raw API response.
+  returned: when changes are applied
+  type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos_rest import (
-    VYOS_REST_CONNECTION_ARGSPEC,
-    VyOSRestClient,
-    VyOSRestError,
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+
+
+_BASE = ["policy", "route-map"]
+
+_SET_MAP = {
+    "as_path_prepend": ["as-path", "prepend"],
+    "as_path_exclude": ["as-path", "exclude"],
+    "as_path_prepend_last_as": ["as-path", "prepend-last-as"],
+    "ip_next_hop": ["ip-next-hop"],
+    "local_preference": ["local-preference"],
+    "metric": ["metric"],
+    "metric_type": ["metric-type"],
+    "origin": ["origin"],
+    "originator_id": ["originator-id"],
+    "src": ["src"],
+    "tag": ["tag"],
+    "weight": ["weight"],
+    "distance": ["distance"],
+    "table": ["table"],
+}
+
+_MATCH_MAP = {
+    "interface": ["interface"],
+    "metric": ["metric"],
+    "origin": ["origin"],
+    "peer": ["peer"],
+    "protocol": ["protocol"],
+}
+
+
+def get_running_config(vyos):
+    raw = vyos.get_config(["policy", "route-map"])
+    if not raw or not isinstance(raw, dict):
+        return []
+
+    rm_data = raw.get("route-map", raw)
+    if not isinstance(rm_data, dict):
+        return []
+
+    result = []
+    for rm_name, rm_info in sorted(rm_data.items()):
+        entry = {"route_map": rm_name, "entries": []}
+        rm_info = rm_info or {}
+
+        for seq, rule_data in sorted(
+            (rm_info.get("rule") or {}).items(),
+            key=lambda x: int(x[0]),
+        ):
+            rule_data = rule_data or {}
+            rule = {"sequence": int(seq)}
+            if rule_data.get("action"):
+                rule["action"] = rule_data["action"]
+            if rule_data.get("description"):
+                rule["description"] = rule_data["description"]
+            if rule_data.get("call"):
+                rule["call"] = rule_data["call"]
+            if rule_data.get("continue"):
+                rule["continue_sequence"] = int(rule_data["continue"])
+            if rule_data.get("match"):
+                rule["match"] = rule_data["match"]
+            if rule_data.get("set"):
+                rule["set"] = rule_data["set"]
+            entry["entries"].append(rule)
+
+        result.append(entry)
+
+    return result
+
+
+def _match_cmds(rbase, match):
+    cmds = []
+    if not match:
+        return cmds
+
+    mbase = rbase + ["match"]
+
+    for key, path_suffix in _MATCH_MAP.items():
+        if match.get(key) is not None:
+            cmds.append(("set", mbase + path_suffix + [str(match[key])]))
+
+    if match.get("prefix_list"):
+        cmds.append(("set", mbase + ["ip", "address", "prefix-list", match["prefix_list"]]))
+    if match.get("prefix_list6"):
+        cmds.append(("set", mbase + ["ipv6", "address", "prefix-list", match["prefix_list6"]]))
+
+    ip = match.get("ip") or {}
+    if ip.get("nexthop_address"):
+        cmds.append(("set", mbase + ["ip", "nexthop", "address", ip["nexthop_address"]]))
+    if ip.get("nexthop_prefix_list"):
+        cmds.append(("set", mbase + ["ip", "nexthop", "prefix-list", ip["nexthop_prefix_list"]]))
+
+    ipv6 = match.get("ipv6") or {}
+    if ipv6.get("nexthop_address"):
+        cmds.append(("set", mbase + ["ipv6", "nexthop", "address", ipv6["nexthop_address"]]))
+
+    return cmds
+
+
+def _set_cmds(rbase, setv):
+    cmds = []
+    if not setv:
+        return cmds
+
+    sbase = rbase + ["set"]
+
+    for key, path_suffix in _SET_MAP.items():
+        if setv.get(key) is not None:
+            cmds.append(("set", sbase + path_suffix + [str(setv[key])]))
+
+    if setv.get("atomic_aggregate"):
+        cmds.append(("set", sbase + ["atomic-aggregate"]))
+
+    comm = setv.get("community") or {}
+    if comm.get("value"):
+        cmds.append(("set", sbase + ["community", comm["value"]]))
+
+    large_comm = setv.get("large_community")
+    if large_comm is not None:
+        cmds.append(("set", sbase + ["large-community", str(large_comm)]))
+
+    agg = setv.get("aggregator") or {}
+    agg_as = agg.get("as") or agg.get("as_")
+    if agg_as and agg.get("ip"):
+        cmds.append(("set", sbase + ["aggregator", "as", str(agg_as), "address", agg["ip"]]))
+    elif agg_as:
+        cmds.append(("set", sbase + ["aggregator", "as", str(agg_as)]))
+
+    nh6 = setv.get("ipv6_next_hop") or {}
+    if nh6.get("value"):
+        ip_type = nh6.get("ip_type") or "global"
+        cmds.append(("set", sbase + ["ipv6-next-hop", ip_type, nh6["value"]]))
+
+    return cmds
+
+
+def _want_to_api_set(setv):
+    if not setv:
+        return {}
+    api = {}
+    for key, path in _SET_MAP.items():
+        if setv.get(key) is not None:
+            d = api
+            for p in path[:-1]:
+                d = d.setdefault(p, {})
+            d[path[-1]] = str(setv[key])
+    agg = setv.get("aggregator") or {}
+    agg_as = agg.get("as") or agg.get("as_")
+    if agg_as:
+        api.setdefault("aggregator", {})["as"] = str(agg_as)
+    large_comm = setv.get("large_community")
+    if large_comm is not None:
+        api["large-community"] = {str(large_comm): {}}
+    return api
+
+
+def _want_to_api_match(match):
+    if not match:
+        return {}
+    api = {}
+    for key in _MATCH_MAP:
+        if match.get(key) is not None:
+            api[key] = str(match[key])
+    if match.get("prefix_list"):
+        api.setdefault("ip", {}).setdefault("address", {})["prefix-list"] = match["prefix_list"]
+    if match.get("prefix_list6"):
+        api.setdefault("ipv6", {}).setdefault("address", {})["prefix-list"] = match["prefix_list6"]
+    return api
+
+
+def _rule_cmds(rm_name, rule, have_rule):
+    cmds = []
+    seq = str(rule["sequence"])
+    rbase = _BASE + [rm_name, "rule", seq]
+
+    if rule.get("action") and rule["action"] != have_rule.get("action"):
+        cmds.append(("set", rbase + ["action", rule["action"]]))
+    if rule.get("description") and rule["description"] != have_rule.get("description"):
+        cmds.append(("set", rbase + ["description", rule["description"]]))
+    if rule.get("call") and rule["call"] != have_rule.get("call"):
+        cmds.append(("set", rbase + ["call", rule["call"]]))
+    if rule.get("continue_sequence") is not None and rule["continue_sequence"] != have_rule.get(
+        "continue_sequence",
+    ):
+        cmds.append(("set", rbase + ["continue", str(rule["continue_sequence"])]))
+
+    want_match_api = _want_to_api_match(rule.get("match"))
+    have_match = have_rule.get("match") or {}
+    changed_match = {k: v for k, v in want_match_api.items() if have_match.get(k) != v}
+    if changed_match:
+        match = rule.get("match") or {}
+        changed_keys = set(changed_match.keys())
+        partial_match = {
+            k: v
+            for k, v in match.items()
+            if k in changed_keys
+            or (k == "prefix_list" and "ip" in changed_keys)
+            or (k == "prefix_list6" and "ipv6" in changed_keys)
+        }
+        if not partial_match:
+            partial_match = match
+        cmds += _match_cmds(rbase, partial_match)
+
+    want_set_api = _want_to_api_set(rule.get("set"))
+    have_set = have_rule.get("set") or {}
+    if want_set_api != have_set:
+        cmds += _set_cmds(rbase, rule.get("set"))
+
+    return cmds
+
+
+def build_commands(config, have_raw, state):
+    cmds = []
+
+    if state == "deleted":
+        if not config:
+            if have_raw:
+                cmds.append(("delete", _BASE))
+        else:
+            for rm in config:
+                cmds.append(("delete", _BASE + [rm["route_map"]]))
+        return cmds
+
+    have_map = {e["route_map"]: e for e in have_raw}
+
+    if state == "overridden":
+        want_names = {rm["route_map"] for rm in config}
+        for name in set(have_map) - want_names:
+            cmds.append(("delete", _BASE + [name]))
+
+    for rm in config:
+        rm_name = rm["route_map"]
+        have_rm = have_map.get(rm_name, {})
+
+        if state == "replaced" and rm_name in have_map:
+            # Only delete and rebuild if something actually differs
+            have_entries = {str(r["sequence"]): r for r in (have_rm.get("entries") or [])}
+            want_seqs = {str(r["sequence"]) for r in (rm.get("entries") or [])}
+            extra_seqs = set(have_entries) - want_seqs
+            test_cmds = []
+            for rule in rm.get("entries") or []:
+                have_rule = have_entries.get(str(rule["sequence"]), {})
+                test_cmds += _rule_cmds(rm_name, rule, have_rule)
+            if test_cmds or extra_seqs:
+                cmds.append(("delete", _BASE + [rm_name]))
+                have_rm = {}
+            else:
+                continue  # already matches — idempotent
+
+        have_entries = {str(r["sequence"]): r for r in (have_rm.get("entries") or [])}
+
+        for rule in rm.get("entries") or []:
+            have_rule = have_entries.get(str(rule["sequence"]), {})
+            cmds += _rule_cmds(rm_name, rule, have_rule)
+
+    return cmds
+
+
+ARGUMENT_SPEC = dict(
+    config=dict(type="list", elements="dict"),
+    state=dict(
+        default="merged",
+        choices=["merged", "replaced", "overridden", "deleted", "gathered"],
+    ),
 )
 
 
-def _get(client):
-    try:
-        r = client.retrieve_show_config(["policy", "route-map"])
-        data = r.get("data") or {}
-        return [{"route_map": name, "raw": rdata} for name, rdata in data.items()]
-    except VyOSRestError:
-        return []
-
-
-def _apply(client, rm_cfg, commands):
-    rm_name = rm_cfg["route_map"]
-    for rule in rm_cfg.get("entries") or []:
-        seq = str(rule["sequence"])
-        base = ["policy", "route-map", rm_name, "rule", seq]
-        client.configure_set(base)
-        commands.append("set policy route-map {n} rule {s}".format(n=rm_name, s=seq))
-
-        if rule.get("action"):
-            client.configure_set(base + ["action"], rule["action"])
-            commands.append(
-                "set policy route-map {n} rule {s} action {a}".format(
-                    n=rm_name,
-                    s=seq,
-                    a=rule["action"],
-                ),
-            )
-        if rule.get("description"):
-            client.configure_set(base + ["description"], rule["description"])
-        if rule.get("call"):
-            client.configure_set(base + ["call"], rule["call"])
-        if rule.get("continue_sequence"):
-            client.configure_set(base + ["continue"], str(rule["continue_sequence"]))
-
-        # Match conditions
-        match = rule.get("match") or {}
-        if match.get("prefix_list"):
-            client.configure_set(
-                base + ["match", "ip", "address", "prefix-list"],
-                match["prefix_list"],
-            )
-        if match.get("interface"):
-            client.configure_set(base + ["match", "interface"], match["interface"])
-        if match.get("metric") is not None:
-            client.configure_set(base + ["match", "metric"], str(match["metric"]))
-        ip_match = match.get("ip") or {}
-        if ip_match.get("nexthop_address"):
-            client.configure_set(
-                base + ["match", "ip", "nexthop", "address"],
-                ip_match["nexthop_address"],
-            )
-
-        # Set actions
-        setv = rule.get("set") or {}
-        if setv.get("ip_next_hop"):
-            client.configure_set(base + ["set", "ip-next-hop"], setv["ip_next_hop"])
-            commands.append(
-                "set policy route-map {n} rule {s} set ip-next-hop {nh}".format(
-                    n=rm_name,
-                    s=seq,
-                    nh=setv["ip_next_hop"],
-                ),
-            )
-        if setv.get("local_preference") is not None:
-            client.configure_set(
-                base + ["set", "local-preference"],
-                str(setv["local_preference"]),
-            )
-        if setv.get("metric"):
-            client.configure_set(base + ["set", "metric"], str(setv["metric"]))
-        if setv.get("origin"):
-            client.configure_set(base + ["set", "origin"], setv["origin"])
-        if setv.get("weight") is not None:
-            client.configure_set(base + ["set", "weight"], str(setv["weight"]))
-        if setv.get("as_path_prepend"):
-            client.configure_set(base + ["set", "as-path-prepend"], setv["as_path_prepend"])
-        comm = setv.get("community") or {}
-        if comm.get("value"):
-            client.configure_set(base + ["set", "community", comm["value"]])
-        if setv.get("tag"):
-            client.configure_set(base + ["set", "tag"], setv["tag"])
-        if setv.get("src"):
-            client.configure_set(base + ["set", "src"], setv["src"])
-        nh6 = setv.get("ipv6_next_hop") or {}
-        if nh6.get("value"):
-            ip_type = nh6.get("ip_type", "global")
-            client.configure_set(base + ["set", "ipv6-next-hop", ip_type], nh6["value"])
-
-
 def main():
-    set_spec = dict(
-        type="dict",
-        options=dict(
-            aggregator=dict(type="dict", options=dict(as_=dict(type="str"), ip=dict(type="str"))),
-            as_path_prepend=dict(type="str"),
-            atomic_aggregate=dict(type="bool"),
-            bgp_extcommunity_rt=dict(type="str"),
-            community=dict(type="dict", options=dict(value=dict(type="str"))),
-            ip_next_hop=dict(type="str"),
-            ipv6_next_hop=dict(
-                type="dict",
-                options=dict(
-                    ip_type=dict(type="str", choices=["global", "local"]),
-                    value=dict(type="str"),
-                ),
-            ),
-            large_community=dict(type="str"),
-            local_preference=dict(type="int"),
-            metric=dict(type="str"),
-            metric_type=dict(type="str"),
-            origin=dict(type="str"),
-            originator_id=dict(type="str"),
-            src=dict(type="str"),
-            tag=dict(type="str"),
-            weight=dict(type="int"),
-        ),
-    )
-    match_spec = dict(
-        type="dict",
-        options=dict(
-            prefix_list=dict(type="str"),
-            prefix_list6=dict(type="str"),
-            interface=dict(type="str"),
-            metric=dict(type="int"),
-            origin=dict(type="str"),
-            ip=dict(
-                type="dict",
-                options=dict(
-                    nexthop_address=dict(type="str"),
-                    nexthop_prefix_list=dict(type="str"),
-                ),
-            ),
-            ipv6=dict(type="dict", options=dict(nexthop_address=dict(type="str"))),
-        ),
-    )
+    module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
 
-    argument_spec = dict(
-        config=dict(
-            type="list",
-            elements="dict",
-            options=dict(
-                route_map=dict(type="str"),
-                entries=dict(
-                    type="list",
-                    elements="dict",
-                    options=dict(
-                        sequence=dict(type="int"),
-                        action=dict(type="str", choices=["permit", "deny"]),
-                        description=dict(type="str"),
-                        call=dict(type="str"),
-                        continue_sequence=dict(type="int"),
-                        match=match_spec,
-                        set=set_spec,
-                    ),
-                ),
-            ),
-        ),
-        state=dict(
-            type="str",
-            default="merged",
-            choices=["merged", "replaced", "overridden", "deleted", "gathered"],
-        ),
-    )
-    argument_spec.update(VYOS_REST_CONNECTION_ARGSPEC)
-    module = AnsibleModule(argument_spec=argument_spec, supports_check_mode=True)
-    client = VyOSRestClient(module)
+    vyos = VyOSModule(module)
+
     state = module.params["state"]
     config = module.params.get("config") or []
-    commands = []
-    changed = False
-    before = _get(client)
+
+    have = get_running_config(vyos)
 
     if state == "gathered":
-        module.exit_json(changed=False, gathered=before, before=before, commands=[])
+        module.exit_json(changed=False, gathered=have)
+
+    commands = build_commands(config, have, state)
+
     if module.check_mode:
-        module.exit_json(changed=True, before=before, commands=["(check mode)"])
+        module.exit_json(changed=bool(commands), commands=commands, before=have)
 
-    try:
-        if state == "deleted" and not config:
-            try:
-                client.configure_delete(["policy", "route-map"])
-                commands.append("delete policy route-map")
-                changed = True
-            except VyOSRestError:
-                pass
-        elif state == "deleted" and config:
-            for rm in config:
-                try:
-                    client.configure_delete(["policy", "route-map", rm["route_map"]])
-                    commands.append("delete policy route-map {n}".format(n=rm["route_map"]))
-                    changed = True
-                except VyOSRestError:
-                    pass
-        elif state in ("merged", "replaced", "overridden"):
-            if state in ("replaced", "overridden"):
-                for rm in config:
-                    try:
-                        client.configure_delete(["policy", "route-map", rm["route_map"]])
-                    except VyOSRestError:
-                        pass
-            for rm in config:
-                _apply(client, rm, commands)
-                changed = True
-    except VyOSRestError as exc:
-        module.fail_json(msg=str(exc))
+    if commands:
+        response = vyos.apply_commands(commands)
+        saved = vyos.save_config()
+        module.exit_json(
+            changed=True,
+            before=have,
+            after=get_running_config(vyos),
+            commands=commands,
+            saved=saved,
+            response=response,
+        )
 
-    after = _get(client) if changed else before
-    module.exit_json(changed=changed, before=before, after=after, commands=commands)
+    module.exit_json(changed=False, before=have, after=have, commands=[])
 
 
 if __name__ == "__main__":

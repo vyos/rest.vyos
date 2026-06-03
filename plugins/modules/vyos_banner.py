@@ -31,7 +31,6 @@ options:
         description:
           - Which banner to configure.
         type: str
-        required: true
         choices:
           - pre-login
           - post-login
@@ -47,9 +46,11 @@ options:
       - Desired state of the banner configuration.
       - C(merged) - set the banner if it differs from the current value.
       - C(replaced) - replace the banner text unconditionally.
-      - C(deleted) - remove the banner.
+      - C(deleted) - remove the banner. If C(config.banner) is omitted,
+          both pre-login and post-login banners are removed.
       - C(gathered) - return the current banner in I(gathered) without
-        making any changes.
+        making any changes. If C(config.banner) is omitted, all banners
+        are returned.
     type: str
     default: merged
     choices:
@@ -67,7 +68,6 @@ options:
   api_key:
     description: REST API key (not needed when ansible_httpapi_api_key is set).
     type: str
-    no_log: true
   timeout:
     description: Request timeout in seconds.
     type: int
@@ -97,16 +97,25 @@ EXAMPLES = r"""
       text: "Welcome. Authorised access only."
     state: replaced
 
-- name: Remove pre-login banner
+- name: Remove pre-login banner only
   vyos.rest.vyos_banner:
     config:
       banner: pre-login
+    state: deleted
+
+- name: Remove all banners
+  vyos.rest.vyos_banner:
     state: deleted
 
 - name: Read current pre-login banner without changing it
   vyos.rest.vyos_banner:
     config:
       banner: pre-login
+    state: gathered
+  register: result
+
+- name: Read all banners
+  vyos.rest.vyos_banner:
     state: gathered
   register: result
 
@@ -184,7 +193,7 @@ def main():
             options=dict(
                 banner=dict(
                     type="str",
-                    required=True,
+                    required=False,
                     choices=["pre-login", "post-login"],
                 ),
                 text=dict(type="str"),
@@ -203,17 +212,47 @@ def main():
         required_if=[
             ("state", "merged", ["config"]),
             ("state", "replaced", ["config"]),
-            ("state", "deleted", ["config"]),
-            ("state", "gathered", ["config"]),
         ],
         supports_check_mode=True,
     )
 
     client = VyOSRestClient(module)
     state = module.params["state"]
-    config = module.params["config"]
-    banner_type = config["banner"]
+    config = module.params["config"] or {}
+    banner_type = config.get("banner")
     desired_text = config.get("text") or ""
+
+    # deleted without banner_type — delete all banners
+    if state == "deleted" and not banner_type:
+        commands = []
+        changed = False
+        for bt in ["pre-login", "post-login"]:
+            current = _get_current(client, bt)
+            if current.get("text"):
+                if not module.check_mode:
+                    try:
+                        client.configure_delete(_BANNER_PATH[bt])
+                    except VyOSRestError as exc:
+                        module.fail_json(msg=str(exc))
+                commands.append("delete {p}".format(p=" ".join(_BANNER_PATH[bt])))
+                changed = True
+        module.exit_json(changed=changed, commands=commands)
+
+    # gathered without banner_type — return all banners
+    if state == "gathered" and not banner_type:
+        gathered = {}
+        for bt in ["pre-login", "post-login"]:
+            current = _get_current(client, bt)
+            if current.get("text"):
+                gathered[bt] = current
+        module.exit_json(changed=False, gathered=gathered, commands=[])
+
+    # all other states require banner_type
+    if not banner_type:
+        module.fail_json(
+            msg="config.banner is required for state={0}".format(state),
+        )
+
     path = _BANNER_PATH[banner_type]
     commands = []
     changed = False

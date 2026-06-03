@@ -85,7 +85,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Authorization type.</div>
+                        <div>Authorization type (ro=read-only, rw=read-write).</div>
                 </td>
             </tr>
             <tr>
@@ -207,7 +207,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>IP address.</div>
+                        <div>IP address to listen on.</div>
                 </td>
             </tr>
             <tr>
@@ -308,6 +308,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>SNMPv3 group configuration.</div>
                 </td>
             </tr>
                                 <tr>
@@ -326,6 +327,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Group name.</div>
                 </td>
             </tr>
             <tr>
@@ -347,6 +349,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Access mode (ro=read-only, rw=read-write).</div>
                 </td>
             </tr>
             <tr>
@@ -368,6 +371,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Minimum security level required for group members.</div>
                 </td>
             </tr>
             <tr>
@@ -385,6 +389,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>View name the group has access to.</div>
                 </td>
             </tr>
 
@@ -403,6 +408,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>SNMPv3 trap target configuration.</div>
                 </td>
             </tr>
                                 <tr>
@@ -420,6 +426,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>IP address of the SNMPv3 trap target.</div>
                 </td>
             </tr>
             <tr>
@@ -437,6 +444,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Authentication parameters for trap target.</div>
                 </td>
             </tr>
                                 <tr>
@@ -455,6 +463,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Encrypted authentication key.</div>
                 </td>
             </tr>
             <tr>
@@ -473,6 +482,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Plaintext authentication key.</div>
                 </td>
             </tr>
             <tr>
@@ -491,6 +501,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Authentication algorithm.</div>
                 </td>
             </tr>
 
@@ -509,6 +520,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>UDP port on the trap target host.</div>
                 </td>
             </tr>
             <tr>
@@ -526,6 +538,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Privacy parameters for trap target.</div>
                 </td>
             </tr>
                                 <tr>
@@ -544,6 +557,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Encrypted privacy key.</div>
                 </td>
             </tr>
             <tr>
@@ -562,6 +576,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Plaintext privacy key.</div>
                 </td>
             </tr>
             <tr>
@@ -580,6 +595,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Privacy algorithm.</div>
                 </td>
             </tr>
 
@@ -602,6 +618,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Transport protocol for traps.</div>
                 </td>
             </tr>
             <tr>
@@ -623,6 +640,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Trap type.</div>
                 </td>
             </tr>
 
@@ -641,6 +659,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>SNMPv3 user configuration.</div>
                 </td>
             </tr>
                                 <tr>
@@ -658,6 +677,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Authentication parameters for this user.</div>
                 </td>
             </tr>
                                 <tr>
@@ -676,7 +696,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Encrypted key (stored as encrypted-password on device).</div>
+                        <div>Encrypted authentication key (stored as encrypted-password on device).</div>
                 </td>
             </tr>
             <tr>
@@ -695,7 +715,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Plaintext key (device encrypts it; recommended for 1.5+).</div>
+                        <div>Plaintext authentication key (device encrypts it).</div>
                 </td>
             </tr>
             <tr>
@@ -712,12 +732,9 @@ Parameters
                     </div>
                 </td>
                 <td>
-                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li>md5</li>
-                                    <li>sha</li>
-                        </ul>
                 </td>
                 <td>
+                        <div>Authentication algorithm.</div>
                 </td>
             </tr>
 
@@ -736,6 +753,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Group this user belongs to.</div>
                 </td>
             </tr>
             <tr>
@@ -757,6 +775,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Access mode for this user.</div>
                 </td>
             </tr>
             <tr>
@@ -774,6 +793,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Privacy (encryption) parameters for this user.</div>
                 </td>
             </tr>
                                 <tr>
@@ -792,6 +812,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Encrypted privacy key.</div>
                 </td>
             </tr>
             <tr>
@@ -810,6 +831,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Plaintext privacy key (device encrypts it).</div>
                 </td>
             </tr>
             <tr>
@@ -826,12 +848,9 @@ Parameters
                     </div>
                 </td>
                 <td>
-                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li>des</li>
-                                    <li>aes</li>
-                        </ul>
                 </td>
                 <td>
+                        <div>Privacy algorithm.</div>
                 </td>
             </tr>
 
@@ -850,6 +869,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>TSM fingerprint of the certificate mapped to this user.</div>
                 </td>
             </tr>
             <tr>
@@ -868,6 +888,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Username.</div>
                 </td>
             </tr>
 
@@ -886,6 +907,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>SNMPv3 view configuration.</div>
                 </td>
             </tr>
                                 <tr>
@@ -903,6 +925,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>OID subtree excluded from this view.</div>
                 </td>
             </tr>
             <tr>
@@ -920,6 +943,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>OID mask for the view.</div>
                 </td>
             </tr>
             <tr>
@@ -937,6 +961,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>OID subtree included in this view.</div>
                 </td>
             </tr>
             <tr>
@@ -955,6 +980,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>View name.</div>
                 </td>
             </tr>
 
@@ -1005,6 +1031,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>IP address of the trap target host.</div>
                 </td>
             </tr>
             <tr>
@@ -1021,6 +1048,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Community name to use for traps.</div>
                 </td>
             </tr>
             <tr>
@@ -1037,6 +1065,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>UDP port on the trap target host.</div>
                 </td>
             </tr>
 

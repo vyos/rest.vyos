@@ -19,6 +19,7 @@ Synopsis
 --------
 - Manages the ``set system host-name`` configuration on a VyOS device using the HTTPS REST API.
 - Mirrors the behaviour of ``vyos.vyos.vyos_hostname`` but uses the HTTP API instead of SSH/network_cli.
+- The states ``replaced``, ``overridden`` behave identically to ``merged`` for this single-value resource.
 
 
 
@@ -47,7 +48,6 @@ Parameters
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
@@ -96,13 +96,12 @@ Parameters
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>IP address or FQDN of the VyOS device.</div>
+                        <div>IP address or FQDN of the VyOS device (not needed with httpapi inventory).</div>
                 </td>
             </tr>
             <tr>
@@ -124,6 +123,22 @@ Parameters
             <tr>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>running_config</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Used only with state <code>parsed</code>.</div>
+                        <div>The value should be the output of <b>show configuration commands | grep host-name</b> from the device.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -133,14 +148,22 @@ Parameters
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li><div style="color: blue"><b>merged</b>&nbsp;&larr;</div></li>
+                                    <li>replaced</li>
+                                    <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
+                                    <li>rendered</li>
+                                    <li>parsed</li>
                         </ul>
                 </td>
                 <td>
                         <div><code>merged</code> - Ensure the hostname is set to the value in <em>config</em>.</div>
+                        <div><code>replaced</code> - Identical to <code>merged</code> for this single-value resource.</div>
+                        <div><code>overridden</code> - Identical to <code>merged</code> for this single-value resource.</div>
                         <div><code>deleted</code> - Remove the configured hostname (resets to default).</div>
                         <div><code>gathered</code> - Read the current hostname from the device and return it in <em>gathered</em> without making changes.</div>
+                        <div><code>rendered</code> - Return the CLI commands for the given config without connecting to the device.</div>
+                        <div><code>parsed</code> - Parse the <code>running_config</code> string and return structured data without connecting to the device.</div>
                 </td>
             </tr>
             <tr>
@@ -203,6 +226,12 @@ Examples
           hostname: vyos-core-01
         state: merged
 
+    - name: Replace hostname
+      vyos.rest.vyos_hostname:
+        config:
+          hostname: vyos-core-02
+        state: replaced
+
     - name: Gather current hostname
       vyos.rest.vyos_hostname:
         state: gathered
@@ -211,6 +240,17 @@ Examples
     - name: Delete hostname configuration
       vyos.rest.vyos_hostname:
         state: deleted
+
+    - name: Render commands without connecting
+      vyos.rest.vyos_hostname:
+        config:
+          hostname: vyos-core-01
+        state: rendered
+
+    - name: Parse running config
+      vyos.rest.vyos_hostname:
+        running_config: "set system host-name 'vyos'"
+        state: parsed
 
 
 
@@ -283,6 +323,36 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 <td>when state is gathered</td>
                 <td>
                             <div>Hostname read from the device (state=gathered only).</div>
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+                    <b>parsed</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">dictionary</span>
+                    </div>
+                </td>
+                <td>when state is parsed</td>
+                <td>
+                            <div>Structured data parsed from running_config (state=parsed only).</div>
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+                    <b>rendered</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">list</span>
+                    </div>
+                </td>
+                <td>when state is rendered</td>
+                <td>
+                            <div>CLI commands for the provided config (state=rendered only).</div>
                     <br/>
                 </td>
             </tr>

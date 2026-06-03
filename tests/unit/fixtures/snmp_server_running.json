@@ -1,0 +1,35 @@
+{
+  "community": {
+    "switches": { "authorization": "rw" },
+    "bridges": {
+      "client": ["1.1.1.1", "12.1.1.10"]
+    }
+  },
+  "contact": "admin@example.com",
+  "listen-address": {
+    "20.1.1.1": {},
+    "100.1.2.1": { "port": "33" }
+  },
+  "v3": {
+    "engineid": "000000000000000000000002",
+    "group": {
+      "default": { "mode": "ro", "view": "default" }
+    },
+    "user": {
+      "admin_user": {
+        "auth": {
+          "encrypted-password": "abc123",
+          "type": "sha"
+        },
+        "privacy": {
+          "encrypted-password": "abc123",
+          "type": "aes"
+        },
+        "group": "default"
+      }
+    },
+    "view": {
+      "default": { "oid": { "1": {} } }
+    }
+  }
+}
