@@ -81,6 +81,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of syslog facilities to log to the console.</div>
                 </td>
             </tr>
                                 <tr>
@@ -98,6 +99,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Syslog facility name (e.g. local7, all, kern).</div>
                 </td>
             </tr>
             <tr>
@@ -115,6 +117,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Minimum severity level to log (e.g. err, debug, all).</div>
                 </td>
             </tr>
 
@@ -150,6 +153,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Log file archive/rotation settings.</div>
                 </td>
             </tr>
                                 <tr>
@@ -167,6 +171,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Number of archived log files to keep.</div>
                 </td>
             </tr>
             <tr>
@@ -184,6 +189,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Maximum size of log file in kilobytes before rotation.</div>
                 </td>
             </tr>
 
@@ -202,6 +208,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of syslog facilities to log to this file.</div>
                 </td>
             </tr>
                                 <tr>
@@ -219,6 +226,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Syslog facility name.</div>
                 </td>
             </tr>
             <tr>
@@ -236,6 +244,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Minimum severity level to log.</div>
                 </td>
             </tr>
 
@@ -253,6 +262,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Path to the log file on the device.</div>
                 </td>
             </tr>
 
@@ -286,6 +296,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Global log archive/rotation settings.</div>
                 </td>
             </tr>
                                 <tr>
@@ -303,6 +314,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Number of archived log files to keep.</div>
                 </td>
             </tr>
             <tr>
@@ -320,6 +332,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Maximum size of log file in kilobytes before rotation.</div>
                 </td>
             </tr>
 
@@ -338,6 +351,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of syslog facilities for global logging.</div>
                 </td>
             </tr>
                                 <tr>
@@ -355,6 +369,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Syslog facility name.</div>
                 </td>
             </tr>
             <tr>
@@ -372,6 +387,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Minimum severity level to log.</div>
                 </td>
             </tr>
 
@@ -389,6 +405,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Interval in seconds between marker log entries.</div>
                 </td>
             </tr>
             <tr>
@@ -409,6 +426,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
+                        <div>Use the fully qualified domain name in syslog messages.</div>
                 </td>
             </tr>
 
@@ -444,6 +462,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of syslog facilities to forward to this host.</div>
                 </td>
             </tr>
                                 <tr>
@@ -461,6 +480,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Syslog facility name.</div>
                 </td>
             </tr>
             <tr>
@@ -478,7 +498,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Per-facility protocol override.</div>
+                        <div>Per-facility protocol override (udp or tcp).</div>
                 </td>
             </tr>
             <tr>
@@ -496,6 +516,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Minimum severity level to forward.</div>
                 </td>
             </tr>
 
@@ -513,6 +534,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>IP address or hostname of the remote syslog server.</div>
                 </td>
             </tr>
             <tr>
@@ -529,6 +551,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>UDP/TCP port on the remote syslog server (default 514).</div>
                 </td>
             </tr>
             <tr>
@@ -545,6 +568,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Transport protocol (udp or tcp).</div>
                 </td>
             </tr>
 
@@ -580,6 +604,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>List of syslog facilities to send to this user.</div>
                 </td>
             </tr>
                                 <tr>
@@ -597,6 +622,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Syslog facility name.</div>
                 </td>
             </tr>
             <tr>
@@ -614,6 +640,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Minimum severity level to send.</div>
                 </td>
             </tr>
 
@@ -631,6 +658,7 @@ Parameters
                 <td>
                 </td>
                 <td>
+                        <div>Local username whose terminal receives log messages.</div>
                 </td>
             </tr>
 

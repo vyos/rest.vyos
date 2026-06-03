@@ -1,6 +1,5 @@
-#!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 
@@ -90,13 +89,14 @@ class HttpApi(HttpApiBase):
             )
         return key
 
-    def send_request(self, endpoint, **payload):
+    def send_request(self, data, **payload):  # pylint: disable=arguments-renamed
         """POST to a VyOS REST endpoint.
 
         Args:
-            endpoint (str): API path, e.g. '/configure' or '/retrieve'.
-                            Named 'endpoint' not 'path' to avoid collision
-                            with the VyOS payload field also called 'path'.
+            data (str): API path, e.g. '/configure' or '/retrieve'.
+                        Named 'data' to match the HttpApiBase signature.
+                        Internally referred to as endpoint to avoid collision
+                        with the VyOS payload field also called 'data'.
             **payload: VyOS API fields: op, path, value, url, file, etc.
 
         Returns:
@@ -105,6 +105,7 @@ class HttpApi(HttpApiBase):
         Raises:
             ConnectionError: on HTTP error or VyOS success=false response.
         """
+        endpoint = data
 
         try:
             api_key = self._get_api_key()

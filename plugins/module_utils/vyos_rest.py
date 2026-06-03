@@ -80,7 +80,7 @@ class VyOSRestClient:
 
     def _post_httpapi(self, endpoint, payload):
         try:
-            result = self._conn.send_request(endpoint=endpoint, **payload)
+            result = self._conn.send_request(endpoint, **payload)
             return result
         except ConnectionError as exc:
             raise VyOSRestError(str(exc))
@@ -192,7 +192,7 @@ class VyOSRestClient:
         if self._mode == "httpapi":
             try:
                 return self._conn.send_request(
-                    endpoint="/configure",
+                    "/configure",
                     _raw_list=commands,
                 )
             except ConnectionError as exc:

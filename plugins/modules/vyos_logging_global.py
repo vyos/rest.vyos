@@ -1,14 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
 
 
 __metaclass__ = type
-
-from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
-
 
 DOCUMENTATION = r"""
 ---
@@ -33,12 +30,15 @@ options:
         type: dict
         suboptions:
           facilities:
+            description: List of syslog facilities to log to the console.
             type: list
             elements: dict
             suboptions:
               facility:
+                description: Syslog facility name (e.g. local7, all, kern).
                 type: str
               severity:
+                description: Minimum severity level to log (e.g. err, debug, all).
                 type: str
       files:
         description: Logging to local files.
@@ -46,44 +46,59 @@ options:
         elements: dict
         suboptions:
           path:
+            description: Path to the log file on the device.
             type: str
           archive:
+            description: Log file archive/rotation settings.
             type: dict
             suboptions:
               file_num:
+                description: Number of archived log files to keep.
                 type: int
               size:
+                description: Maximum size of log file in kilobytes before rotation.
                 type: int
           facilities:
+            description: List of syslog facilities to log to this file.
             type: list
             elements: dict
             suboptions:
               facility:
+                description: Syslog facility name.
                 type: str
               severity:
+                description: Minimum severity level to log.
                 type: str
       global_params:
         description: Global syslog parameters (maps to C(system syslog global)).
         type: dict
         suboptions:
           archive:
+            description: Global log archive/rotation settings.
             type: dict
             suboptions:
               file_num:
+                description: Number of archived log files to keep.
                 type: int
               size:
+                description: Maximum size of log file in kilobytes before rotation.
                 type: int
           facilities:
+            description: List of syslog facilities for global logging.
             type: list
             elements: dict
             suboptions:
               facility:
+                description: Syslog facility name.
                 type: str
               severity:
+                description: Minimum severity level to log.
                 type: str
           marker_interval:
+            description: Interval in seconds between marker log entries.
             type: int
           preserve_fqdn:
+            description: Use the fully qualified domain name in syslog messages.
             type: bool
       hosts:
         description: Logging to remote syslog hosts.
@@ -91,21 +106,27 @@ options:
         elements: dict
         suboptions:
           hostname:
+            description: IP address or hostname of the remote syslog server.
             type: str
           port:
+            description: UDP/TCP port on the remote syslog server (default 514).
             type: int
           protocol:
+            description: Transport protocol (udp or tcp).
             type: str
           facilities:
+            description: List of syslog facilities to forward to this host.
             type: list
             elements: dict
             suboptions:
               facility:
+                description: Syslog facility name.
                 type: str
               severity:
+                description: Minimum severity level to forward.
                 type: str
               protocol:
-                description: Per-facility protocol override.
+                description: Per-facility protocol override (udp or tcp).
                 type: str
       users:
         description: Logging to local user terminals.
@@ -113,14 +134,18 @@ options:
         elements: dict
         suboptions:
           username:
+            description: Local username whose terminal receives log messages.
             type: str
           facilities:
+            description: List of syslog facilities to send to this user.
             type: list
             elements: dict
             suboptions:
               facility:
+                description: Syslog facility name.
                 type: str
               severity:
+                description: Minimum severity level to send.
                 type: str
 
   running_config:
@@ -212,6 +237,9 @@ saved:
   returned: when changes are applied
   type: dict
 """
+
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
 
 
 # ------------------------------------------------------------
