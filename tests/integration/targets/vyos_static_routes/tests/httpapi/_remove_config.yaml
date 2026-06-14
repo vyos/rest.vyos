@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing static_routes config
+  vyos.rest.vyos_static_routes:
+    state: deleted
+  ignore_errors: true

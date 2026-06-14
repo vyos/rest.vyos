@@ -1,0 +1,20 @@
+---
+- debug:
+    msg: START vyos_static_routes gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather static_routes configuration
+      register: result
+      vyos.rest.vyos_static_routes:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered | selectattr('afi', 'eq', 'ipv4') | list | length > 0
+
+  always:
+    - include_tasks: _remove_config.yaml
