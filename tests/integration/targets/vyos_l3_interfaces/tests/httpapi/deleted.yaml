@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_l3_interfaces deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete L3 interface configuration
+      register: result
+      vyos.rest.vyos_l3_interfaces: &id001
+        config:
+          - name: lo
+          - name: eth0
+            vifs:
+              - vlan_id: 100
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete L3 interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_l3_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

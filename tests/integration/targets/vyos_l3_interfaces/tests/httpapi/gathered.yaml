@@ -1,0 +1,21 @@
+---
+- debug:
+    msg: START vyos_l3_interfaces gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather L3 interface configuration
+      register: result
+      vyos.rest.vyos_l3_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered | selectattr('name', 'eq', 'lo') | list | length == 1
+          - result.gathered | selectattr('name', 'eq', 'lo') | map(attribute='ipv4') | first | length == 2
+
+  always:
+    - include_tasks: _remove_config.yaml

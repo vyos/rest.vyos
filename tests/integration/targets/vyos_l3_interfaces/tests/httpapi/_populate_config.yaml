@@ -1,0 +1,15 @@
+---
+- name: Populate L3 interface config for testing
+  vyos.rest.vyos_l3_interfaces:
+    config:
+      - name: lo
+        ipv4:
+          - address: 10.0.0.1/32
+          - address: 10.0.0.2/32
+      - name: eth0
+        vifs:
+          - vlan_id: 100
+            ipv4:
+              - address: 192.0.2.100/24
+    state: merged
+  ignore_errors: true
