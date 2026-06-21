@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing LAG config
+  vyos.rest.vyos_lag_interfaces:
+    state: deleted
+  ignore_errors: true

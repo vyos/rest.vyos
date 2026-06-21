@@ -1,0 +1,12 @@
+{
+  "bond0": {
+    "arp-monitor": {
+      "interval": "100",
+      "target": {
+        "192.0.2.1": {}
+      }
+    },
+    "hash-policy": "layer2",
+    "mode": "active-backup"
+  }
+}
