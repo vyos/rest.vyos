@@ -1,0 +1,34 @@
+---
+- debug:
+    msg: START vyos_lldp_interfaces replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace LLDP interface configuration
+      register: result
+      vyos.rest.vyos_lldp_interfaces: &id001
+        config:
+          - name: eth0
+            mode: rx-tx
+            location:
+              elin: "9876543210"
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace LLDP interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
