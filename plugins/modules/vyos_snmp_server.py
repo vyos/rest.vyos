@@ -525,12 +525,12 @@ def _build_scalar_commands(want, have, state):
         want_val = want.get(argspec_key)
         have_val = have.get(argspec_key)
         path = SNMP_BASE + [api_key]
-        if state in ("merged", "replaced", "overridden"):
-            if want_val and want_val != have_val:
-                cmds.append(_set(path + [want_val]))
         if state in ("replaced", "overridden"):
             if have_val and want_val != have_val:
                 cmds.append(_delete(path))
+        if state in ("merged", "replaced", "overridden"):
+            if want_val and want_val != have_val:
+                cmds.append(_set(path + [want_val]))
     return cmds
 
 
@@ -547,10 +547,10 @@ def _build_community_commands(want_list, have_list, state):
         base = SNMP_BASE + ["community", name]
         want_auth = want_comm.get("authorization_type")
         have_auth = have_comm.get("authorization_type")
-        if want_auth and want_auth != have_auth:
-            cmds.append(_set(base + ["authorization", want_auth]))
         if state in ("replaced", "overridden") and have_auth and want_auth != have_auth:
             cmds.append(_delete(base + ["authorization"]))
+        if want_auth and want_auth != have_auth:
+            cmds.append(_set(base + ["authorization", want_auth]))
         want_clients = set(want_comm.get("clients") or [])
         have_clients = set(have_comm.get("clients") or [])
         for c in want_clients - have_clients:

@@ -267,7 +267,7 @@ def main():
 
     try:
         if state in ("merged", "replaced"):
-            if state == "merged" and before.get("text") == desired_text:
+            if before.get("text") == desired_text:
                 module.exit_json(changed=False, before=before, commands=[])
             client.configure_set(path, _encode_banner(desired_text))
             commands.append("set {p} '...'".format(p=" ".join(path)))
