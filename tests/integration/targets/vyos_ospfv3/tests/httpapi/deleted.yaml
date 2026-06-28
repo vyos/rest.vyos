@@ -1,0 +1,29 @@
+---
+- debug:
+    msg: START vyos_ospfv3 deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete OSPFv3 configuration
+      register: result
+      vyos.rest.vyos_ospfv3:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete OSPFv3 configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospfv3:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

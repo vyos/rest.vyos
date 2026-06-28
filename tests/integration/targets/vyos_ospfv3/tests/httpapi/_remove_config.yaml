@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing ospfv3 config
+  vyos.rest.vyos_ospfv3:
+    state: deleted
+  ignore_errors: true
