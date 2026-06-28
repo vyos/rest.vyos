@@ -1,0 +1,34 @@
+---
+- debug:
+    msg: START vyos_lldp_global overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override LLDP global configuration
+      register: result
+      vyos.rest.vyos_lldp_global: &id001
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.20
+          legacy_protocols:
+            - cdp
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override LLDP global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_global: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

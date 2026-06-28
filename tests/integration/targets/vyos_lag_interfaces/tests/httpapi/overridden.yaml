@@ -1,0 +1,32 @@
+---
+- debug:
+    msg: START vyos_lag_interfaces overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override LAG configuration
+      register: result
+      vyos.rest.vyos_lag_interfaces: &id001
+        config:
+          - name: bond0
+            mode: active-backup
+            hash_policy: layer2+3
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override LAG configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lag_interfaces: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

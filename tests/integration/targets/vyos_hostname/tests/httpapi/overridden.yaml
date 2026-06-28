@@ -1,0 +1,32 @@
+---
+- debug:
+    msg: START vyos_interfaces overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override interface configuration
+      register: result
+      vyos.rest.vyos_interfaces: &id001
+        config:
+          - name: eth0
+            description: Ansible overridden interface
+            mtu: 1400
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_interfaces: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

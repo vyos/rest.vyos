@@ -1,0 +1,53 @@
+---
+- debug:
+    msg: START vyos_lldp_global round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_lldp_global:
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.17
+          legacy_protocols:
+            - cdp
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_lldp_global:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered.enable == true
+          - "'192.0.2.17' in gathered.gathered.addresses"
+          - "'cdp' in gathered.gathered.legacy_protocols"
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_lldp_global:
+        config:
+          enable: true
+          addresses:
+            - 192.0.2.20
+          legacy_protocols:
+            - fdp
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_lldp_global:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - "'192.0.2.20' in gathered2.gathered.addresses"
+          - "'fdp' in gathered2.gathered.legacy_protocols"
+          - "'cdp' not in gathered2.gathered.legacy_protocols"
+
+  always:
+    - include_tasks: _remove_config.yaml

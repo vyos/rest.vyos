@@ -1,0 +1,41 @@
+---
+- debug:
+    msg: START vyos_hostname round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_hostname:
+        config:
+          hostname: ansible-rtt-host
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_hostname:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered.hostname == "ansible-rtt-host"
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_hostname:
+        config:
+          hostname: ansible-rtt-modified
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_hostname:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered.hostname == "ansible-rtt-modified"
+
+  always:
+    - include_tasks: _remove_config.yaml

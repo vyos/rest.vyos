@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_snmp_server overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override snmp_server configuration
+      register: result
+      vyos.rest.vyos_snmp_server: &id001
+        config:
+          communities:
+            - name: switches
+              authorization_type: rw
+          contact: admin@example.com
+          listen_addresses:
+            - address: 20.1.1.1
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override snmp_server configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_snmp_server: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
