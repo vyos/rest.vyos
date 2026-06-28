@@ -1,5 +1,0 @@
----
-- name: Remove pre-existing prefix_lists config
-  vyos.rest.vyos_prefix_lists:
-    state: deleted
-  ignore_errors: true

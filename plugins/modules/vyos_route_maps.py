@@ -308,7 +308,7 @@ def _want_to_api_match(match):
     return api
 
 
-def _rule_cmds(rm_name, rule, have_rule):
+def _rule_cmds(rm_name, rule, have_rule, state="merged"):
     cmds = []
     seq = str(rule["sequence"])
     rbase = _BASE + [rm_name, "rule", seq]
@@ -343,8 +343,13 @@ def _rule_cmds(rm_name, rule, have_rule):
 
     want_set_api = _want_to_api_set(rule.get("set"))
     have_set = have_rule.get("set") or {}
-    if want_set_api != have_set:
-        cmds += _set_cmds(rbase, rule.get("set"))
+    if state in ("replaced", "overridden"):
+        if want_set_api != have_set:
+            cmds += _set_cmds(rbase, rule.get("set"))
+    else:
+        have_subset = {k: have_set[k] for k in want_set_api if k in have_set}
+        if want_set_api != have_subset:
+            cmds += _set_cmds(rbase, rule.get("set"))
 
     return cmds
 
@@ -380,7 +385,7 @@ def build_commands(config, have_raw, state):
             test_cmds = []
             for rule in rm.get("entries") or []:
                 have_rule = have_entries.get(str(rule["sequence"]), {})
-                test_cmds += _rule_cmds(rm_name, rule, have_rule)
+                test_cmds += _rule_cmds(rm_name, rule, have_rule, state)
             if test_cmds or extra_seqs:
                 cmds.append(("delete", _BASE + [rm_name]))
                 have_rm = {}
@@ -391,7 +396,7 @@ def build_commands(config, have_raw, state):
 
         for rule in rm.get("entries") or []:
             have_rule = have_entries.get(str(rule["sequence"]), {})
-            cmds += _rule_cmds(rm_name, rule, have_rule)
+            cmds += _rule_cmds(rm_name, rule, have_rule, state)
 
     return cmds
 

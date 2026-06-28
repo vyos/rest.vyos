@@ -14,8 +14,13 @@
             entries:
               - sequence: 10
                 action: permit
+                match:
+                  peer: 192.0.2.32
                 set:
                   metric: "10"
+                  as_path_exclude: "111"
+                  aggregator:
+                    as: 100
         state: overridden
 
     - assert:

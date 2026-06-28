@@ -6,12 +6,6 @@
         facilities:
           - facility: local7
             severity: err
-      hosts:
-        - hostname: 172.16.0.1
-          port: 514
-          facilities:
-            - facility: local7
-              severity: all
       global_params:
         facilities:
           - facility: cron

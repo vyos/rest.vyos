@@ -305,7 +305,7 @@ def normalize_running(raw):
     for f, data in raw.get("console", {}).get("facility", {}).items():
         result["console"]["facilities"][f] = data.get("level")
 
-    g = raw.get("global", {})
+    g = raw.get("local", {})
     for f, data in g.get("facility", {}).items():
         result["global"]["facilities"][f] = data.get("level")
     if "archive" in g:
@@ -315,7 +315,7 @@ def normalize_running(raw):
     if "preserve-fqdn" in g:
         result["global"]["preserve_fqdn"] = True
 
-    for host, data in raw.get("host", {}).items():
+    for host, data in raw.get("remote", {}).items():
         h = {"port": data.get("port"), "facilities": {}}
         for f, fd in data.get("facility", {}).items():
             h["facilities"][f] = {
@@ -402,7 +402,7 @@ def build_commands(want, have, state):
     )
 
     cmds += diff_facilities(
-        ["system", "syslog", "global"],
+        ["system", "syslog", "local"],
         want["global"]["facilities"],
         have["global"]["facilities"],
         state,
@@ -416,7 +416,7 @@ def build_commands(want, have, state):
     )
 
     cmds += diff_map(
-        ["system", "syslog", "host"],
+        ["system", "syslog", "remote"],
         want["hosts"],
         have["hosts"],
         state,

@@ -6,7 +6,7 @@
 - include_tasks: _populate_config.yaml
 
 - block:
-    - name: Override logging global configuration
+    - name: Override logging_global configuration
       register: result
       vyos.rest.vyos_logging_global: &id001
         config:
@@ -24,7 +24,7 @@
         that:
           - result.changed == true
 
-    - name: Override logging global configuration (IDEMPOTENT)
+    - name: Override logging_global configuration (IDEMPOTENT)
       register: result
       vyos.rest.vyos_logging_global: *id001
 

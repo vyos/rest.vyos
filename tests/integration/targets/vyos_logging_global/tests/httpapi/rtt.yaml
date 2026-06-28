@@ -27,6 +27,7 @@
       assert:
         that:
           - gathered.gathered.console is defined
+          - gathered.gathered.global is defined
 
     - name: RTT - Modify configuration
       vyos.rest.vyos_logging_global:
@@ -51,6 +52,7 @@
         that:
           - gathered2.gathered.console is defined
           - gathered2.gathered.global is defined
+          - gathered2.gathered.global.facilities.cron == "info"
 
   always:
     - include_tasks: _remove_config.yaml

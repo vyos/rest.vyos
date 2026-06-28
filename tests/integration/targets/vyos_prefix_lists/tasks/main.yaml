@@ -1,5 +1,0 @@
----
-- name: Run httpapi tests
-  ansible.builtin.include_tasks: httpapi.yaml
-  tags:
-    - httpapi
