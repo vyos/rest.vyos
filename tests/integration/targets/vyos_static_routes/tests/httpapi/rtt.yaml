@@ -1,0 +1,54 @@
+---
+- debug:
+    msg: START vyos_static_routes round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_static_routes:
+        config:
+          - afi: ipv4
+            routes:
+              - dest: 192.0.2.0/24
+                next_hops:
+                  - forward_router_address: 10.0.0.1
+              - dest: 203.0.113.0/24
+                blackhole_config:
+                  distance: 200
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_static_routes:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered | selectattr('afi', 'eq', 'ipv4') | list | length == 1
+          - gathered.gathered | selectattr('afi', 'eq', 'ipv4') | map(attribute='routes') | first | selectattr('dest', 'eq', '192.0.2.0/24') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_static_routes:
+        config:
+          - afi: ipv4
+            routes:
+              - dest: 192.0.2.0/24
+                next_hops:
+                  - forward_router_address: 10.0.0.2
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_static_routes:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered | selectattr('afi', 'eq', 'ipv4') | list | length == 1
+          - gathered2.gathered | selectattr('afi', 'eq', 'ipv4') | map(attribute='routes') | first | selectattr('dest', 'eq', '192.0.2.0/24') | map(attribute='next_hops') | first | selectattr('forward_router_address', 'eq', '10.0.0.2') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml
