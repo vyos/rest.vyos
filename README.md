@@ -87,6 +87,7 @@ Name | Description
 [vyos.rest.vyos_logging_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_logging_global_module.rst)|Manage syslog configuration on VyOS devices using REST API
 [vyos.rest.vyos_ntp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
 [vyos.rest.vyos_ospf_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospf_interfaces_module.rst)|Manage OSPF interface configuration on VyOS devices using REST API
+[vyos.rest.vyos_ospfv2](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv2_module.rst)|Manage OSPFv2 configuration on VyOS devices using REST API
 [vyos.rest.vyos_ospfv3](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv3_module.rst)|Manage OSPFv3 configuration on VyOS devices using REST API
 [vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
 [vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API

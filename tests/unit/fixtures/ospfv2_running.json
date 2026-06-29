@@ -1,0 +1,42 @@
+{
+  "area": {
+    "2": {
+      "area-type": { "normal": {} },
+      "network": "192.0.2.0/24"
+    },
+    "3": {
+      "area-type": { "nssa": {} }
+    },
+    "4": {
+      "area-type": { "stub": { "default-cost": "20" } },
+      "range": {
+        "192.0.3.0/24": { "cost": "10" },
+        "192.0.4.0/24": {}
+      }
+    }
+  },
+  "auto-cost": { "reference-bandwidth": "2" },
+  "interface": { "eth1": { "passive": {} }, "eth2": { "passive": {} } },
+  "log-adjacency-changes": { "detail": {} },
+  "neighbor": {
+    "192.0.11.12": { "priority": "2", "poll-interval": "10" }
+  },
+  "parameters": {
+    "router-id": "192.0.1.1",
+    "abr-type": "cisco",
+    "opaque-lsa": {},
+    "rfc1583-compatibility": {}
+  },
+  "redistribute": {
+    "bgp": { "metric": "10", "metric-type": "2" },
+    "connected": {}
+  },
+  "default-information": {
+    "originate": {
+      "always": {},
+      "metric": "10",
+      "metric-type": "2",
+      "route-map": "ingress"
+    }
+  }
+}
