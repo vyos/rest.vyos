@@ -464,6 +464,7 @@ ARGUMENT_SPEC = dict(
                             plaintext_password=dict(type="str", no_log=True),
                             md5_key=dict(
                                 type="dict",
+                                no_log=True,
                                 options=dict(
                                     key_id=dict(type="int"),
                                     key=dict(type="str", no_log=True),
