@@ -1,0 +1,4 @@
+{
+  "eth1": { "dead-interval": "39", "passive": {} },
+  "eth2": {}
+}
