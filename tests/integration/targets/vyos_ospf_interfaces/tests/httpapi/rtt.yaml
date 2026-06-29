@@ -1,0 +1,66 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_ospf_interfaces:
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 100
+                transmit_delay: 50
+              - afi: ipv6
+                dead_interval: 39
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_ospf_interfaces:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      vars:
+        eth1_afs: >-
+          {{ gathered.gathered
+             | selectattr('name', 'eq', 'eth1')
+             | map(attribute='address_family')
+             | first }}
+      assert:
+        that:
+          - gathered.gathered | selectattr('name', 'eq', 'eth1') | list | length == 1
+          - eth1_afs | selectattr('afi', 'eq', 'ipv4') | map(attribute='cost') | first == 100
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_ospf_interfaces:
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 200
+              - afi: ipv6
+                passive: true
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_ospf_interfaces:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      vars:
+        eth1_afs2: >-
+          {{ gathered2.gathered
+             | selectattr('name', 'eq', 'eth1')
+             | map(attribute='address_family')
+             | first }}
+      assert:
+        that:
+          - eth1_afs2 | selectattr('afi', 'eq', 'ipv4') | map(attribute='cost') | first == 200
+          - eth1_afs2 | selectattr('afi', 'eq', 'ipv6') | map(attribute='passive') | first == true
+
+  always:
+    - include_tasks: _remove_config.yaml

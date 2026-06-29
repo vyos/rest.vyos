@@ -1,0 +1,20 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather OSPF interface configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered | selectattr('name', 'eq', 'eth1') | list | length == 1
+          - result.gathered | selectattr('name', 'eq', 'eth2') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

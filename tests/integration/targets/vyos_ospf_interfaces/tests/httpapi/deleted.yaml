@@ -1,0 +1,40 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete specific interface OSPF configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        config:
+          - name: eth1
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete all OSPF interface configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete all OSPF interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

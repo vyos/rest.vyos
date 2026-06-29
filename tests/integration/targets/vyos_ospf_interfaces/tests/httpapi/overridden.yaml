@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override OSPF interface configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces: &id001
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 300
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override OSPF interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospf_interfaces: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

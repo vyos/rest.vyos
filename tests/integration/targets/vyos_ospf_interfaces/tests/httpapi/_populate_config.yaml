@@ -1,0 +1,19 @@
+---
+- name: Populate ospf_interfaces config for testing
+  vyos.rest.vyos_ospf_interfaces:
+    config:
+      - name: eth1
+        address_family:
+          - afi: ipv4
+            cost: 100
+            transmit_delay: 50
+            priority: 26
+          - afi: ipv6
+            dead_interval: 39
+            passive: true
+      - name: eth2
+        address_family:
+          - afi: ipv4
+            cost: 200
+    state: merged
+  ignore_errors: true
