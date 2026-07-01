@@ -1,0 +1,27 @@
+{
+  "system-as": "65000",
+  "parameters": {
+    "router-id": "192.0.1.1",
+    "log-neighbor-changes": {}
+  },
+  "neighbor": {
+    "192.0.2.1": {
+      "remote-as": "65001",
+      "description": "peer1",
+      "timers": {
+        "holdtime": "30",
+        "keepalive": "10"
+      }
+    },
+    "192.0.2.2": {
+      "remote-as": "65002",
+      "ebgp-multihop": "2",
+      "update-source": "eth0"
+    }
+  },
+  "peer-group": {
+    "PG1": {
+      "remote-as": "65003"
+    }
+  }
+}

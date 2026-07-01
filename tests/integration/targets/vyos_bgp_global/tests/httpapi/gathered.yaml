@@ -1,0 +1,22 @@
+---
+- debug:
+    msg: START vyos_bgp_global gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather BGP global configuration
+      register: result
+      vyos.rest.vyos_bgp_global:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.as_number == 65000
+          - result.gathered.parameters.router_id == "192.0.1.1"
+          - result.gathered.neighbors | selectattr('neighbor_address', 'eq', '192.0.2.1') | list | length == 1
+          - result.gathered.peer_groups | selectattr('peer_group', 'eq', 'PG1') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

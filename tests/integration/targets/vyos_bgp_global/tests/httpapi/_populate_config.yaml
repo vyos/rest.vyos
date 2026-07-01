@@ -1,0 +1,19 @@
+---
+- name: Populate BGP global config for testing
+  vyos.rest.vyos_bgp_global:
+    config:
+      as_number: 65000
+      parameters:
+        router_id: 192.0.1.1
+      neighbors:
+        - neighbor_address: 192.0.2.1
+          remote_as: 65001
+          description: peer1
+          timers:
+            holdtime: 30
+            keepalive: 10
+      peer_groups:
+        - peer_group: PG1
+          remote_as: 65002
+    state: merged
+  ignore_errors: true

@@ -1,0 +1,5 @@
+---
+- name: Remove BGP configuration
+  vyos.rest.vyos_bgp_global:
+    state: deleted
+  ignore_errors: true
