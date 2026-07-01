@@ -1,0 +1,29 @@
+{
+  "system-as": "65000",
+  "address-family": {
+    "ipv4-unicast": {
+      "network": {
+        "192.0.2.0/24": {},
+        "192.0.3.0/24": {}
+      },
+      "redistribute": {
+        "connected": { "metric": "10" },
+        "static": {}
+      }
+    }
+  },
+  "neighbor": {
+    "192.0.2.1": {
+      "remote-as": "65001",
+      "address-family": {
+        "ipv4-unicast": {
+          "nexthop-self": {},
+          "soft-reconfiguration": { "inbound": {} }
+        },
+        "ipv6-unicast": {
+          "soft-reconfiguration": { "inbound": {} }
+        }
+      }
+    }
+  }
+}
