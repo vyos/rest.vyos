@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_user gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Create user for gathering
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User
+            password: S3cur3P@ss!
+        state: present
+
+    - name: Gather users
+      register: result
+      vyos.rest.vyos_user:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered | selectattr('name', 'eq', 'testuser') | list | length == 1
+          - result.gathered | selectattr('name', 'eq', 'vyos') | list | length == 1
+          - (result.gathered | selectattr('name', 'eq', 'testuser') | first).full_name == 'Test User'
+
+  always:
+    - include_tasks: _remove_config.yaml

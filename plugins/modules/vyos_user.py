@@ -34,7 +34,6 @@ options:
       password:
         description: Plaintext password. Write-only — hashed on device immediately.
         type: str
-        no_log: true
       update_password:
         description:
           - Control when password is updated.
@@ -243,7 +242,7 @@ ARGUMENT_SPEC = dict(
                 elements="dict",
                 options=dict(
                     name=dict(type="str", required=True),
-                    key=dict(type="str", required=True),
+                    key=dict(type="str", required=True, no_log=True),
                     type=dict(
                         type="str",
                         required=True,

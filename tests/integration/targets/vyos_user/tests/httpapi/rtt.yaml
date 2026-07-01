@@ -1,0 +1,45 @@
+---
+- debug:
+    msg: START vyos_user round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Create user
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User
+            password: S3cur3P@ss!
+            update_password: on_create
+        state: present
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_user:
+        state: gathered
+
+    - name: RTT - Assert user exists
+      assert:
+        that:
+          - gathered.gathered | selectattr('name', 'eq', 'testuser') | list | length == 1
+
+    - name: RTT - Update full_name
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User Modified
+        state: present
+
+    - name: RTT - Gather after update
+      register: gathered2
+      vyos.rest.vyos_user:
+        state: gathered
+
+    - name: RTT - Assert update applied
+      assert:
+        that:
+          - (gathered2.gathered | selectattr('name', 'eq', 'testuser') | first).full_name == 'Test User Modified'
+
+  always:
+    - include_tasks: _remove_config.yaml

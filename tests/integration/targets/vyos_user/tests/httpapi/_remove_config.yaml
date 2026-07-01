@@ -1,0 +1,8 @@
+---
+- name: Remove test users
+  vyos.rest.vyos_user:
+    users:
+      - name: testuser
+      - name: testuser2
+    state: absent
+  ignore_errors: true
