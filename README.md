@@ -94,6 +94,7 @@ erfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST
 [vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
 [vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
 [vyos.rest.vyos_static_routes](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_static_routes_module.rst)|Manage static routes on VyOS devices via REST API.
+[vyos.rest.vyos_user](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_user_module.rst)|Manage user accounts on VyOS devices using REST API
 
 <!--end collection content-->
 
