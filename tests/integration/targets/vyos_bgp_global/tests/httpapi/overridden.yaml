@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_bgp_global overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override BGP global configuration
+      register: result
+      vyos.rest.vyos_bgp_global: &id001
+        config:
+          as_number: 65000
+          parameters:
+            router_id: 192.0.1.2
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              remote_as: 65001
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override BGP global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_bgp_global: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
