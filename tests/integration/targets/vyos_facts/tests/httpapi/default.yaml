@@ -1,0 +1,13 @@
+---
+- debug:
+    msg: START vyos_facts default integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Gather default facts
+      vyos.rest.vyos_facts:
+
+    - assert:
+        that:
+          - ansible_facts.vyos_hostname is defined
+          - ansible_facts.vyos_interfaces is defined
+          - ansible_facts.vyos_hostname | length > 0

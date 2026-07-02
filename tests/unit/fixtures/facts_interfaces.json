@@ -1,0 +1,11 @@
+{
+  "ethernet": {
+    "eth0": { "address": "dhcp", "hw-id": "52:54:00:65:5a:24" },
+    "eth1": {
+      "description": "uplink",
+      "hw-id": "52:54:00:96:42:93",
+      "mtu": "1500"
+    },
+    "eth2": { "hw-id": "52:54:00:75:31:fa" }
+  }
+}
