@@ -1,0 +1,22 @@
+---
+- name: Populate firewall global config for testing
+  vyos.rest.vyos_firewall_global:
+    config:
+      group:
+        address_group:
+          - name: SERVERS
+            description: Web servers
+            address:
+              - 192.168.1.10
+              - 192.168.1.11
+        network_group:
+          - name: LAN
+            network:
+              - 192.168.0.0/16
+        port_group:
+          - name: WEB-PORTS
+            port:
+              - "80"
+              - "443"
+    state: merged
+  ignore_errors: true

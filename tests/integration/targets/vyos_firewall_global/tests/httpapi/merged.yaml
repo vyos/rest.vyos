@@ -1,0 +1,48 @@
+---
+- debug:
+    msg: START vyos_firewall_global merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge firewall global configuration
+      register: result
+      vyos.rest.vyos_firewall_global:
+        config:
+          group:
+            address_group:
+              - name: SERVERS
+                address:
+                  - 192.168.1.10
+            network_group:
+              - name: LAN
+                network:
+                  - 192.168.0.0/16
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge firewall global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_global:
+        config:
+          group:
+            address_group:
+              - name: SERVERS
+                address:
+                  - 192.168.1.10
+            network_group:
+              - name: LAN
+                network:
+                  - 192.168.0.0/16
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

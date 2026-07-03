@@ -1,0 +1,34 @@
+{
+  "address-group": {
+    "SERVERS": {
+      "description": "Web servers",
+      "address": ["192.168.1.10", "192.168.1.11"]
+    },
+    "DNS": {
+      "address": "8.8.8.8"
+    }
+  },
+  "network-group": {
+    "LAN": {
+      "network": "192.168.0.0/16"
+    },
+    "DMZ": {
+      "network": ["10.0.0.0/8", "172.16.0.0/12"]
+    }
+  },
+  "port-group": {
+    "WEB-PORTS": {
+      "port": ["80", "443"]
+    }
+  },
+  "interface-group": {
+    "LAN-IFACES": {
+      "interface": "eth1"
+    }
+  },
+  "ipv6-network-group": {
+    "IPV6-LAN": {
+      "network": "2001:db8::/32"
+    }
+  }
+}
