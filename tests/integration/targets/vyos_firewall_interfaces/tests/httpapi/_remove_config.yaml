@@ -1,0 +1,5 @@
+---
+- name: Remove firewall interfaces configuration
+  vyos.rest.vyos_firewall_interfaces:
+    state: deleted
+  ignore_errors: true

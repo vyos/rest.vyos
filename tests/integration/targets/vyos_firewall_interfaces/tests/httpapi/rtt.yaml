@@ -1,0 +1,53 @@
+---
+- debug:
+    msg: START vyos_firewall_interfaces round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_firewall_interfaces:
+        config:
+          - afi: ipv4
+            hooks:
+              - hook: input
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+                    state: established
+        state: merged
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_firewall_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered.gathered | selectattr('afi', 'eq', 'ipv4') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_firewall_interfaces:
+        config:
+          - afi: ipv4
+            hooks:
+              - hook: input
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+                    state: established
+        state: replaced
+
+    - name: RTT - Gather after modify
+      register: gathered2
+      vyos.rest.vyos_firewall_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - (gathered2.gathered | selectattr('afi', 'eq', 'ipv4') | first).hooks[0].default_action == 'accept'
+
+  always:
+    - include_tasks: _remove_config.yaml

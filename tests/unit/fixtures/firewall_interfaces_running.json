@@ -1,0 +1,30 @@
+{
+  "ipv4": {
+    "input": {
+      "filter": {
+        "default-action": "accept",
+        "rule": {
+          "10": { "action": "accept", "state": "established" },
+          "20": { "action": "drop", "state": "invalid" }
+        }
+      }
+    },
+    "forward": {
+      "filter": {
+        "default-action": "accept"
+      }
+    },
+    "output": {
+      "filter": {
+        "default-action": "accept"
+      }
+    }
+  },
+  "ipv6": {
+    "input": {
+      "filter": {
+        "default-action": "accept"
+      }
+    }
+  }
+}

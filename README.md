@@ -82,6 +82,7 @@ Name | Description
 [vyos.rest.vyos_configure](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_configure_module.rst)|Send raw set/delete commands to a VyOS device via REST API.
 [vyos.rest.vyos_facts](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_facts_module.rst)|Get facts about VyOS devices using REST API
 [vyos.rest.vyos_firewall_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_global_module.rst)|Manage global firewall configuration on VyOS devices using REST API
+[vyos.rest.vyos_firewall_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_interfaces_module.rst)|Manage firewall hook filters on VyOS devices using REST API
 [vyos.rest.vyos_firewall_rules](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_rules_module.rst)|Manage firewall rule sets on VyOS devices using REST API
 [vyos.rest.vyos_hostname](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_hostname_module.rst)|Manage the system hostname on a VyOS device via the REST API.
 [vyos.rest.vyos_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_interfaces_module.rst)|Manage interface configuration on VyOS devices via REST API.

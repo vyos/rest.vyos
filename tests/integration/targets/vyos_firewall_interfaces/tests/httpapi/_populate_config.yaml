@@ -1,0 +1,23 @@
+---
+- name: Populate firewall interfaces config for testing
+  vyos.rest.vyos_firewall_interfaces:
+    config:
+      - afi: ipv4
+        hooks:
+          - hook: input
+            default_action: accept
+            rules:
+              - number: 10
+                action: accept
+                state: established
+              - number: 20
+                action: drop
+                state: invalid
+          - hook: forward
+            default_action: accept
+      - afi: ipv6
+        hooks:
+          - hook: input
+            default_action: accept
+    state: merged
+  ignore_errors: true
