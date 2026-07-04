@@ -1,0 +1,33 @@
+{
+  "ipv4": {
+    "name": {
+      "RULE-SET1": {
+        "default-action": "drop",
+        "rule": {
+          "10": {
+            "action": "accept",
+            "protocol": "tcp",
+            "source": { "address": "192.168.1.0/24" },
+            "destination": { "port": "80" }
+          },
+          "20": {
+            "action": "drop",
+            "state": "invalid"
+          }
+        }
+      }
+    }
+  },
+  "ipv6": {
+    "name": {
+      "RULE-SET6": {
+        "default-action": "accept",
+        "rule": {
+          "10": {
+            "action": "accept"
+          }
+        }
+      }
+    }
+  }
+}

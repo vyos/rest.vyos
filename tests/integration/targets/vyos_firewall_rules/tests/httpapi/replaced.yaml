@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_firewall_rules replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace firewall rules configuration
+      register: result
+      vyos.rest.vyos_firewall_rules: &id001
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: RULE-SET1
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace firewall rules configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_rules: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

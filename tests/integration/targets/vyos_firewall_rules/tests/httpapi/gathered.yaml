@@ -1,0 +1,21 @@
+---
+- debug:
+    msg: START vyos_firewall_rules gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather firewall rules configuration
+      register: result
+      vyos.rest.vyos_firewall_rules:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered | selectattr('afi', 'eq', 'ipv4') | list | length == 1
+          - result.gathered | selectattr('afi', 'eq', 'ipv6') | list | length == 1
+          - (result.gathered | selectattr('afi', 'eq', 'ipv4') | first).rule_sets | selectattr('name', 'eq', 'RULE-SET1') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

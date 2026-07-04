@@ -1,0 +1,50 @@
+---
+- debug:
+    msg: START vyos_firewall_rules merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge firewall rules configuration
+      register: result
+      vyos.rest.vyos_firewall_rules:
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: RULE-SET1
+                default_action: drop
+                rules:
+                  - number: 10
+                    action: accept
+                    protocol: tcp
+                    source:
+                      address: 192.168.1.0/24
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge firewall rules configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_rules:
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: RULE-SET1
+                default_action: drop
+                rules:
+                  - number: 10
+                    action: accept
+                    protocol: tcp
+                    source:
+                      address: 192.168.1.0/24
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
