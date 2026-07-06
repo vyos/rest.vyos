@@ -1,0 +1,50 @@
+---
+- debug:
+    msg: START vyos_ha overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Override - only g1 remains, virtual_servers removed
+      vyos.rest.vyos_ha: &id001
+        config:
+          vrrp:
+            groups:
+              - name: g1
+                interface: eth0
+                vrid: 20
+                priority: 100
+                address:
+                  - 192.168.1.100/24
+        state: overridden
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather after override
+      vyos.rest.vyos_ha:
+        state: gathered
+      register: gathered
+
+    - assert:
+        that:
+          - gathered.gathered.vrrp.groups | length == 1
+          - gathered.gathered.vrrp.groups[0].name == "g1"
+          - "'virtual_servers' not in gathered.gathered"
+          - "'sync_groups' not in gathered.gathered.vrrp"
+          - "'snmp' not in gathered.gathered.vrrp"
+
+    - name: Override again (IDEMPOTENT)
+      vyos.rest.vyos_ha: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

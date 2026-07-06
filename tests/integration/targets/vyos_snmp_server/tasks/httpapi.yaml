@@ -9,7 +9,7 @@
 
 - name: Set test_items
   ansible.builtin.set_fact:
-    test_items: "{{ test_cases.files | map(attribute='path') | list }}"
+    test_items: "{{ test_cases.files | map(attribute='path') | list | sort }}"
 
 - name: Run test case (connection=httpapi)
   ansible.builtin.include_tasks: "{{ test_case_to_run }}"

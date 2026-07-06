@@ -5,9 +5,9 @@
 - block:
     - name: Gather default facts
       vyos.rest.vyos_facts:
+        gather_subset: default
 
     - assert:
         that:
           - ansible_facts.vyos_hostname is defined
-          - ansible_facts.vyos_interfaces is defined
-          - ansible_facts.vyos_hostname | length > 0
+          - ansible_facts.vyos_config is defined

@@ -54,7 +54,9 @@ options:
         description: System location.
         type: str
       smux_peer:
-        description: Register a subtree for SMUX-based processing.
+        description: >-
+          Register a subtree for SMUX-based processing. The device supports
+          multiple values here; this module manages a single value only.
         type: str
       trap_source:
         description: SNMP trap source address.
@@ -72,12 +74,15 @@ options:
             description: UDP port (default 161).
             type: int
       trap_target:
-        description: SNMP trap target.
+        description: >-
+          SNMP (v2) trap target. The device supports multiple trap targets;
+          this module manages a single one only.
         type: dict
         suboptions:
           address:
             description: IP address of the trap target host.
             type: str
+            required: true
           community:
             description: Community name to use for traps.
             type: str
@@ -128,7 +133,9 @@ options:
                     description: Authentication algorithm.
                     type: str
                   encrypted_key:
-                    description: Encrypted authentication key (stored as encrypted-password on device).
+                    description: >-
+                      Encrypted authentication key (stored as encrypted-password
+                      on device).
                     type: str
                   plaintext_key:
                     description: Plaintext authentication key (device encrypts it).
@@ -164,6 +171,7 @@ options:
               address:
                 description: IP address of the SNMPv3 trap target.
                 type: str
+                required: true
               port:
                 description: UDP port on the trap target host.
                 type: int
@@ -202,7 +210,10 @@ options:
                     description: Plaintext privacy key.
                     type: str
           views:
-            description: SNMPv3 view configuration.
+            description: >-
+              SNMPv3 view configuration. The device supports multiple OIDs
+              (each with its own exclude/mask) per view; this module manages
+              a single OID entry per view only.
             type: list
             elements: dict
             suboptions:
@@ -278,7 +289,7 @@ after:
   returned: when changed
   type: dict
 commands:
-  description: List of API command dicts sent to the device.
+  description: List of API command tuples sent to the device.
   returned: always
   type: list
 gathered:
@@ -287,463 +298,418 @@ gathered:
   type: dict
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    to_tag_dict,
+)
 
 
-SNMP_BASE = ["service", "snmp"]
+_BASE = ["service", "snmp"]
 
-SCALAR_FIELDS = {
-    "contact": "contact",
-    "description": "description",
-    "location": "location",
-    "smux_peer": "smux-peer",
-    "trap_source": "trap-source",
+# ---------------------------------------------------------------------------
+# The one thing a purely structural walk of ARGUMENT_SPEC can never
+# infer: a handful of field names that mean something different on the
+# device than in the argspec, and aren't a mechanical kebab<->snake
+# conversion dict_op could handle itself. Declared once, here, as a
+# flat value map -- not embedded in ARGUMENT_SPEC (keeping that 100%
+# standard Ansible), and not scattered across per-section transform
+# functions. Confirmed against vyos-1x for every entry:
+#   - authorization_type/clients/networks: communities' fields don't
+#     match their device leaf names at all ("authorization"/"client"/
+#     "network").
+#   - authentication/encrypted_key/plaintext_key: shared by v3 users
+#     and v3 trap-targets (both nest under a device "auth" node with
+#     "encrypted-password"/"plaintext-password" leaves). This is also
+#     a real bug fix -- the previous implementation used "plaintext-
+#     key", which does not exist on the device at all.
+#   - engine_id: "engineid" on the device is one word, so there's no
+#     hyphen for the mechanical conversion to split on.
+# None of these names are reused elsewhere in this argspec with a
+# different intended device mapping (confirmed by inspection), so one
+# flat map is safe here -- a module with a genuine name collision
+# across nesting levels (this one doesn't have one) would need the map
+# scoped by path instead.
+_DEVICE_RENAMES = {
+    "communities": "community",
+    "listen_addresses": "listen-address",
+    "snmp_v3": "v3",
+    "authorization_type": "authorization",
+    "clients": "client",
+    "networks": "network",
+    "authentication": "auth",
+    "encrypted_key": "encrypted-password",
+    "plaintext_key": "plaintext-password",
+    "engine_id": "engineid",
+    "groups": "group",
+    "users": "user",
+    "views": "view",
+    "trap_targets": "trap-target",
 }
 
 
-def to_list(value):
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, dict):
-        return list(value.keys())
-    return [str(value)]
+def _derive_key_field(options_spec):
+    """The field identifying each entry in a named-list section is
+    never inferable from a generic walk alone -- but it doesn't need
+    to be hand-declared either: every such section in this argspec
+    already marks exactly one suboption required=True (you can't
+    create a community without a name, a user without a username).
+    Deriving it here means the key field is asserted to exist by the
+    argspec itself, not duplicated in a place that could drift out of
+    sync with it.
+    """
+    required = [k for k, spec in options_spec.items() if spec.get("required")]
+    if len(required) != 1:
+        raise ValueError(
+            "expected exactly one required suboption to serve as the key field, "
+            "found: {0}".format(required),
+        )
+    return required[0]
 
 
-def _cmd(op, path):
-    return {"op": op, "path": path}
-
-
-def _set(path):
-    return _cmd("set", path)
-
-
-def _delete(path):
-    return _cmd("delete", path)
-
-
-def _parse_communities(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for name, data in sorted(raw.items()):
-        entry = {"name": name}
-        if not isinstance(data, dict):
-            result.append(entry)
-            continue
-        if "authorization" in data:
-            entry["authorization_type"] = data["authorization"]
-        if "client" in data:
-            entry["clients"] = sorted(to_list(data["client"]))
-        if "network" in data:
-            entry["networks"] = sorted(to_list(data["network"]))
-        result.append(entry)
-    return result
-
-
-def _parse_listen_addresses(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for addr, data in sorted(raw.items()):
-        entry = {"address": addr}
-        if isinstance(data, dict) and "port" in data:
-            entry["port"] = int(data["port"])
-        result.append(entry)
-    return result
-
-
-def _parse_trap_target(raw):
-    if not raw:
-        return None
-    if isinstance(raw, str):
-        return {"address": raw}
-    entry = {}
-    if "address" in raw:
-        entry["address"] = raw["address"]
-    if "community" in raw:
-        entry["community"] = raw["community"]
-    if "port" in raw:
-        entry["port"] = int(raw["port"])
-    return entry if entry else None
-
-
-def _parse_v3_auth_privacy(raw, key):
-    block = raw.get(key) if isinstance(raw, dict) else None
-    if not block:
-        return None
+def _keyed_list_to_device(items, key_field, entry_transform=None):
+    """A list of dicts, each identified by key_field's value, becomes a
+    device dict keyed by that value -- the one structural mechanic
+    every named-list section in this module needs. entry_transform
+    supplies whatever else is genuinely irreducible for a given section
+    (a nested reshape) -- defaulting to the generic recursive walker.
+    """
+    entry_transform = entry_transform or autoclean
     result = {}
-    if "type" in block:
-        result["type"] = block["type"]
-    if "encrypted-password" in block:
-        result["encrypted_key"] = block["encrypted-password"]
-    if "plaintext-key" in block:
-        result["plaintext_key"] = block["plaintext-key"]
-    return result if result else None
-
-
-def _parse_v3_users(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for username, data in sorted(raw.items()):
-        entry = {"user": username}
-        auth = _parse_v3_auth_privacy(data, "auth")
-        if auth:
-            entry["authentication"] = auth
-        priv = _parse_v3_auth_privacy(data, "privacy")
-        if priv:
-            entry["privacy"] = priv
-        if isinstance(data, dict):
-            if "group" in data:
-                entry["group"] = data["group"]
-            if "mode" in data:
-                entry["mode"] = data["mode"]
-            if "tsm-key" in data:
-                entry["tsm_key"] = data["tsm-key"]
-        result.append(entry)
+    for item in items or []:
+        if not item.get(key_field):
+            continue
+        rest = {k: v for k, v in item.items() if k != key_field}
+        result[item[key_field]] = entry_transform(rest)
     return result
 
 
-def _parse_v3_groups(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for name, data in sorted(raw.items()):
-        entry = {"group": name}
-        if isinstance(data, dict):
-            for key in ("mode", "seclevel", "view"):
-                if key in data:
-                    entry[key] = data[key]
-        result.append(entry)
+def _keyed_list_from_device(raw, key_field, entry_transform=None):
+    entry_transform = entry_transform or from_device
+    return [
+        {key_field: key, **entry_transform(data or {})}
+        for key, data in sorted(to_tag_dict(raw).items())
+    ]
+
+
+def _single_to_device(obj, key_field):
+    """trap_target (v2): confirmed a genuine tagNode keyed by address,
+    but the argspec models only a single object (documented
+    limitation, preserved as-is: the device supports multiple trap
+    targets, this module manages one). Reuses the same keyed-list
+    mechanic above as "a list capped to one entry" rather than a
+    bespoke pair of functions.
+    """
+    if not obj or not obj.get(key_field):
+        return {}
+    return _keyed_list_to_device([obj], key_field)
+
+
+def _single_from_device(raw, key_field):
+    entries = _keyed_list_from_device(raw, key_field)
+    return entries[0] if entries else None
+
+
+# ---------------------------------------------------------------------------
+# v3 views — the confirmed structural bug fix. "oid" is a genuine tag
+# node (keyed by the OID value itself) with its own "exclude"/"mask"
+# children -- the previous implementation treated "oid" as a flat leaf
+# and read exclude/mask from the wrong nesting level entirely (directly
+# under the view, when they actually live under view.oid.<value>). This
+# is a genuine arity change (three sibling scalar fields collapse into
+# one nested tag node), not a rename -- it can't be expressed through
+# _DEVICE_RENAMES, so it's the one section needing a real override
+# instead of the generic recursive walker. The device also supports
+# multiple OIDs per view and multiple excludes per OID (both <multi/> /
+# tagNode); the argspec only models one of each -- a documented
+# limitation, preserved as-is, not expanded here.
+# ---------------------------------------------------------------------------
+
+
+def _view_entry_to_device(rest):
+    entry = autoclean({k: v for k, v in rest.items() if k not in ("oid", "exclude", "mask")})
+    if rest.get("oid"):
+        oid_entry = {}
+        if rest.get("exclude"):
+            oid_entry["exclude"] = [rest["exclude"]]
+        if rest.get("mask"):
+            oid_entry["mask"] = rest["mask"]
+        entry["oid"] = {rest["oid"]: oid_entry}
+    return entry
+
+
+def _view_entry_from_device(data):
+    entry = {}
+    oid_raw = (data or {}).get("oid")
+    if oid_raw:
+        oid_dict = to_tag_dict(oid_raw)
+        oid_value, oid_data = sorted(oid_dict.items())[0]
+        entry["oid"] = oid_value
+        oid_data = oid_data or {}
+        excl_raw = oid_data.get("exclude")
+        if excl_raw:
+            excl_list = (
+                [excl_raw] if isinstance(excl_raw, str) else sorted(to_tag_dict(excl_raw).keys())
+            )
+            entry["exclude"] = excl_list[0]
+        if oid_data.get("mask"):
+            entry["mask"] = oid_data["mask"]
+    return entry
+
+
+# Sections needing something other than the generic recursive walker,
+# keyed by the argspec field name -- a second small value map, kept
+# separate from _DEVICE_RENAMES because it answers a different
+# question (how to build/parse each entry, not what to call a field).
+# Every other named-list section in this module (communities,
+# listen_addresses, v3 groups/users/trap_targets) needs neither: their
+# member fields either match the device 1:1 or are covered by
+# _DEVICE_RENAMES, so the generic walker handles them with no entry
+# here at all.
+_ENTRY_OVERRIDES = {
+    "views": (_view_entry_to_device, _view_entry_from_device),
+}
+
+
+# ---------------------------------------------------------------------------
+# The generic recursive walker. Driven entirely by ARGUMENT_SPEC's own
+# structure (type=dict -> recurse; type=list with options -> a named
+# list, keyed by _derive_key_field; type=list with no options -> a
+# plain multi-value leaf, left to dict_op's own list handling) plus the
+# two small value maps above for the handful of cases structure alone
+# can't resolve. This is what replaced a hand-written to-device/from-
+# device function pair for every single section in this module.
+# ---------------------------------------------------------------------------
+
+
+def _spec_to_device(value, options_spec):
+    if not isinstance(value, dict):
+        return value
+    result = {}
+    for arg_key, sub_spec in options_spec.items():
+        val = value.get(arg_key)
+        if val is None or val is False:
+            continue
+        device_key = _DEVICE_RENAMES.get(arg_key, arg_key)
+        sub_type = sub_spec.get("type")
+        sub_options = sub_spec.get("options")
+        if sub_type == "dict" and sub_options:
+            converted = _spec_to_device(val, sub_options)
+            if converted:
+                result[device_key] = converted
+        elif sub_type == "list" and sub_options:
+            key_field = _derive_key_field(sub_options)
+            entry_to, _entry_from = _ENTRY_OVERRIDES.get(arg_key, (None, None))
+            entry_transform = entry_to or (
+                lambda rest, spec=sub_options: _spec_to_device(rest, spec)
+            )
+            result[device_key] = _keyed_list_to_device(val, key_field, entry_transform)
+        elif val is True:
+            result[device_key] = {}
+        elif sub_type == "list":
+            result[device_key] = list(val)
+        else:
+            result[device_key] = val
     return result
 
 
-def _parse_v3_views(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for name, data in sorted(raw.items()):
-        entry = {"view": name}
-        if isinstance(data, dict) and "oid" in data:
-            oid_data = data["oid"]
-            if isinstance(oid_data, dict) and oid_data:
-                entry["oid"] = str(list(oid_data.keys())[0])
-            elif isinstance(oid_data, str):
-                entry["oid"] = oid_data
-        if isinstance(data, dict):
-            if "exclude" in data:
-                entry["exclude"] = data["exclude"]
-            if "mask" in data:
-                entry["mask"] = data["mask"]
-        result.append(entry)
-    return result
-
-
-def _parse_v3_trap_targets(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for addr, data in sorted(raw.items()):
-        entry = {"address": addr}
-        if isinstance(data, dict):
-            if "port" in data:
-                entry["port"] = int(data["port"])
-            if "protocol" in data:
-                entry["protocol"] = data["protocol"]
-            if "type" in data:
-                entry["type"] = data["type"]
-            auth = _parse_v3_auth_privacy(data, "auth")
-            if auth:
-                entry["authentication"] = auth
-            priv = _parse_v3_auth_privacy(data, "privacy")
-            if priv:
-                entry["privacy"] = priv
-        result.append(entry)
-    return result
-
-
-def parse_snmp_config(raw):
+def _device_to_spec(raw, options_spec):
     if not raw or not isinstance(raw, dict):
         return {}
+    have_idx = {k.replace("-", "_"): k for k in raw}
     result = {}
-    for argspec_key, api_key in SCALAR_FIELDS.items():
-        if api_key in raw:
-            result[argspec_key] = raw[api_key]
-    communities = _parse_communities(raw.get("community"))
-    if communities:
-        result["communities"] = communities
-    listen = _parse_listen_addresses(raw.get("listen-address"))
-    if listen:
-        result["listen_addresses"] = listen
-    trap = _parse_trap_target(raw.get("trap-target"))
-    if trap:
-        result["trap_target"] = trap
-    v3_raw = raw.get("v3")
-    if v3_raw and isinstance(v3_raw, dict):
-        v3 = {}
-        if "engineid" in v3_raw:
-            v3["engine_id"] = v3_raw["engineid"]
-        groups = _parse_v3_groups(v3_raw.get("group"))
-        if groups:
-            v3["groups"] = groups
-        users = _parse_v3_users(v3_raw.get("user"))
-        if users:
-            v3["users"] = users
-        views = _parse_v3_views(v3_raw.get("view"))
-        if views:
-            v3["views"] = views
-        trap_targets = _parse_v3_trap_targets(v3_raw.get("trap-target"))
-        if trap_targets:
-            v3["trap_targets"] = trap_targets
-        if v3:
-            result["snmp_v3"] = v3
+    for arg_key, sub_spec in options_spec.items():
+        device_key = _DEVICE_RENAMES.get(arg_key, arg_key)
+        orig_key = device_key if device_key in raw else have_idx.get(arg_key)
+        if orig_key is None:
+            continue
+        raw_val = raw[orig_key]
+        sub_type = sub_spec.get("type")
+        sub_options = sub_spec.get("options")
+        if sub_type == "dict" and sub_options:
+            converted = _device_to_spec(raw_val, sub_options)
+            if converted:
+                result[arg_key] = converted
+        elif sub_type == "list" and sub_options:
+            key_field = _derive_key_field(sub_options)
+            _entry_to, entry_from = _ENTRY_OVERRIDES.get(arg_key, (None, None))
+            entry_transform = entry_from or (lambda d, spec=sub_options: _device_to_spec(d, spec))
+            entries = _keyed_list_from_device(raw_val, key_field, entry_transform)
+            if entries:
+                result[arg_key] = entries
+        elif sub_type == "list":
+            if raw_val:
+                result[arg_key] = sorted(to_tag_dict(raw_val).keys())
+        elif isinstance(raw_val, dict) and not raw_val:
+            result[arg_key] = True
+        else:
+            result[arg_key] = raw_val
     return result
+
+
+def _want_to_device(config):
+    config = config or {}
+    want = _spec_to_device(
+        {k: v for k, v in config.items() if k != "trap_target"},
+        _TOP_OPTIONS,
+    )
+    if config.get("trap_target"):
+        tt = _single_to_device(config["trap_target"], _derive_key_field(_TRAP_TARGET_OPTIONS))
+        if tt:
+            want["trap-target"] = tt
+    return want
 
 
 def get_running_config(vyos):
     try:
-        raw = vyos.get_config(SNMP_BASE)
+        return vyos.get_config(_BASE) or {}
     except Exception as e:
         if "Configuration under specified path is empty" in str(e):
             return {}
         raise
-    return parse_snmp_config(raw)
 
 
-def _build_scalar_commands(want, have, state):
-    cmds = []
-    for argspec_key, api_key in SCALAR_FIELDS.items():
-        want_val = want.get(argspec_key)
-        have_val = have.get(argspec_key)
-        path = SNMP_BASE + [api_key]
-        if state in ("replaced", "overridden"):
-            if have_val and want_val != have_val:
-                cmds.append(_delete(path))
-        if state in ("merged", "replaced", "overridden"):
-            if want_val and want_val != have_val:
-                cmds.append(_set(path + [want_val]))
-    return cmds
-
-
-def _build_community_commands(want_list, have_list, state):
-    cmds = []
-    want_map = {c["name"]: c for c in (want_list or [])}
-    have_map = {c["name"]: c for c in (have_list or [])}
-    if state in ("replaced", "overridden"):
-        for name in have_map:
-            if name not in want_map:
-                cmds.append(_delete(SNMP_BASE + ["community", name]))
-    for name, want_comm in want_map.items():
-        have_comm = have_map.get(name, {})
-        base = SNMP_BASE + ["community", name]
-        want_auth = want_comm.get("authorization_type")
-        have_auth = have_comm.get("authorization_type")
-        if state in ("replaced", "overridden") and have_auth and want_auth != have_auth:
-            cmds.append(_delete(base + ["authorization"]))
-        if want_auth and want_auth != have_auth:
-            cmds.append(_set(base + ["authorization", want_auth]))
-        want_clients = set(want_comm.get("clients") or [])
-        have_clients = set(have_comm.get("clients") or [])
-        for c in want_clients - have_clients:
-            cmds.append(_set(base + ["client", c]))
-        if state in ("replaced", "overridden"):
-            for c in have_clients - want_clients:
-                cmds.append(_delete(base + ["client", c]))
-        want_nets = set(want_comm.get("networks") or [])
-        have_nets = set(have_comm.get("networks") or [])
-        for n in want_nets - have_nets:
-            cmds.append(_set(base + ["network", n]))
-        if state in ("replaced", "overridden"):
-            for n in have_nets - want_nets:
-                cmds.append(_delete(base + ["network", n]))
-    return cmds
-
-
-def _build_listen_address_commands(want_list, have_list, state):
-    cmds = []
-    want_map = {e["address"]: e for e in (want_list or [])}
-    have_map = {e["address"]: e for e in (have_list or [])}
-    base = SNMP_BASE + ["listen-address"]
-    if state in ("replaced", "overridden"):
-        for addr in have_map:
-            if addr not in want_map:
-                cmds.append(_delete(base + [addr]))
-    for addr, want_entry in want_map.items():
-        have_entry = have_map.get(addr, {})
-        want_port = want_entry.get("port")
-        have_port = have_entry.get("port")
-        if addr not in have_map:
-            if want_port:
-                cmds.append(_set(base + [addr, "port", str(want_port)]))
-            else:
-                cmds.append(_set(base + [addr]))
-        elif want_port != have_port:
-            cmds.append(_delete(base + [addr]))
-            if want_port:
-                cmds.append(_set(base + [addr, "port", str(want_port)]))
-            else:
-                cmds.append(_set(base + [addr]))
-    return cmds
-
-
-def _build_trap_target_commands(want, have, state):
-    cmds = []
-    base = SNMP_BASE + ["trap-target"]
-    if state in ("merged", "replaced", "overridden"):
-        if want:
-            want_addr = want.get("address")
-            have_addr = have.get("address") if have else None
-            if want_addr and want_addr != have_addr:
-                cmds.append(_set(base + [want_addr]))
-            if want.get("community"):
-                cmds.append(_set(base + [want_addr, "community", want["community"]]))
-            if want.get("port"):
-                cmds.append(_set(base + [want_addr, "port", str(want["port"])]))
-    if state in ("replaced", "overridden"):
-        if have and (not want or have.get("address") != (want or {}).get("address")):
-            cmds.append(_delete(base))
-    return cmds
-
-
-def _build_v3_auth_privacy_commands(base, want_block, have_block, api_key):
-    cmds = []
-    if not want_block:
-        return cmds
-    block_base = base + [api_key]
-    have_block = have_block or {}
-    if want_block.get("type") and want_block["type"] != have_block.get("type"):
-        cmds.append(_set(block_base + ["type", want_block["type"]]))
-    if want_block.get("encrypted_key") and want_block["encrypted_key"] != have_block.get(
-        "encrypted_key",
-    ):
-        cmds.append(_set(block_base + ["encrypted-password", want_block["encrypted_key"]]))
-    if want_block.get("plaintext_key"):
-        cmds.append(_set(block_base + ["plaintext-key", want_block["plaintext_key"]]))
-    return cmds
-
-
-def _build_v3_user_commands(want_list, have_list, state):
-    cmds = []
-    want_map = {u["user"]: u for u in (want_list or [])}
-    have_map = {u["user"]: u for u in (have_list or [])}
-    base = SNMP_BASE + ["v3", "user"]
-    if state in ("replaced", "overridden"):
-        for username in have_map:
-            if username not in want_map:
-                cmds.append(_delete(base + [username]))
-    for username, want_user in want_map.items():
-        have_user = have_map.get(username, {})
-        user_base = base + [username]
-        cmds += _build_v3_auth_privacy_commands(
-            user_base,
-            want_user.get("authentication"),
-            have_user.get("authentication"),
-            "auth",
-        )
-        cmds += _build_v3_auth_privacy_commands(
-            user_base,
-            want_user.get("privacy"),
-            have_user.get("privacy"),
-            "privacy",
-        )
-        if want_user.get("group") and want_user["group"] != have_user.get("group"):
-            cmds.append(_set(user_base + ["group", want_user["group"]]))
-        if want_user.get("mode") and want_user["mode"] != have_user.get("mode"):
-            cmds.append(_set(user_base + ["mode", want_user["mode"]]))
-        if want_user.get("tsm_key") and want_user["tsm_key"] != have_user.get("tsm_key"):
-            cmds.append(_set(user_base + ["tsm-key", want_user["tsm_key"]]))
-    return cmds
-
-
-def _build_v3_group_commands(want_list, have_list, state):
-    cmds = []
-    want_map = {g["group"]: g for g in (want_list or [])}
-    have_map = {g["group"]: g for g in (have_list or [])}
-    base = SNMP_BASE + ["v3", "group"]
-    if state in ("replaced", "overridden"):
-        for name in have_map:
-            if name not in want_map:
-                cmds.append(_delete(base + [name]))
-    for name, want_group in want_map.items():
-        have_group = have_map.get(name, {})
-        group_base = base + [name]
-        for key, api_key in [("mode", "mode"), ("seclevel", "seclevel"), ("view", "view")]:
-            want_val = want_group.get(key)
-            have_val = have_group.get(key)
-            if want_val and want_val != have_val:
-                cmds.append(_set(group_base + [api_key, want_val]))
-            if state in ("replaced", "overridden") and have_val and want_val != have_val:
-                cmds.append(_delete(group_base + [api_key]))
-    return cmds
-
-
-def _build_v3_view_commands(want_list, have_list, state):
-    cmds = []
-    want_map = {v["view"]: v for v in (want_list or [])}
-    have_map = {v["view"]: v for v in (have_list or [])}
-    base = SNMP_BASE + ["v3", "view"]
-    if state in ("replaced", "overridden"):
-        for name in have_map:
-            if name not in want_map:
-                cmds.append(_delete(base + [name]))
-    for name, want_view in want_map.items():
-        have_view = have_map.get(name, {})
-        view_base = base + [name]
-        want_oid = str(want_view["oid"]) if want_view.get("oid") else None
-        have_oid = str(have_view.get("oid")) if have_view.get("oid") else None
-        if want_oid and want_oid != have_oid:
-            cmds.append(_set(view_base + ["oid", want_oid]))
-        if state in ("replaced", "overridden") and have_oid and want_oid != have_oid:
-            cmds.append(_delete(view_base + ["oid", have_oid]))
-        for key in ("exclude", "mask"):
-            want_val = want_view.get(key)
-            have_val = have_view.get(key)
-            if want_val and want_val != have_val:
-                cmds.append(_set(view_base + [key, want_val]))
-    return cmds
-
-
-def _build_v3_commands(want_v3, have_v3, state):
-    cmds = []
-    want_v3 = want_v3 or {}
-    have_v3 = have_v3 or {}
-    want_eid = want_v3.get("engine_id")
-    have_eid = have_v3.get("engine_id")
-    if want_eid and want_eid != have_eid:
-        cmds.append(_set(SNMP_BASE + ["v3", "engineid", want_eid]))
-    if state in ("replaced", "overridden") and have_eid and want_eid != have_eid:
-        cmds.append(_delete(SNMP_BASE + ["v3", "engineid"]))
-    cmds += _build_v3_group_commands(want_v3.get("groups"), have_v3.get("groups"), state)
-    cmds += _build_v3_user_commands(want_v3.get("users"), have_v3.get("users"), state)
-    cmds += _build_v3_view_commands(want_v3.get("views"), have_v3.get("views"), state)
-    return cmds
-
-
-def build_commands(want, have, state):
-    if state == "deleted":
-        if have:
-            return [_delete(SNMP_BASE)]
-        return []
-    cmds = []
-    cmds += _build_scalar_commands(want, have, state)
-    cmds += _build_community_commands(want.get("communities"), have.get("communities"), state)
-    cmds += _build_listen_address_commands(
-        want.get("listen_addresses"),
-        have.get("listen_addresses"),
-        state,
+def _device_to_argspec(raw):
+    if not raw:
+        return {}
+    result = _device_to_spec(
+        {k: v for k, v in raw.items() if k != "trap-target"},
+        _TOP_OPTIONS,
     )
-    cmds += _build_trap_target_commands(want.get("trap_target"), have.get("trap_target"), state)
-    cmds += _build_v3_commands(want.get("snmp_v3"), have.get("snmp_v3"), state)
-    return cmds
+    if raw.get("trap-target"):
+        tt = _single_from_device(raw["trap-target"], _derive_key_field(_TRAP_TARGET_OPTIONS))
+        if tt:
+            result["trap_target"] = tt
+    cast_by_spec(result, _TOP_OPTIONS)
+    return result
+
+
+# Device key names (as they appear in want/have, underscore-normalized)
+# whose child dict is a tag node keyed by an opaque value -- a username,
+# a community name, any user-supplied identifier -- rather than a schema
+# field name.
+_VERBATIM_KEYS = {"community", "listen_address", "group", "user", "view", "trap_target"}
+
+
+def _seed_tag_node_placeholders(want, have, verbatim_keys):
+    """dict_op's own key lookup falls back to guessing a translated
+    device key whenever a want key is missing from have entirely (a
+    brand-new entry). That guess is correct for a schema field name
+    (e.g. "trap_source" -> "trap-source" on first set) but wrong for a
+    tag-node key, which is an opaque value, not a schema name --
+    confirmed as a real bug: a username like "admin_user" was silently
+    becoming "admin-user" in the generated command the first time that
+    user was created (any tag-node key with an underscore would trigger
+    the same, since dict_op can't otherwise tell a schema name from a
+    value that merely happens to contain one).
+
+    Rather than teach the shared engine that distinction, this seeds an
+    empty placeholder into have (mutated in place) for every tag-node
+    entry present in want but not yet in have, keyed by the exact,
+    verbatim value from want. dict_op's own unmodified exact-match
+    lookup then finds it directly and never reaches its guessing
+    fallback at all -- the fix lives entirely in this module, not in
+    the shared engine, and every field the entry declares still
+    correctly shows up as "missing from have" and gets set, since the
+    placeholder is empty.
+    """
+    if not isinstance(want, dict):
+        return
+    have_idx = {k.replace("-", "_"): k for k in have}
+    for key, want_val in want.items():
+        if not isinstance(want_val, dict):
+            continue
+        norm_key = key.replace("-", "_")
+        orig_key = have_idx.get(norm_key, key)
+        have_val = have.setdefault(orig_key, {})
+        if not isinstance(have_val, dict):
+            continue
+        if norm_key in verbatim_keys:
+            for entry_key in want_val:
+                if entry_key not in have_val:
+                    have_val[entry_key] = None
+        else:
+            _seed_tag_node_placeholders(want_val, have_val, verbatim_keys)
+
+
+_CREDENTIAL_LEAVES = {"encrypted-password", "plaintext-password"}
+
+
+def _protect_credentials_from_purge(want, have):
+    """ "replaced"/"overridden" purge deletes anything in have that
+    isn't re-specified in want -- correct for ordinary config, but
+    wrong for a write-only credential leaf: the user can never read
+    back the current encrypted-password to re-supply it, so its
+    absence from a new config must not be read as "remove it".
+    Confirmed as a real device-rejected commit: VyOS requires an
+    auth/privacy node to carry an encrypted-password or plaintext-
+    password whenever the node exists at all, so purging the existing
+    hash out from under an unrelated field-level change (e.g. updating
+    "type") broke the commit entirely, not just the password.
+
+    Copies have's password leaf into want (mutating want in place)
+    wherever want doesn't already supply its own -- purge then sees it
+    as unchanged and never deletes it, while a genuinely new
+    plaintext_key/encrypted_key the user did provide still overrides
+    normally, since this only fills in what's missing.
+    """
+    if not isinstance(want, dict) or not isinstance(have, dict):
+        return
+    have_idx = {k.replace("-", "_"): k for k in have}
+    for key, want_val in want.items():
+        if not isinstance(want_val, dict):
+            continue
+        norm_key = key.replace("-", "_")
+        have_val = have.get(have_idx.get(norm_key, key))
+        if not isinstance(have_val, dict):
+            continue
+        if norm_key in ("auth", "privacy") and not (_CREDENTIAL_LEAVES & set(want_val)):
+            for cred in _CREDENTIAL_LEAVES:
+                if cred in have_val:
+                    want_val[cred] = have_val[cred]
+        _protect_credentials_from_purge(want_val, have_val)
+
+
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    config = config or {}
+
+    if state == "deleted":
+        return [("delete", _BASE)] if raw_have else []
+
+    want = _want_to_device(config)
+    # Rather than a generic key-name-based normalize_have, round-trip
+    # raw_have through the same structural converters used for want.
+    # This module has several keys that mean genuinely different things
+    # at different nesting depths (community/view/group are each both a
+    # tag node at one level and an unrelated scalar leaf at another) --
+    # a blanket tag_keys set would wrongly coerce the scalar occurrences
+    # into presence-dicts. Going through _device_to_argspec/
+    # _want_to_device instead resolves each occurrence with full
+    # knowledge of its actual position in the tree, not just its name.
+    norm_have = _want_to_device(_device_to_argspec(raw_have))
+    _seed_tag_node_placeholders(want, norm_have, _VERBATIM_KEYS)
+    _protect_credentials_from_purge(want, norm_have)
+
+    commands = []
+    if state == "overridden":
+        commands += dict_op(want, norm_have, _BASE, op="purge")
+    elif state == "replaced":
+        for section, section_want in want.items():
+            if not isinstance(section_want, dict):
+                continue
+            section_have = norm_have.get(section, {})
+            commands += dict_op(section_want, section_have, _BASE + [section], op="purge")
+    commands += dict_op(want, norm_have, _BASE, op="set")
+    return commands
 
 
 def _auth_privacy_spec():
@@ -784,7 +750,7 @@ ARGUMENT_SPEC = dict(
             trap_target=dict(
                 type="dict",
                 options=dict(
-                    address=dict(type="str"),
+                    address=dict(type="str", required=True),
                     community=dict(type="str"),
                     port=dict(type="int"),
                 ),
@@ -819,7 +785,7 @@ ARGUMENT_SPEC = dict(
                         type="list",
                         elements="dict",
                         options=dict(
-                            address=dict(type="str"),
+                            address=dict(type="str", required=True),
                             port=dict(type="int"),
                             protocol=dict(type="str", choices=["tcp", "udp"]),
                             type=dict(type="str", choices=["inform", "trap"]),
@@ -848,6 +814,9 @@ ARGUMENT_SPEC = dict(
     ),
 )
 
+_TOP_OPTIONS = ARGUMENT_SPEC["config"]["options"]
+_TRAP_TARGET_OPTIONS = _TOP_OPTIONS["trap_target"]["options"]
+
 
 def main():
     module = AnsibleModule(argument_spec=ARGUMENT_SPEC, supports_check_mode=True)
@@ -855,13 +824,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    want = config
-    commands = build_commands(want, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -872,7 +841,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=want,
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

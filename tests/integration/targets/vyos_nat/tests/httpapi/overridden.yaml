@@ -1,0 +1,49 @@
+---
+- debug:
+    msg: START vyos_nat overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Override - replaces all NAT with only one rule
+      vyos.rest.vyos_nat: &id001
+        config:
+          nat:
+            source:
+              rule:
+                - id: 999
+                  outbound_interface:
+                    name: eth0
+                  translation:
+                    address: masquerade
+        state: overridden
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather after override
+      vyos.rest.vyos_nat:
+        state: gathered
+      register: gathered
+
+    - assert:
+        that:
+          - gathered.gathered.nat.source.rule | length == 1
+          - gathered.gathered.nat.source.rule[0].id == 999
+          - "'destination' not in gathered.gathered.nat"
+          - "'static' not in gathered.gathered.nat"
+
+    - name: Override again (IDEMPOTENT)
+      vyos.rest.vyos_nat: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

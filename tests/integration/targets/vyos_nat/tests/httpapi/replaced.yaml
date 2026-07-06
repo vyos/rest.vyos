@@ -1,0 +1,49 @@
+---
+- debug:
+    msg: START vyos_nat replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Replace source NAT - removes rule 101, keeps destination and static
+      vyos.rest.vyos_nat: &id001
+        config:
+          nat:
+            source:
+              rule:
+                - id: 100
+                  outbound_interface:
+                    name: eth0
+                  translation:
+                    address: masquerade
+        state: replaced
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather after replace
+      vyos.rest.vyos_nat:
+        state: gathered
+      register: gathered
+
+    - assert:
+        that:
+          - gathered.gathered.nat.source.rule | length == 1
+          - gathered.gathered.nat.source.rule[0].id == 100
+          - "'destination' in gathered.gathered.nat"
+          - "'static' in gathered.gathered.nat"
+
+    - name: Replace again (IDEMPOTENT)
+      vyos.rest.vyos_nat: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

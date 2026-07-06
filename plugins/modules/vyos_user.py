@@ -126,102 +126,131 @@ gathered:
   type: list
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    dict_op,
+    from_device,
+    normalize_have,
+)
 
 
 _BASE = ["system", "login", "user"]
 
+# "public-keys" is a tag node (keyed by key identifier) that could in
+# principle collapse to a bare value for a single entry; defensive only
+# -- "key" is required by the argspec so a real collapse is unlikely,
+# but the guard costs nothing and matches the pattern used everywhere
+# else a tag node is involved.
+_TAG_KEYS = {"public-keys"}
+
+# Users this module will never delete under state=absent, no matter what
+# the playbook asks for -- "vyos" is required for REST API access itself,
+# so deleting it would lock out every subsequent module call.
+_PROTECTED_USERS = {"vyos"}
+
+
+def _public_keys_to_device(keys):
+    return {
+        k["name"]: autoclean({kk: vv for kk, vv in k.items() if kk != "name"}) for k in keys or []
+    }
+
+
+def _public_keys_from_device(raw):
+    return [{"name": name, **from_device(data or {})} for name, data in sorted((raw or {}).items())]
+
+
+def _user_to_device(user):
+    """password/update_password are deliberately excluded here and
+    handled entirely outside dict_op in build_commands() -- "password"
+    (plaintext, write-only) and have's "encrypted-password" are
+    structurally different data with no valid equality comparison
+    between them, so whether to set it is a policy decision
+    (update_password), never a diff. public_keys nests under a literal
+    "authentication" wrapper the argspec doesn't have.
+    """
+    entry = autoclean(
+        {
+            k: v
+            for k, v in user.items()
+            if k not in ("name", "password", "update_password", "public_keys")
+        },
+    )
+    if user.get("public_keys"):
+        entry["authentication"] = {"public_keys": _public_keys_to_device(user["public_keys"])}
+    return entry
+
+
+def _user_from_device(name, data):
+    data = dict(data or {})
+    auth = data.pop("authentication", None) or {}
+    entry = {"name": name, **from_device(data)}
+    if auth.get("encrypted-password"):
+        entry["encrypted_password"] = auth["encrypted-password"]
+    pub_keys_raw = auth.get("public-keys")
+    if pub_keys_raw:
+        entry["public_keys"] = _public_keys_from_device(pub_keys_raw)
+    return entry
+
 
 def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
+    raw = vyos.get_config(_BASE) or {}
+    if isinstance(raw, dict):
+        raw = raw.get("user", raw)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _device_to_argspec(raw):
     if not raw or not isinstance(raw, dict):
         return []
-    raw = raw.get("user", raw)
-    result = []
-    for username, data in sorted(raw.items()):
-        user = {"name": username}
-        data = data or {}
-        if data.get("full-name"):
-            user["full_name"] = data["full-name"]
-        auth = data.get("authentication", {}) or {}
-        if auth.get("encrypted-password"):
-            user["encrypted_password"] = auth["encrypted-password"]
-        pub_keys = auth.get("public-keys", {}) or {}
-        if pub_keys and isinstance(pub_keys, dict):
-            keys = []
-            for key_name, key_data in sorted(pub_keys.items()):
-                key_data = key_data or {}
-                k = {"name": key_name}
-                if key_data.get("key"):
-                    k["key"] = key_data["key"]
-                if key_data.get("type"):
-                    k["type"] = key_data["type"]
-                keys.append(k)
-            if keys:
-                user["public_keys"] = keys
-        result.append(user)
-    return result
+    return [_user_from_device(name, data) for name, data in sorted(raw.items())]
 
 
-def build_commands(users, have_list, state):
-    cmds = []
-    have_map = {u["name"]: u for u in have_list}
+def build_commands(users, raw_have, state):
+    raw_have = raw_have or {}
+    users = users or []
 
     if state == "absent":
+        commands = []
         for user in users:
             name = user["name"]
-            if name in have_map:
-                cmds.append(("delete", _BASE + [name]))
-        return cmds
+            if name in _PROTECTED_USERS:
+                continue
+            if name in raw_have:
+                commands.append(("delete", _BASE + [name]))
+        return commands
 
-    # state == "present"
+    # state == "present": additive-only, matches the original module's
+    # scope exactly -- existing fields/keys not mentioned in a user's
+    # config are left alone, never removed (there's no "replaced" state
+    # here to make a full-model rewrite meaningful).
+    commands = []
+    norm_have = normalize_have(raw_have, _TAG_KEYS)
     for user in users:
         name = user["name"]
-        have = have_map.get(name, {})
+        is_new = name not in raw_have
         ubase = _BASE + [name]
-        is_new = name not in have_map
+        have_user = norm_have.get(name) or {}
 
-        # full_name
-        if user.get("full_name") and user["full_name"] != have.get("full_name"):
-            cmds.append(("set", ubase + ["full-name", user["full_name"]]))
+        commands += dict_op(_user_to_device(user), have_user, ubase, op="set")
 
-        # password
         if user.get("password"):
-            update_pw = user.get("update_password", "always")
-            if update_pw == "always" or is_new:
-                cmds.append(
-                    (
-                        "set",
-                        ubase
-                        + [
-                            "authentication",
-                            "plaintext-password",
-                            user["password"],
-                        ],
-                    ),
+            update_policy = user.get("update_password", "always")
+            if update_policy == "always" or is_new:
+                commands.append(
+                    ("set", ubase + ["authentication", "plaintext-password", user["password"]]),
                 )
 
-        # public_keys
-        want_keys = {k["name"]: k for k in (user.get("public_keys") or [])}
-        have_keys = {k["name"]: k for k in (have.get("public_keys") or [])}
-        for key_name, key_data in want_keys.items():
-            have_key = have_keys.get(key_name, {})
-            kbase = ubase + ["authentication", "public-keys", key_name]
-            if key_data.get("key") and key_data["key"] != have_key.get("key"):
-                cmds.append(("set", kbase + ["key", key_data["key"]]))
-            if key_data.get("type") and key_data["type"] != have_key.get("type"):
-                cmds.append(("set", kbase + ["type", key_data["type"]]))
-
-    return cmds
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -273,12 +302,13 @@ def main():
     state = module.params["state"]
     users = module.params.get("users") or []
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(users, have, state)
+    commands = build_commands(users, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -289,7 +319,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

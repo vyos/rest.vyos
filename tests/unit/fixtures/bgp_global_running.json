@@ -2,7 +2,14 @@
   "system-as": "65000",
   "parameters": {
     "router-id": "192.0.1.1",
-    "log-neighbor-changes": {}
+    "log-neighbor-changes": {},
+    "bestpath": {
+      "as-path": "multipath-relax"
+    },
+    "confederation": {
+      "identifier": "100",
+      "peers": ["65001", "65002"]
+    }
   },
   "neighbor": {
     "192.0.2.1": {
@@ -11,6 +18,11 @@
       "timers": {
         "holdtime": "30",
         "keepalive": "10"
+      },
+      "address-family": {
+        "ipv4-unicast": {
+          "nexthop-self": {}
+        }
       }
     },
     "192.0.2.2": {

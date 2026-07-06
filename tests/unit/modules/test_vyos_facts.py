@@ -4,8 +4,6 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-import json
-import os
 import unittest
 
 from unittest.mock import MagicMock
@@ -18,11 +16,7 @@ from ansible_collections.vyos.rest.plugins.modules.vyos_facts import (
     gather_users,
 )
 
-
-def load_fixture(filename):
-    fixtures_dir = os.path.join(os.path.dirname(__file__), "..", "fixtures")
-    with open(os.path.join(fixtures_dir, filename)) as f:
-        return json.load(f)
+from .base import load_fixture
 
 
 class TestVyOSFactsGather(unittest.TestCase):

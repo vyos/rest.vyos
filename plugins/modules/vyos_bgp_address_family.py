@@ -234,24 +234,101 @@ gathered:
   type: dict
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    normalize_have,
+)
 
 
 _BASE = ["protocols", "bgp"]
 _AFI_MAP = {"ipv4": "ipv4-unicast", "ipv6": "ipv6-unicast"}
-_AFI_RMAP = {"ipv4-unicast": "ipv4", "ipv6-unicast": "ipv6"}
+_AFI_RMAP = {v: k for k, v in _AFI_MAP.items()}
+
+# Tag-node keys whose value dict_op must always see as a dict, never a
+# bare string/list -- VyOS's REST API collapses a single-child tag node
+# to a plain string (or a list for multiple), exactly like it does for
+# ordinary list leaves (see dict_op's own str->list coercion for that
+# case). Only genuine tag nodes with no other structure need this.
+_AF_TAG_KEYS = {"network", "redistribute"}
+
+# The only neighbor-AF options whose device shape isn't a direct
+# structural match for their argspec type. Every other key in this
+# level's argspec passes through autoclean()/from_device() untouched.
+_NEIGHBOR_AF_IRREGULAR = {"afi", "allowas_in", "capability", "soft_reconfiguration"}
 
 
-def _parse_global_af(raw_afs):
+# ---------------------------------------------------------------------------
+# want -> device: structural reshaping only (networks/redistribute keyed
+# by prefix/protocol, AFI abbreviation, the 3 irregular neighbor-AF
+# options). Everything else is autoclean -- no field-name mapping.
+# ---------------------------------------------------------------------------
+
+
+def _global_af_to_device(af_list):
+    result = {}
+    for af in af_list or []:
+        entry = {}
+        networks = af.get("networks") or []
+        if networks:
+            entry["network"] = {
+                n["prefix"]: autoclean({k: v for k, v in n.items() if k != "prefix"})
+                for n in networks
+            }
+        redistribute = af.get("redistribute") or []
+        if redistribute:
+            entry["redistribute"] = {
+                r["protocol"]: autoclean({k: v for k, v in r.items() if k != "protocol"})
+                for r in redistribute
+            }
+        result[_AFI_MAP[af["afi"]]] = entry
+    return result
+
+
+def _neighbor_af_to_device(af_list):
+    result = {}
+    for af in af_list or []:
+        entry = autoclean({k: v for k, v in af.items() if k not in _NEIGHBOR_AF_IRREGULAR})
+
+        # allowas-in is a container node ({"number": N}), not a bare scalar.
+        if af.get("allowas_in") is not None:
+            entry["allowas_in"] = {"number": af["allowas_in"]}
+
+        # capability.orf: the chosen value becomes a dict KEY, not a leaf
+        # value (confirmed against vyos-1x: afi-capability-orf.xml.i).
+        orf = (af.get("capability") or {}).get("orf")
+        if orf:
+            entry["capability"] = {"orf": {"prefix-list": {orf: {}}}}
+
+        # soft_reconfiguration is a two-level presence node, not a flat one.
+        if af.get("soft_reconfiguration"):
+            entry["soft_reconfiguration"] = {"inbound": {}}
+
+        result[_AFI_MAP[af["afi"]]] = entry
+    return result
+
+
+# ---------------------------------------------------------------------------
+# device -> argspec (public have/gathered output)
+# ---------------------------------------------------------------------------
+
+_GLOBAL_AF_OPTIONS = None  # populated after ARGUMENT_SPEC is defined below
+_NEIGHBOR_AF_OPTIONS = None
+
+
+def _global_af_from_device(raw_afs):
     if not raw_afs or not isinstance(raw_afs, dict):
         return []
     result = []
@@ -259,32 +336,28 @@ def _parse_global_af(raw_afs):
         afi = _AFI_RMAP.get(af_key)
         if not afi:
             continue
-        af_data = af_data or {}
-        entry = {"afi": afi}
+        af_data = dict(af_data or {})
+        networks_raw = af_data.pop("network", None) or {}
+        redistribute_raw = af_data.pop("redistribute", None) or {}
 
-        nets = af_data.get("network", {})
-        if nets and isinstance(nets, dict):
-            entry["networks"] = [{"prefix": p} for p in sorted(nets.keys())]
+        entry = {"afi": afi, **from_device(af_data)}
+        if networks_raw:
+            entry["networks"] = [
+                {"prefix": prefix, **from_device(data or {})}
+                for prefix, data in sorted(networks_raw.items())
+            ]
+        if redistribute_raw:
+            entry["redistribute"] = [
+                {"protocol": proto, **from_device(data or {})}
+                for proto, data in sorted(redistribute_raw.items())
+            ]
 
-        redist = af_data.get("redistribute", {})
-        if redist and isinstance(redist, dict):
-            redist_list = []
-            for proto, rdata in sorted(redist.items()):
-                r = {"protocol": proto}
-                rdata = rdata or {}
-                if "metric" in rdata:
-                    r["metric"] = int(rdata["metric"])
-                if "route-map" in rdata:
-                    r["route_map"] = rdata["route-map"]
-                redist_list.append(r)
-            if redist_list:
-                entry["redistribute"] = redist_list
-
+        cast_by_spec(entry, _GLOBAL_AF_OPTIONS)
         result.append(entry)
     return result
 
 
-def _parse_neighbor_af(raw_afs):
+def _neighbor_af_from_device(raw_afs):
     if not raw_afs or not isinstance(raw_afs, dict):
         return []
     result = []
@@ -292,71 +365,45 @@ def _parse_neighbor_af(raw_afs):
         afi = _AFI_RMAP.get(af_key)
         if not afi:
             continue
-        af_data = af_data or {}
-        entry = {"afi": afi}
+        af_data = dict(af_data or {})
+        allowas = af_data.pop("allowas-in", None)
+        orf = ((af_data.pop("capability", None) or {}).get("orf") or {}).get("prefix-list") or {}
+        soft = af_data.pop("soft-reconfiguration", None)
 
-        if "nexthop-self" in af_data:
-            entry["nexthop_self"] = True
-        if "route-reflector-client" in af_data:
-            entry["route_reflector_client"] = True
-        if "route-server-client" in af_data:
-            entry["route_server_client"] = True
-        if "default-originate" in af_data:
-            entry["default_originate"] = True
-        if "maximum-prefix" in af_data:
-            entry["maximum_prefix"] = int(af_data["maximum-prefix"])
-        if "weight" in af_data:
-            entry["weight"] = int(af_data["weight"])
-        if "unsuppress-map" in af_data:
-            entry["unsuppress_map"] = af_data["unsuppress-map"]
-        if "allowas-in" in af_data:
-            ai = af_data["allowas-in"]
-            if isinstance(ai, dict) and "number" in ai:
-                entry["allowas_in"] = int(ai["number"])
-            else:
-                entry["allowas_in"] = 1
+        entry = {"afi": afi, **from_device(af_data)}
+        cast_by_spec(entry, _NEIGHBOR_AF_OPTIONS)
 
-        sc = af_data.get("soft-reconfiguration", {})
-        if sc and "inbound" in sc:
+        if isinstance(allowas, dict) and "number" in allowas:
+            entry["allowas_in"] = int(allowas["number"])
+        elif allowas is not None:
+            entry["allowas_in"] = 1
+
+        if "receive" in orf:
+            entry["capability"] = {"orf": "receive"}
+        elif "send" in orf:
+            entry["capability"] = {"orf": "send"}
+
+        if isinstance(soft, dict) and "inbound" in soft:
             entry["soft_reconfiguration"] = True
 
-        rm = af_data.get("route-map", {})
-        if rm:
-            entry["route_map"] = {}
-            if "import" in rm:
-                entry["route_map"]["import"] = rm["import"]
-            if "export" in rm:
-                entry["route_map"]["export"] = rm["export"]
-
-        pl = af_data.get("prefix-list", {})
-        if pl:
-            entry["prefix_list"] = {}
-            if "import" in pl:
-                entry["prefix_list"]["import"] = pl["import"]
-            if "export" in pl:
-                entry["prefix_list"]["export"] = pl["export"]
-
         result.append(entry)
     return result
 
 
-def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
+def _device_to_argspec(raw):
     if not raw or not isinstance(raw, dict):
         return {}
     result = {}
-
     if "system-as" in raw:
         result["as_number"] = int(raw["system-as"])
 
-    global_afs = _parse_global_af(raw.get("address-family"))
+    global_afs = _global_af_from_device(raw.get("address-family"))
     if global_afs:
         result["address_family"] = global_afs
 
     neighbors = []
     for nb_id, nb_data in sorted((raw.get("neighbor") or {}).items()):
-        nb_data = nb_data or {}
-        nb_afs = _parse_neighbor_af(nb_data.get("address-family"))
+        nb_afs = _neighbor_af_from_device((nb_data or {}).get("address-family"))
         if nb_afs:
             neighbors.append({"neighbor_address": nb_id, "address_family": nb_afs})
     if neighbors:
@@ -365,119 +412,60 @@ def get_running_config(vyos):
     return result
 
 
-def _global_af_cmds(af, have_af):
-    cmds = []
-    afi = af["afi"]
-    af_key = _AFI_MAP[afi]
-    abase = _BASE + ["address-family", af_key]
-    have_af = have_af or {}
-
-    want_nets = {n["prefix"]: n for n in (af.get("networks") or [])}
-    have_nets = {n["prefix"]: n for n in (have_af.get("networks") or [])}
-    for prefix in want_nets:
-        if prefix not in have_nets:
-            cmds.append(("set", abase + ["network", prefix]))
-
-    want_redist = {r["protocol"]: r for r in (af.get("redistribute") or [])}
-    have_redist = {r["protocol"]: r for r in (have_af.get("redistribute") or [])}
-    for proto, entry in want_redist.items():
-        have_entry = have_redist.get(proto, {})
-        rbase = abase + ["redistribute", proto]
-        if proto not in have_redist:
-            cmds.append(("set", rbase))
-        if entry.get("metric") and entry["metric"] != have_entry.get("metric"):
-            cmds.append(("set", rbase + ["metric", str(entry["metric"])]))
-        if entry.get("route_map") and entry["route_map"] != have_entry.get("route_map"):
-            cmds.append(("set", rbase + ["route-map", entry["route_map"]]))
-
-    return cmds
+def get_running_config(vyos):
+    return vyos.get_config(_BASE) or {}
 
 
-def _neighbor_af_cmds(nb_addr, af, have_af):
-    cmds = []
-    afi = af["afi"]
-    af_key = _AFI_MAP[afi]
-    nbase = _BASE + ["neighbor", nb_addr, "address-family", af_key]
-    have_af = have_af or {}
-
-    if af.get("soft_reconfiguration") and not have_af.get("soft_reconfiguration"):
-        cmds.append(("set", nbase + ["soft-reconfiguration", "inbound"]))
-    if af.get("nexthop_self") and not have_af.get("nexthop_self"):
-        cmds.append(("set", nbase + ["nexthop-self"]))
-    if af.get("route_reflector_client") and not have_af.get("route_reflector_client"):
-        cmds.append(("set", nbase + ["route-reflector-client"]))
-    if af.get("route_server_client") and not have_af.get("route_server_client"):
-        cmds.append(("set", nbase + ["route-server-client"]))
-    if af.get("default_originate") and not have_af.get("default_originate"):
-        cmds.append(("set", nbase + ["default-originate"]))
-    if af.get("maximum_prefix") and af["maximum_prefix"] != have_af.get("maximum_prefix"):
-        cmds.append(("set", nbase + ["maximum-prefix", str(af["maximum_prefix"])]))
-    if af.get("weight") and af["weight"] != have_af.get("weight"):
-        cmds.append(("set", nbase + ["weight", str(af["weight"])]))
-    if af.get("allowas_in") and af["allowas_in"] != have_af.get("allowas_in"):
-        cmds.append(("set", nbase + ["allowas-in", "number", str(af["allowas_in"])]))
-    if af.get("unsuppress_map") and af["unsuppress_map"] != have_af.get("unsuppress_map"):
-        cmds.append(("set", nbase + ["unsuppress-map", af["unsuppress_map"]]))
-
-    want_rm = af.get("route_map") or {}
-    have_rm = have_af.get("route_map") or {}
-    if want_rm.get("import") and want_rm["import"] != have_rm.get("import"):
-        cmds.append(("set", nbase + ["route-map", "import", want_rm["import"]]))
-    if want_rm.get("export") and want_rm["export"] != have_rm.get("export"):
-        cmds.append(("set", nbase + ["route-map", "export", want_rm["export"]]))
-
-    want_pl = af.get("prefix_list") or {}
-    have_pl = have_af.get("prefix_list") or {}
-    if want_pl.get("import") and want_pl["import"] != have_pl.get("import"):
-        cmds.append(("set", nbase + ["prefix-list", "import", want_pl["import"]]))
-    if want_pl.get("export") and want_pl["export"] != have_pl.get("export"):
-        cmds.append(("set", nbase + ["prefix-list", "export", want_pl["export"]]))
-
-    return cmds
+# ---------------------------------------------------------------------------
+# Command building — dict_op scoped per owned subtree.
+#
+# "protocols bgp" is a shared root owned jointly with vyos_bgp_global, so
+# every dict_op call here is scoped to a subtree this module fully owns
+# (global address-family, or one neighbor's address-family) — never the
+# shared root, and never a whole "neighbor.<addr>" entry (which also
+# holds remote-as/timers/password etc. that belong to other modules).
+# ---------------------------------------------------------------------------
 
 
-def build_commands(config, have, state):
-    cmds = []
+def build_commands(config, raw_have, state):
     config = config or {}
+    raw_have = raw_have or {}
+    commands = []
 
-    if state == "deleted":
-        if have.get("address_family"):
-            cmds.append(("delete", _BASE + ["address-family"]))
-        for nb in have.get("neighbors") or []:
-            path = _BASE + ["neighbor", nb["neighbor_address"], "address-family"]
-            cmds.append(("delete", path))
-        return cmds
+    global_af_base = _BASE + ["address-family"]
+    raw_global_af = raw_have.get("address-family") or {}
+    raw_neighbors = raw_have.get("neighbor") or {}
 
-    if state == "replaced":
-        would_set = build_commands(config, {}, "merged")
-        have_set = build_commands(have, {}, "merged")
-        if would_set == have_set:
-            return []
-        if have.get("address_family"):
-            cmds.append(("delete", _BASE + ["address-family"]))
-        for nb in have.get("neighbors") or []:
-            path = _BASE + ["neighbor", nb["neighbor_address"], "address-family"]
-            cmds.append(("delete", path))
-        have = {}
-
-    # global address-family
-    have_global_af_map = {af["afi"]: af for af in (have.get("address_family") or [])}
-    for af in config.get("address_family") or []:
-        cmds += _global_af_cmds(af, have_global_af_map.get(af["afi"]))
-
-    # per-neighbor address-family
-    have_nb_map = {
-        n["neighbor_address"]: {af["afi"]: af for af in n.get("address_family", [])}
-        for n in (have.get("neighbors") or [])
+    want_global_af = _global_af_to_device(config.get("address_family") or [])
+    want_neighbors = {
+        nb["neighbor_address"]: _neighbor_af_to_device(nb.get("address_family") or [])
+        for nb in (config.get("neighbors") or [])
     }
 
-    for nb in config.get("neighbors") or []:
-        nb_addr = nb["neighbor_address"]
-        have_nb_afs = have_nb_map.get(nb_addr, {})
-        for af in nb.get("address_family") or []:
-            cmds += _neighbor_af_cmds(nb_addr, af, have_nb_afs.get(af["afi"]))
+    if state == "deleted":
+        if raw_global_af:
+            commands.append(("delete", global_af_base))
+        for nb_addr, nb_data in sorted(raw_neighbors.items()):
+            if (nb_data or {}).get("address-family"):
+                commands.append(("delete", _BASE + ["neighbor", nb_addr, "address-family"]))
+        return commands
 
-    return cmds
+    norm_global_af = normalize_have(raw_global_af, _AF_TAG_KEYS)
+    if state == "replaced":
+        commands += dict_op(want_global_af, norm_global_af, global_af_base, op="purge")
+    commands += dict_op(want_global_af, norm_global_af, global_af_base, op="set")
+
+    for nb_addr in sorted(set(want_neighbors) | set(raw_neighbors)):
+        nb_base = _BASE + ["neighbor", nb_addr, "address-family"]
+        raw_nb_af = (raw_neighbors.get(nb_addr) or {}).get("address-family") or {}
+        norm_nb_af = normalize_have(raw_nb_af, _AF_TAG_KEYS)
+        want_nb_af = want_neighbors.get(nb_addr, {})
+
+        if state == "replaced":
+            commands += dict_op(want_nb_af, norm_nb_af, nb_base, op="purge")
+        commands += dict_op(want_nb_af, norm_nb_af, nb_base, op="set")
+
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -594,6 +582,14 @@ ARGUMENT_SPEC = dict(
     ),
 )
 
+# Populated post-definition to avoid forward-reference ordering issues;
+# these back cast_by_spec so have-side int leaves are derived from the
+# spec itself rather than a hand-maintained field list.
+_GLOBAL_AF_OPTIONS = ARGUMENT_SPEC["config"]["options"]["address_family"]["options"]
+_NEIGHBOR_AF_OPTIONS = ARGUMENT_SPEC["config"]["options"]["neighbors"]["options"]["address_family"][
+    "options"
+]
+
 
 def main():
     module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
@@ -602,12 +598,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
-        module.exit_json(changed=False, gathered=have)
+        module.exit_json(changed=False, gathered=have, commands=[])
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -618,7 +615,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

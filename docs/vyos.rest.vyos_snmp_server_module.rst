@@ -257,7 +257,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Register a subtree for SMUX-based processing.</div>
+                        <div>Register a subtree for SMUX-based processing. The device supports multiple values here; this module manages a single value only.</div>
                 </td>
             </tr>
             <tr>
@@ -421,6 +421,7 @@ Parameters
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
+                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
@@ -907,7 +908,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>SNMPv3 view configuration.</div>
+                        <div>SNMPv3 view configuration. The device supports multiple OIDs (each with its own exclude/mask) per view; this module manages a single OID entry per view only.</div>
                 </td>
             </tr>
                                 <tr>
@@ -1014,7 +1015,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>SNMP trap target.</div>
+                        <div>SNMP (v2) trap target. The device supports multiple trap targets; this module manages a single one only.</div>
                 </td>
             </tr>
                                 <tr>
@@ -1026,6 +1027,7 @@ Parameters
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
+                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
@@ -1192,7 +1194,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-                            <div>List of API command dicts sent to the device.</div>
+                            <div>List of API command tuples sent to the device.</div>
                     <br/>
                 </td>
             </tr>
@@ -1220,7 +1222,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">boolean</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>when changed</td>
                 <td>
                             <div>Whether the config was saved after changes.</div>
                     <br/>

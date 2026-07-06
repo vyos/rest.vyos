@@ -1,0 +1,37 @@
+---
+- debug:
+    msg: START vyos_config delete integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Setup - add description
+      vyos.rest.vyos_config:
+        lines:
+          - set interfaces ethernet eth1 description "To be deleted"
+        match: none
+
+    - name: Delete configuration
+      register: result
+      vyos.rest.vyos_config:
+        lines:
+          - delete interfaces ethernet eth1 description
+        save: true
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete again (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_config:
+        lines:
+          - delete interfaces ethernet eth1 description
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

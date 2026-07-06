@@ -3,31 +3,34 @@
     msg: START vyos_facts subsets integration tests on connection={{ ansible_connection }}
 
 - block:
-    - name: Gather hostname only
+    - include_tasks: _populate_config.yaml
+
+    - name: Gather logging subset
       vyos.rest.vyos_facts:
         gather_subset:
-          - hostname
+          - logging
 
     - assert:
         that:
-          - ansible_facts.vyos_hostname is defined
+          - ansible_facts.vyos_logging is defined
 
-    - name: Gather users
+    - name: Gather ntp subset
       vyos.rest.vyos_facts:
         gather_subset:
-          - users
+          - ntp
 
     - assert:
         that:
-          - ansible_facts.vyos_users is defined
-          - ansible_facts.vyos_users | selectattr('name', 'eq', 'vyos') | list | length == 1
+          - ansible_facts.vyos_ntp is defined
 
-    - name: Gather config
+    - name: Gather interfaces subset
       vyos.rest.vyos_facts:
         gather_subset:
-          - config
+          - interfaces
 
     - assert:
         that:
-          - ansible_facts.vyos_config is defined
-          - ansible_facts.vyos_config.system is defined
+          - ansible_facts.vyos_interfaces is defined
+
+  always:
+    - include_tasks: _remove_config.yaml

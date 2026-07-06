@@ -1,0 +1,49 @@
+---
+- debug:
+    msg: START vyos_nat merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge NAT configuration
+      vyos.rest.vyos_nat: &id001
+        config:
+          nat:
+            source:
+              rule:
+                - id: 100
+                  outbound_interface:
+                    name: eth0
+                  translation:
+                    address: masquerade
+            destination:
+              rule:
+                - id: 200
+                  protocol: tcp
+                  inbound_interface:
+                    name: eth0
+                  destination:
+                    address: 198.51.100.10
+                    port: "80"
+                  translation:
+                    address: 192.168.1.10
+                    port: "8080"
+        state: merged
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length > 0
+
+    - name: Merge again (IDEMPOTENT)
+      vyos.rest.vyos_nat: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -3,9 +3,9 @@
     msg: START vyos_firewall_interfaces replaced integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Replace firewall interfaces configuration
       register: result
       vyos.rest.vyos_firewall_interfaces: &id001

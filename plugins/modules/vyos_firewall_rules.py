@@ -127,6 +127,10 @@ notes:
   - C(ansible_network_os) must be set to C(vyos.rest.vyos).
   - Rule sets are identified by AFI and name. Deleting a rule set removes
     all its rules.
+  - The C(group) suboption can only reference an address-group. VyOS also
+    supports network-group/port-group/domain-group references, which this
+    module can read back (via C(gathered)) if already configured by other
+    means, but cannot create -- the argspec has no group-type discriminator.
 """
 
 EXAMPLES = r"""
@@ -185,248 +189,196 @@ gathered:
   type: list
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    dict_op,
+    from_device,
+    normalize_have,
+)
 
 
 _BASE = ["firewall"]
-_AFIS = ["ipv4", "ipv6"]
+_AFIS = ("ipv4", "ipv6")
+
+# Tag nodes VyOS's REST API can collapse to a bare string/list for a
+# single entry with no other config -- "name" (rule sets, keyed by name)
+# and "rule" (rules, keyed by number).
+_TAG_KEYS = {"name", "rule"}
 
 
-def _parse_rule(rule_num, data):
-    rule = {"number": int(rule_num)}
-    data = data or {}
-    if "action" in data:
-        rule["action"] = data["action"]
-    if "description" in data:
-        rule["description"] = data["description"]
-    if "disable" in data:
-        rule["disable"] = True
-    if "protocol" in data:
-        rule["protocol"] = data["protocol"]
-    if "state" in data:
-        rule["state"] = data["state"]
-    if "log" in data:
-        rule["log"] = True
-
-    src = data.get("source", {}) or {}
-    if src:
-        rule["source"] = {}
-        if "address" in src:
-            rule["source"]["address"] = src["address"]
-        if "group" in src:
-            grp = src["group"]
-            if isinstance(grp, dict):
-                rule["source"]["group"] = list(grp.values())[0] if grp else None
-            else:
-                rule["source"]["group"] = grp
-        if "port" in src:
-            rule["source"]["port"] = src["port"]
-
-    dst = data.get("destination", {}) or {}
-    if dst:
-        rule["destination"] = {}
-        if "address" in dst:
-            rule["destination"]["address"] = dst["address"]
-        if "group" in dst:
-            grp = dst["group"]
-            if isinstance(grp, dict):
-                rule["destination"]["group"] = list(grp.values())[0] if grp else None
-            else:
-                rule["destination"]["group"] = grp
-        if "port" in dst:
-            rule["destination"]["port"] = dst["port"]
-
-    icmp = data.get("icmp", {}) or {}
-    if icmp:
-        rule["icmp"] = {}
-        if "type" in icmp:
-            rule["icmp"]["type"] = int(icmp["type"])
-        if "code" in icmp:
-            rule["icmp"]["code"] = int(icmp["code"])
-
-    return rule
+# ---------------------------------------------------------------------------
+# want -> device / device -> argspec
+#
+# Every leaf here matches the device shape directly (action, description,
+# disable, protocol, state, log, icmp.type/code) except one: "group".
+# VyOS wraps a group reference under a literal group-kind key
+# (address-group/network-group/...), not a flat value -- see the module
+# note above on why this module can only ever *write* address-group.
+# Rule-set/rule tag-node reshaping (keyed by name/number) is the other
+# unavoidable structural work.
+# ---------------------------------------------------------------------------
 
 
-def _parse_rule_set(rs_name, data):
-    rs = {"name": rs_name}
-    data = data or {}
-    if "default-action" in data:
-        rs["default_action"] = data["default-action"]
-    if "description" in data:
-        rs["description"] = data["description"]
-    rules_raw = data.get("rule", {}) or {}
-    if rules_raw and isinstance(rules_raw, dict):
-        rules = [
-            _parse_rule(num, rdata)
-            for num, rdata in sorted(
-                rules_raw.items(),
-                key=lambda x: int(x[0]),
-            )
-        ]
-        if rules:
-            rs["rules"] = rules
-    return rs
+def _endpoint_to_device(ep):
+    entry = autoclean({k: v for k, v in ep.items() if k != "group"})
+    if ep.get("group"):
+        entry["group"] = {"address-group": ep["group"]}
+    return entry
+
+
+def _endpoint_from_device(data):
+    data = dict(data or {})
+    group = data.pop("group", None)
+    entry = from_device(data)
+    if isinstance(group, dict) and group:
+        entry["group"] = list(group.values())[0]
+    elif isinstance(group, str):
+        entry["group"] = group
+    return entry
+
+
+def _rules_to_device(rules):
+    result = {}
+    for r in rules or []:
+        entry = autoclean(
+            {k: v for k, v in r.items() if k not in ("number", "source", "destination")},
+        )
+        for endpoint in ("source", "destination"):
+            if r.get(endpoint):
+                entry[endpoint] = _endpoint_to_device(r[endpoint])
+        result[str(r["number"])] = entry
+    return result
+
+
+def _rules_from_device(raw):
+    result = []
+    for num, data in sorted((raw or {}).items(), key=lambda kv: int(kv[0])):
+        data = dict(data or {})
+        src = data.pop("source", None)
+        dst = data.pop("destination", None)
+        entry = {"number": int(num), **from_device(data)}
+        if src:
+            entry["source"] = _endpoint_from_device(src)
+        if dst:
+            entry["destination"] = _endpoint_from_device(dst)
+        result.append(entry)
+    return result
+
+
+def _rule_set_to_device(rs):
+    entry = autoclean({k: v for k, v in rs.items() if k not in ("name", "rules")})
+    if rs.get("rules"):
+        entry["rule"] = _rules_to_device(rs["rules"])
+    return entry
+
+
+def _rule_set_from_device(name, data):
+    data = dict(data or {})
+    rules_raw = data.pop("rule", None) or {}
+    entry = {"name": name, **from_device(data)}
+    if rules_raw:
+        entry["rules"] = _rules_from_device(rules_raw)
+    return entry
+
+
+def _want_to_device(config):
+    result = {}
+    for entry in config or []:
+        afi = entry["afi"]
+        rule_sets = entry.get("rule_sets") or []
+        if not rule_sets:
+            continue
+        result[afi] = {rs["name"]: _rule_set_to_device(rs) for rs in rule_sets}
+    return result
 
 
 def get_running_config(vyos):
-    result = []
+    """Fetch each AFI's rule-set subtree directly at firewall.<afi>.name --
+    the most targeted path available, deliberately not a broader fetch at
+    firewall.<afi> or firewall itself (which would pull in the hook-filter
+    and group subtrees owned by sibling modules for no benefit here).
+    """
+    result = {}
     for afi in _AFIS:
         raw = vyos.get_config(_BASE + [afi, "name"])
-        if not raw or not isinstance(raw, dict):
-            continue
-        # unwrap "name" key if present
-        raw = raw.get("name", raw)
-        if not raw or not isinstance(raw, dict):
-            continue
-        rule_sets = [_parse_rule_set(name, data) for name, data in sorted(raw.items())]
+        if raw and isinstance(raw, dict):
+            # Some VyOS REST responses wrap the result in an extra "name"
+            # key even when fetched at a path already ending in "name";
+            # unwrap defensively either way.
+            raw = raw.get("name", raw)
+            if raw and isinstance(raw, dict):
+                result[afi] = raw
+    return result
+
+
+def _device_to_argspec(raw):
+    raw = raw or {}
+    result = []
+    for afi in _AFIS:
+        afi_raw = raw.get(afi) or {}
+        rule_sets = [_rule_set_from_device(name, data) for name, data in sorted(afi_raw.items())]
         if rule_sets:
             result.append({"afi": afi, "rule_sets": rule_sets})
     return result
 
 
-def _rule_cmds(rs_name, afi, rule, have_rule):
-    cmds = []
-    rbase = _BASE + [afi, "name", rs_name, "rule", str(rule["number"])]
-    have_rule = have_rule or {}
-
-    if rule.get("action") and rule["action"] != have_rule.get("action"):
-        cmds.append(("set", rbase + ["action", rule["action"]]))
-    if rule.get("description") and rule["description"] != have_rule.get("description"):
-        cmds.append(("set", rbase + ["description", rule["description"]]))
-    if rule.get("disable") and not have_rule.get("disable"):
-        cmds.append(("set", rbase + ["disable"]))
-    if rule.get("protocol") and rule["protocol"] != have_rule.get("protocol"):
-        cmds.append(("set", rbase + ["protocol", rule["protocol"]]))
-    if rule.get("state") and rule["state"] != have_rule.get("state"):
-        cmds.append(("set", rbase + ["state", rule["state"]]))
-    if rule.get("log") and not have_rule.get("log"):
-        cmds.append(("set", rbase + ["log"]))
-
-    for endpoint in ["source", "destination"]:
-        want_ep = rule.get(endpoint) or {}
-        have_ep = have_rule.get(endpoint) or {}
-        if want_ep.get("address") and want_ep["address"] != have_ep.get("address"):
-            cmds.append(("set", rbase + [endpoint, "address", want_ep["address"]]))
-        if want_ep.get("port") and want_ep["port"] != have_ep.get("port"):
-            cmds.append(("set", rbase + [endpoint, "port", str(want_ep["port"])]))
-        if want_ep.get("group") and want_ep["group"] != have_ep.get("group"):
-            cmds.append(
-                (
-                    "set",
-                    rbase
-                    + [
-                        endpoint,
-                        "group",
-                        "address-group",
-                        want_ep["group"],
-                    ],
-                ),
-            )
-
-    icmp = rule.get("icmp") or {}
-    have_icmp = have_rule.get("icmp") or {}
-    if icmp.get("type") and icmp["type"] != have_icmp.get("type"):
-        cmds.append(("set", rbase + ["icmp", "type", str(icmp["type"])]))
-    if icmp.get("code") and icmp["code"] != have_icmp.get("code"):
-        cmds.append(("set", rbase + ["icmp", "code", str(icmp["code"])]))
-
-    return cmds
+# ---------------------------------------------------------------------------
+# Command building — dict_op scoped to _BASE + [afi, "name", rs_name] per
+# rule set, never a blanket op at _BASE + [afi] or _BASE itself (which
+# would risk vyos_firewall_interfaces's hook-filter subtree and
+# vyos_firewall_global's group subtree under the same "firewall" root).
+# ---------------------------------------------------------------------------
 
 
-def _rule_set_cmds(afi, rs, have_rs, state):
-    cmds = []
-    rs_name = rs["name"]
-    rsbase = _BASE + [afi, "name", rs_name]
-    have_rs = have_rs or {}
-
-    if rs.get("default_action") and rs["default_action"] != have_rs.get("default_action"):
-        cmds.append(("set", rsbase + ["default-action", rs["default_action"]]))
-    if rs.get("description") and rs["description"] != have_rs.get("description"):
-        cmds.append(("set", rsbase + ["description", rs["description"]]))
-
-    have_rules = {r["number"]: r for r in (have_rs.get("rules") or [])}
-    want_rules = {r["number"]: r for r in (rs.get("rules") or [])}
-
-    if state == "replaced":
-        for num in set(have_rules) - set(want_rules):
-            cmds.append(("delete", rsbase + ["rule", str(num)]))
-
-    for num, rule in want_rules.items():
-        cmds += _rule_cmds(rs_name, afi, rule, have_rules.get(num))
-
-    return cmds
-
-
-def build_commands(config, have_list, state):
-    cmds = []
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    config = config or []
+    norm_have = {afi: normalize_have(data, _TAG_KEYS) for afi, data in raw_have.items()}
 
     if state == "deleted":
+        commands = []
         if not config:
-            if have_list:
-                cmds.append(("delete", _BASE))
+            for afi, rule_sets in raw_have.items():
+                for name in rule_sets:
+                    commands.append(("delete", _BASE + [afi, "name", name]))
         else:
-            have_map = {
-                (e["afi"], rs["name"]): rs for e in have_list for rs in e.get("rule_sets", [])
-            }
             for entry in config:
                 afi = entry["afi"]
                 for rs in entry.get("rule_sets") or []:
-                    if (afi, rs["name"]) in have_map:
-                        cmds.append(("delete", _BASE + [afi, "name", rs["name"]]))
-        return cmds
+                    if rs["name"] in (raw_have.get(afi) or {}):
+                        commands.append(("delete", _BASE + [afi, "name", rs["name"]]))
+        return commands
 
-    have_map = {e["afi"]: {rs["name"]: rs for rs in e.get("rule_sets", [])} for e in have_list}
+    want = _want_to_device(config)
+    commands = []
 
     if state == "overridden":
-        want_keys = {
-            (e["afi"], rs["name"]) for e in (config or []) for rs in e.get("rule_sets", [])
-        }
-        for e in have_list:
-            for rs in e.get("rule_sets", []):
-                if (e["afi"], rs["name"]) not in want_keys:
-                    cmds.append(("delete", _BASE + [e["afi"], "name", rs["name"]]))
+        want_keys = {(afi, name) for afi, rule_sets in want.items() for name in rule_sets}
+        for afi, rule_sets in raw_have.items():
+            for name in rule_sets:
+                if (afi, name) not in want_keys:
+                    commands.append(("delete", _BASE + [afi, "name", name]))
 
-    for entry in config or []:
-        afi = entry["afi"]
-        have_afi = have_map.get(afi, {})
+    for afi, rule_sets in want.items():
+        for name, want_rs in rule_sets.items():
+            rsbase = _BASE + [afi, "name", name]
+            have_rs = (norm_have.get(afi) or {}).get(name) or {}
 
-        for rs in entry.get("rule_sets") or []:
-            have_rs = have_afi.get(rs["name"])
+            if state in ("replaced", "overridden"):
+                commands += dict_op(want_rs, have_rs, rsbase, op="purge")
+            commands += dict_op(want_rs, have_rs, rsbase, op="set")
 
-            if state == "replaced" and have_rs:
-                # delete and rebuild if different
-                want_cmds = _rule_set_cmds(afi, rs, {}, "merged")
-                have_cmds = _rule_set_cmds(
-                    afi,
-                    {
-                        "name": rs["name"],
-                        "default_action": have_rs.get("default_action"),
-                        "rules": have_rs.get("rules", []),
-                    },
-                    {},
-                    "merged",
-                )
-                if want_cmds != have_cmds:
-                    cmds.append(("delete", _BASE + [afi, "name", rs["name"]]))
-                    have_rs = None
-
-            cmds += _rule_set_cmds(
-                afi,
-                rs,
-                have_rs,
-                state if state not in ("replaced", "overridden") else "merged",
-            )
-
-    return cmds
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -517,12 +469,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -533,7 +486,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

@@ -3,6 +3,8 @@
     msg: START vyos_facts all integration tests on connection={{ ansible_connection }}
 
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Gather all facts
       vyos.rest.vyos_facts:
         gather_subset: all
@@ -14,3 +16,6 @@
           - ansible_facts.vyos_users is defined
           - ansible_facts.vyos_config is defined
           - ansible_facts.vyos_logging is defined
+
+  always:
+    - include_tasks: _remove_config.yaml

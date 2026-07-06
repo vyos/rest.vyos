@@ -1,0 +1,44 @@
+---
+- debug:
+    msg: START vyos_vlan present integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Configure VLANs
+      register: result
+      vyos.rest.vyos_vlan:
+        config:
+          - vlan_id: 10
+            description: VLAN10
+            address: 192.168.10.1/24
+            interfaces: [eth1]
+          - vlan_id: 20
+            description: VLAN20
+            interfaces: [eth1]
+        state: present
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Configure VLANs (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vlan:
+        config:
+          - vlan_id: 10
+            description: VLAN10
+            address: 192.168.10.1/24
+            interfaces: [eth1]
+          - vlan_id: 20
+            description: VLAN20
+            interfaces: [eth1]
+        state: present
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

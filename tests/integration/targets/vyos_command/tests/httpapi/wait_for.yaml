@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_command wait_for integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Wait for version output to contain VyOS
+      register: result
+      vyos.rest.vyos_command:
+        commands:
+          - version
+        wait_for:
+          - result[0] contains VyOS
+        retries: 3
+        interval: 1
+
+    - assert:
+        that:
+          - result.stdout | length == 1
+          - "'VyOS' in result.stdout[0]"
+
+    - name: Wait for any condition to match
+      register: result
+      vyos.rest.vyos_command:
+        commands:
+          - version
+          - interfaces
+        wait_for:
+          - result[0] contains VyOS
+          - result[1] contains eth0
+        match: all
+        retries: 3
+        interval: 1
+
+    - assert:
+        that:
+          - result.stdout | length == 2

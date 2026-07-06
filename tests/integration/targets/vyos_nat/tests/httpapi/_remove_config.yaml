@@ -1,0 +1,5 @@
+---
+- name: Remove all NAT configuration
+  vyos.rest.vyos_nat:
+    state: deleted
+  ignore_errors: true

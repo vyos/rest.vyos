@@ -1,0 +1,12 @@
+---
+- name: Remove test system configuration
+  vyos.rest.vyos_system:
+    domain_name: lab.example.com
+    name_server:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    domain_search:
+      - sub1.example.com
+    state: absent
+  ignore_errors: true

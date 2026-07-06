@@ -3,9 +3,9 @@
     msg: START vyos_ntp_global deleted integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Delete all NTP configuration
       register: result
       vyos.rest.vyos_ntp_global: &id001
@@ -20,7 +20,7 @@
         that:
           - result.after.allow_clients == []
           - result.after.listen_addresses == []
-          - result.after.servers == {}
+          - result.after.servers == []
 
     - name: Delete the existing configuration (IDEMPOTENT)
       register: result

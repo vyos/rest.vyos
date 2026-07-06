@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
-
+# GNU General Public License v3.0+
 from __future__ import absolute_import, division, print_function
 
 
@@ -13,8 +12,7 @@ module: vyos_logging_global
 short_description: Manage syslog configuration on VyOS devices using REST API
 description:
   - Manages syslog (logging) configuration on VyOS devices via the REST API.
-  - Supports console, file, host, user, and global logging targets with
-    per-target facility and severity configuration.
+  - Targets VyOS 1.5+ syslog schema under C(system syslog).
   - Uses REST API (C(connection=httpapi)) instead of CLI.
 version_added: "1.0.0"
 author:
@@ -40,51 +38,12 @@ options:
               severity:
                 description: Minimum severity level to log (e.g. err, debug, all).
                 type: str
-      files:
-        description: Logging to local files.
-        type: list
-        elements: dict
-        suboptions:
-          path:
-            description: Path to the log file on the device.
-            type: str
-          archive:
-            description: Log file archive/rotation settings.
-            type: dict
-            suboptions:
-              file_num:
-                description: Number of archived log files to keep.
-                type: int
-              size:
-                description: Maximum size of log file in kilobytes before rotation.
-                type: int
-          facilities:
-            description: List of syslog facilities to log to this file.
-            type: list
-            elements: dict
-            suboptions:
-              facility:
-                description: Syslog facility name.
-                type: str
-              severity:
-                description: Minimum severity level to log.
-                type: str
       global_params:
-        description: Global syslog parameters (maps to C(system syslog global)).
+        description: Global syslog parameters (maps to C(system syslog local) on device).
         type: dict
         suboptions:
-          archive:
-            description: Global log archive/rotation settings.
-            type: dict
-            suboptions:
-              file_num:
-                description: Number of archived log files to keep.
-                type: int
-              size:
-                description: Maximum size of log file in kilobytes before rotation.
-                type: int
           facilities:
-            description: List of syslog facilities for global logging.
+            description: List of syslog facilities for local logging.
             type: list
             elements: dict
             suboptions:
@@ -101,7 +60,7 @@ options:
             description: Use the fully qualified domain name in syslog messages.
             type: bool
       hosts:
-        description: Logging to remote syslog hosts.
+        description: Logging to remote syslog hosts (maps to C(system syslog remote)).
         type: list
         elements: dict
         suboptions:
@@ -148,9 +107,6 @@ options:
                 description: Minimum severity level to send.
                 type: str
 
-  running_config:
-    description: Used only with state C(parsed).
-    type: str
 
   state:
     description:
@@ -163,8 +119,6 @@ options:
       - overridden
       - deleted
       - gathered
-      - rendered
-      - parsed
 """
 
 EXAMPLES = r"""
@@ -175,30 +129,18 @@ EXAMPLES = r"""
         facilities:
           - facility: local7
             severity: err
-      files:
-        - path: logFile
-          archive:
-            file_num: 2
-          facilities:
-            - facility: local6
-              severity: emerg
       hosts:
         - hostname: 172.16.0.1
-          port: 223
+          port: 514
           facilities:
             - facility: local7
               severity: all
-            - facility: all
-              protocol: udp
       users:
         - username: vyos
           facilities:
             - facility: local7
               severity: debug
       global_params:
-        archive:
-          file_num: 2
-          size: 111
         facilities:
           - facility: cron
             severity: debug
@@ -234,223 +176,184 @@ gathered:
   type: dict
 saved:
   description: Result of save_config after applying changes.
-  returned: when changes are applied
+  returned: when changed
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    dict_op,
+)
 
 
-# ------------------------------------------------------------
-# Normalization
-# ------------------------------------------------------------
+_BASE = ["system", "syslog"]
 
 
-def normalize_config(cfg):
-    result = {
-        "console": {"facilities": {}},
-        "global": {"facilities": {}},
-        "hosts": {},
-        "files": {},
-        "users": {},
-    }
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    for f in cfg.get("console", {}).get("facilities", []):
-        result["console"]["facilities"][f["facility"]] = f.get("severity")
 
-    gp = cfg.get("global_params", {})
-    for f in gp.get("facilities", []):
-        result["global"]["facilities"][f["facility"]] = f.get("severity")
-    if gp.get("archive"):
-        result["global"]["archive"] = gp["archive"]
-    if gp.get("marker_interval"):
-        result["global"]["marker_interval"] = gp["marker_interval"]
-    if gp.get("preserve_fqdn"):
-        result["global"]["preserve_fqdn"] = True
-
-    for h in cfg.get("hosts", []):
-        host = {"port": h.get("port"), "facilities": {}}
-        for f in h.get("facilities", []):
-            host["facilities"][f["facility"]] = {k: v for k, v in f.items() if k != "facility"}
-        result["hosts"][h["hostname"]] = host
-
-    for f in cfg.get("files", []):
-        facilities = {x["facility"]: x.get("severity") for x in f.get("facilities", [])}
-        result["files"][f["path"]] = {
-            "archive": f.get("archive"),
-            "facilities": facilities,
-        }
-
-    for u in cfg.get("users", []):
-        result["users"][u["username"]] = {
-            "facilities": {f["facility"]: f.get("severity") for f in u.get("facilities", [])},
-        }
-
+def _fac_list_to_device(facilities):
+    """Convert [{facility, severity, protocol}] -> {"name": {"level": s, ...}}"""
+    result = {}
+    for fac in facilities or []:
+        name = fac["facility"]
+        entry = {}
+        if fac.get("severity"):
+            entry["level"] = fac["severity"]
+        if fac.get("protocol"):
+            entry["protocol"] = fac["protocol"]
+        result[name] = entry
     return result
 
 
-def normalize_running(raw):
-    result = {
-        "console": {"facilities": {}},
-        "global": {"facilities": {}},
-        "hosts": {},
-        "files": {},
-        "users": {},
-    }
+def _fac_device_to_list(raw_fac):
+    """Convert {"name": {"level": s}} -> [{facility, severity}]"""
+    if not raw_fac or not isinstance(raw_fac, dict):
+        return []
+    result = []
+    for name, data in sorted(raw_fac.items()):
+        entry = {"facility": name}
+        if isinstance(data, dict):
+            if data.get("level"):
+                entry["severity"] = data["level"]
+            if data.get("protocol"):
+                entry["protocol"] = data["protocol"]
+        result.append(entry)
+    return result
 
+
+# ---------------------------------------------------------------------------
+# Shape adapters
+# ---------------------------------------------------------------------------
+
+
+def _want_to_device(config):
+    """Convert argspec config to device shape for dict_op.
+
+    VyOS 1.5 syslog schema:
+      system syslog console facility <f> level <s>
+      system syslog local   facility <f> level <s>   (was: global)
+      system syslog remote  <host> facility <f> ...  (was: host)
+      system syslog user    <u> facility <f> ...
+      system syslog marker  interval <n>             (was: global marker)
+      system syslog preserve-fqdn                    (was: global preserve-fqdn)
+      NOTE: file and archive are removed in VyOS 1.5
+    """
+    if not config:
+        return {}
+    want = {}
+
+    # console
+    console = config.get("console") or {}
+    if console.get("facilities"):
+        want["console"] = {"facility": _fac_list_to_device(console["facilities"])}
+
+    # global_params -> local + top-level marker/preserve-fqdn
+    gp = config.get("global_params") or {}
+    if gp:
+        if gp.get("facilities"):
+            want["local"] = {"facility": _fac_list_to_device(gp["facilities"])}
+        if gp.get("marker_interval") is not None:
+            want["marker"] = {"interval": gp["marker_interval"]}
+        if gp.get("preserve_fqdn"):
+            want["preserve-fqdn"] = {}
+
+    # hosts -> remote (keyed by hostname)
+    for h in config.get("hosts") or []:
+        hd = {}
+        if h.get("port") is not None:
+            hd["port"] = h["port"]
+        if h.get("protocol"):
+            hd["protocol"] = h["protocol"]
+        if h.get("facilities"):
+            hd["facility"] = _fac_list_to_device(h["facilities"])
+        want.setdefault("remote", {})[h["hostname"]] = hd
+
+    # users -> user (keyed by username)
+    for u in config.get("users") or []:
+        ud = {}
+        if u.get("facilities"):
+            ud["facility"] = _fac_list_to_device(u["facilities"])
+        want.setdefault("user", {})[u["username"]] = ud
+
+    return want
+
+
+def _device_to_argspec(raw):
+    """Convert raw device response to argspec shape for before/after/gathered."""
     if not raw:
-        return result
+        return {}
+    result = {}
 
-    for f, data in raw.get("console", {}).get("facility", {}).items():
-        result["console"]["facilities"][f] = data.get("level")
+    # console
+    console = raw.get("console") or {}
+    if console:
+        facs = _fac_device_to_list(console.get("facility"))
+        if facs:
+            result["console"] = {"facilities": facs}
 
-    g = raw.get("local", {})
-    for f, data in g.get("facility", {}).items():
-        result["global"]["facilities"][f] = data.get("level")
-    if "archive" in g:
-        result["global"]["archive"] = g["archive"]
-    if "marker" in g and "interval" in g["marker"]:
-        result["global"]["marker_interval"] = g["marker"]["interval"]
-    if "preserve-fqdn" in g:
-        result["global"]["preserve_fqdn"] = True
+    # local -> global_params
+    local = raw.get("local") or {}
+    marker = raw.get("marker") or {}
+    preserve_fqdn = "preserve-fqdn" in raw
+    if local or marker or preserve_fqdn:
+        gp = {}
+        facs = _fac_device_to_list(local.get("facility") if isinstance(local, dict) else {})
+        if facs:
+            gp["facilities"] = facs
+        if isinstance(marker, dict) and "interval" in marker:
+            gp["marker_interval"] = marker["interval"]
+        if preserve_fqdn:
+            gp["preserve_fqdn"] = True
+        if gp:
+            result["global_params"] = gp
 
-    for host, data in raw.get("remote", {}).items():
-        h = {"port": data.get("port"), "facilities": {}}
-        for f, fd in data.get("facility", {}).items():
-            h["facilities"][f] = {
-                "severity": fd.get("level"),
-                "protocol": fd.get("protocol"),
-            }
-        result["hosts"][host] = h
+    # remote -> hosts
+    remote_raw = raw.get("remote") or {}
+    if remote_raw and isinstance(remote_raw, dict):
+        hosts = []
+        for hostname, data in sorted(remote_raw.items()):
+            h = {"hostname": hostname}
+            if isinstance(data, dict):
+                if data.get("port") is not None:
+                    h["port"] = data["port"]
+                if data.get("protocol"):
+                    h["protocol"] = data["protocol"]
+                facs = _fac_device_to_list(data.get("facility"))
+                if facs:
+                    h["facilities"] = facs
+            hosts.append(h)
+        if hosts:
+            result["hosts"] = hosts
 
-    for path, data in raw.get("file", {}).items():
-        facilities = {}
-        for f, fd in data.get("facility", {}).items():
-            facilities[f] = fd.get("level")
-        result["files"][path] = {
-            "archive": data.get("archive"),
-            "facilities": facilities,
-        }
-
-    for user, data in raw.get("user", {}).items():
-        facilities = {}
-        for f, fd in data.get("facility", {}).items():
-            facilities[f] = fd.get("level")
-        result["users"][user] = {"facilities": facilities}
+    # user -> users
+    user_raw = raw.get("user") or {}
+    if user_raw and isinstance(user_raw, dict):
+        users = []
+        for username, data in sorted(user_raw.items()):
+            u = {"username": username}
+            if isinstance(data, dict):
+                facs = _fac_device_to_list(data.get("facility"))
+                if facs:
+                    u["facilities"] = facs
+            users.append(u)
+        if users:
+            result["users"] = users
 
     return result
 
 
-# ------------------------------------------------------------
-# Diff helpers
-# ------------------------------------------------------------
-
-
-def diff_facilities(base, want, have, state):
-    cmds = []
-    want_keys = set(want)
-    have_keys = set(have)
-
-    for f in want_keys:
-        if f not in have_keys or want[f] != have[f]:
-            path = base + ["facility", f]
-            if want[f]:
-                path += ["level", want[f]]
-            cmds.append(("set", path))
-
-    if state in ["replaced", "deleted"]:
-        for f in have_keys - want_keys:
-            cmds.append(("delete", base + ["facility", f]))
-
-    return cmds
-
-
-def diff_map(base, want, have, state):
-    cmds = []
-    w = set(want)
-    h = set(have)
-
-    if state in ["merged", "replaced"]:
-        for k in w - h:
-            cmds.append(("set", base + [k]))
-
-    if state in ["replaced", "deleted"]:
-        for k in h - w:
-            cmds.append(("delete", base + [k]))
-
-    return cmds
-
-
-# ------------------------------------------------------------
-# Build commands
-# ------------------------------------------------------------
-
-
-def build_commands(want, have, state):
-    cmds = []
-
-    if state == "overridden":
-        cmds.append(("delete", ["system", "syslog"]))
-        state = "merged"
-
-    cmds += diff_facilities(
-        ["system", "syslog", "console"],
-        want["console"]["facilities"],
-        have["console"]["facilities"],
-        state,
-    )
-
-    cmds += diff_facilities(
-        ["system", "syslog", "local"],
-        want["global"]["facilities"],
-        have["global"]["facilities"],
-        state,
-    )
-
-    cmds += diff_map(
-        ["system", "syslog", "file"],
-        want["files"],
-        have["files"],
-        state,
-    )
-
-    cmds += diff_map(
-        ["system", "syslog", "remote"],
-        want["hosts"],
-        have["hosts"],
-        state,
-    )
-
-    cmds += diff_map(
-        ["system", "syslog", "user"],
-        want["users"],
-        have["users"],
-        state,
-    )
-
-    return cmds
-
-
-# ------------------------------------------------------------
-# Running config
-# ------------------------------------------------------------
-
-
-def get_running_config(vyos):
-    raw = vyos.get_config(["system", "syslog"])
-    return normalize_running(raw)
-
-
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Main
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 def main():
     argument_spec = dict(
         config=dict(type="dict"),
-        running_config=dict(type="str"),
         state=dict(
             default="merged",
             choices=[
@@ -459,8 +362,6 @@ def main():
                 "overridden",
                 "deleted",
                 "gathered",
-                "rendered",
-                "parsed",
             ],
         ),
     )
@@ -471,22 +372,34 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    if state == "gathered":
-        module.exit_json(gathered=get_running_config(vyos))
+    raw_have = vyos.get_config(_BASE)
+    have = _device_to_argspec(raw_have)
 
-    want = normalize_config(config)
-    have = get_running_config(vyos)
+    if state == "gathered":
+        module.exit_json(changed=False, gathered=have)
+
+    want_device = _want_to_device(config)
 
     if state == "deleted":
-        want = {
-            "console": {"facilities": {}},
-            "global": {"facilities": {}},
-            "hosts": {},
-            "files": {},
-            "users": {},
-        }
-
-    commands = build_commands(want, have, state)
+        commands = [("delete", _BASE)] if raw_have else []
+    elif state == "overridden":
+        commands = []
+        for section in list(raw_have.keys()):
+            if section not in want_device:
+                commands.append(("delete", _BASE + [section]))
+            else:
+                commands += dict_op(
+                    want_device[section],
+                    raw_have[section],
+                    _BASE + [section],
+                    op="purge",
+                )
+        commands += dict_op(want_device, raw_have, _BASE, op="set")
+    else:
+        commands = []
+        if state == "replaced":
+            commands += dict_op(want_device, raw_have, _BASE, op="purge")
+        commands += dict_op(want_device, raw_have, _BASE, op="set")
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -494,10 +407,11 @@ def main():
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after = {} if state == "deleted" else _device_to_argspec(vyos.get_config(_BASE))
         module.exit_json(
             changed=True,
             before=have,
-            after=want,
+            after=after,
             commands=commands,
             saved=saved,
             response=response,

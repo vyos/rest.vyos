@@ -168,197 +168,166 @@ gathered:
   type: list
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    dict_op,
+    from_device,
+    normalize_have,
+)
 
 
 _BASE = ["firewall"]
-_AFIS = ["ipv4", "ipv6"]
-_HOOKS = ["input", "output", "forward"]
+
+# The only hook filter keys this module owns under firewall.<afi>. Sibling
+# top-level keys under the same afi (e.g. firewall.<afi>.name, owned by
+# vyos_firewall_rules) are never enumerated or touched -- this module
+# only ever builds paths as _BASE + [afi, hook, "filter", ...] for hook
+# drawn from this fixed set, never a blanket op at _BASE + [afi] itself.
+_HOOKS = ("input", "output", "forward")
+_AFIS = ("ipv4", "ipv6")
+
+# "rule" is a genuine tag node (keyed by rule number) that VyOS's REST API
+# can collapse to a bare value for a single rule with no other config.
+_TAG_KEYS = {"rule"}
 
 
-def _parse_rule(rule_num, data):
-    rule = {"number": int(rule_num)}
-    data = data or {}
-    if "action" in data:
-        rule["action"] = data["action"]
-    if "description" in data:
-        rule["description"] = data["description"]
-    if "disable" in data:
-        rule["disable"] = True
-    if "protocol" in data:
-        rule["protocol"] = data["protocol"]
-    if "state" in data:
-        rule["state"] = data["state"]
-    if "log" in data:
-        rule["log"] = True
-
-    for endpoint in ["source", "destination"]:
-        ep = data.get(endpoint, {}) or {}
-        if ep:
-            rule[endpoint] = {}
-            if "address" in ep:
-                rule[endpoint]["address"] = ep["address"]
-            if "port" in ep:
-                rule[endpoint]["port"] = ep["port"]
-
-    return rule
+# ---------------------------------------------------------------------------
+# want -> device / device -> argspec
+#
+# Every leaf here is a direct structural match between argspec and device
+# shape (protocol, description, disable, state, log, source/destination
+# both flowing through autoclean/from_device generically). The only
+# unavoidable structural work: the "rule" tag-node reshape (keyed by
+# number) and inserting the literal "filter" wrapper key that VyOS
+# requires one level under each hook but the argspec omits (hook_entry's
+# fields live directly on it, not nested under a "filter" key).
+# ---------------------------------------------------------------------------
 
 
-def _parse_hook_filter(hook, data):
-    entry = {"hook": hook}
-    data = data or {}
-    filter_data = data.get("filter", {}) or {}
-    if "default-action" in filter_data:
-        entry["default_action"] = filter_data["default-action"]
-    if "description" in filter_data:
-        entry["description"] = filter_data["description"]
-    rules_raw = filter_data.get("rule", {}) or {}
-    if rules_raw and isinstance(rules_raw, dict):
-        rules = [
-            _parse_rule(num, rdata)
-            for num, rdata in sorted(
-                rules_raw.items(),
-                key=lambda x: int(x[0]),
-            )
-        ]
-        if rules:
-            entry["rules"] = rules
+def _rules_to_device(rules):
+    return {
+        str(r["number"]): autoclean({k: v for k, v in r.items() if k != "number"})
+        for r in rules or []
+    }
+
+
+def _rules_from_device(raw):
+    result = []
+    for num, data in sorted((raw or {}).items(), key=lambda kv: int(kv[0])):
+        entry = {"number": int(num), **from_device(data or {})}
+        result.append(entry)
+    return result
+
+
+def _hook_filter_to_device(hook_entry):
+    entry = autoclean({k: v for k, v in hook_entry.items() if k not in ("hook", "rules")})
+    if hook_entry.get("rules"):
+        entry["rule"] = _rules_to_device(hook_entry["rules"])
     return entry
 
 
+def _hook_filter_from_device(hook, filter_data):
+    filter_data = dict(filter_data or {})
+    rules_raw = filter_data.pop("rule", None) or {}
+    entry = {"hook": hook, **from_device(filter_data)}
+    if rules_raw:
+        entry["rules"] = _rules_from_device(rules_raw)
+    return entry
+
+
+def _want_to_device(config):
+    result = {}
+    for entry in config or []:
+        afi = entry["afi"]
+        hooks = entry.get("hooks") or []
+        if not hooks:
+            continue
+        result[afi] = {h["hook"]: {"filter": _hook_filter_to_device(h)} for h in hooks}
+    return result
+
+
 def get_running_config(vyos):
+    return vyos.get_config(_BASE) or {}
+
+
+def _device_to_argspec(raw):
+    raw = raw or {}
     result = []
     for afi in _AFIS:
-        raw = vyos.get_config(_BASE + [afi])
-        if not raw or not isinstance(raw, dict):
-            continue
+        afi_raw = raw.get(afi) or {}
         hooks = []
         for hook in _HOOKS:
-            if hook in raw:
-                parsed = _parse_hook_filter(hook, raw[hook])
-                if len(parsed) > 1:  # more than just hook key
-                    hooks.append(parsed)
+            filter_data = (afi_raw.get(hook) or {}).get("filter")
+            if filter_data:
+                hooks.append(_hook_filter_from_device(hook, filter_data))
         if hooks:
             result.append({"afi": afi, "hooks": hooks})
     return result
 
 
-def _rule_cmds(afi, hook, rule, have_rule):
-    cmds = []
-    rbase = _BASE + [afi, hook, "filter", "rule", str(rule["number"])]
-    have_rule = have_rule or {}
-
-    if rule.get("action") and rule["action"] != have_rule.get("action"):
-        cmds.append(("set", rbase + ["action", rule["action"]]))
-    if rule.get("description") and rule["description"] != have_rule.get("description"):
-        cmds.append(("set", rbase + ["description", rule["description"]]))
-    if rule.get("disable") and not have_rule.get("disable"):
-        cmds.append(("set", rbase + ["disable"]))
-    if rule.get("protocol") and rule["protocol"] != have_rule.get("protocol"):
-        cmds.append(("set", rbase + ["protocol", rule["protocol"]]))
-    if rule.get("state") and rule["state"] != have_rule.get("state"):
-        cmds.append(("set", rbase + ["state", rule["state"]]))
-    if rule.get("log") and not have_rule.get("log"):
-        cmds.append(("set", rbase + ["log"]))
-
-    for endpoint in ["source", "destination"]:
-        want_ep = rule.get(endpoint) or {}
-        have_ep = have_rule.get(endpoint) or {}
-        if want_ep.get("address") and want_ep["address"] != have_ep.get("address"):
-            cmds.append(("set", rbase + [endpoint, "address", want_ep["address"]]))
-        if want_ep.get("port") and want_ep["port"] != have_ep.get("port"):
-            cmds.append(("set", rbase + [endpoint, "port", str(want_ep["port"])]))
-
-    return cmds
+# ---------------------------------------------------------------------------
+# Command building — dict_op scoped to _BASE + [afi, hook, "filter"] only,
+# per hook, never a blanket op at _BASE + [afi] or _BASE itself (which
+# would risk vyos_firewall_rules's firewall.<afi>.name subtree, even
+# though today the keys happen to differ -- staying scoped to the exact
+# owned path is the same discipline established for the BGP modules).
+# ---------------------------------------------------------------------------
 
 
-def _hook_cmds(afi, hook_entry, have_hook, state):
-    cmds = []
-    hook = hook_entry["hook"]
-    hbase = _BASE + [afi, hook, "filter"]
-    have_hook = have_hook or {}
-
-    if hook_entry.get("default_action") and hook_entry["default_action"] != have_hook.get(
-        "default_action",
-    ):
-        cmds.append(("set", hbase + ["default-action", hook_entry["default_action"]]))
-    if hook_entry.get("description") and hook_entry["description"] != have_hook.get("description"):
-        cmds.append(("set", hbase + ["description", hook_entry["description"]]))
-
-    have_rules = {r["number"]: r for r in (have_hook.get("rules") or [])}
-    want_rules = {r["number"]: r for r in (hook_entry.get("rules") or [])}
-
-    if state == "replaced":
-        for num in set(have_rules) - set(want_rules):
-            cmds.append(("delete", hbase + ["rule", str(num)]))
-
-    for num, rule in want_rules.items():
-        cmds += _rule_cmds(afi, hook, rule, have_rules.get(num))
-
-    return cmds
-
-
-def build_commands(config, have_list, state):
-    cmds = []
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    config = config or []
+    norm_have = normalize_have(raw_have, _TAG_KEYS)
 
     if state == "deleted":
-        if not config:
-            if have_list:
-                for entry in have_list:
-                    afi = entry["afi"]
-                    for hook_entry in entry.get("hooks", []):
-                        cmds.append(("delete", _BASE + [afi, hook_entry["hook"], "filter"]))
-        else:
-            have_map = {(e["afi"], h["hook"]): h for e in have_list for h in e.get("hooks", [])}
-            for entry in config:
-                afi = entry["afi"]
-                for hook_entry in entry.get("hooks") or []:
-                    if (afi, hook_entry["hook"]) in have_map:
-                        cmds.append(("delete", _BASE + [afi, hook_entry["hook"], "filter"]))
-        return cmds
+        commands = []
+        # No config given -> delete every hook filter currently present.
+        # Config given -> delete only the (afi, hook) pairs it names.
+        targets = (
+            [(afi, hook) for afi in _AFIS for hook in _HOOKS]
+            if not config
+            else [(e["afi"], h["hook"]) for e in config for h in (e.get("hooks") or [])]
+        )
+        for afi, hook in targets:
+            if ((raw_have.get(afi) or {}).get(hook) or {}).get("filter"):
+                commands.append(("delete", _BASE + [afi, hook, "filter"]))
+        return commands
 
-    have_map = {e["afi"]: {h["hook"]: h for h in e.get("hooks", [])} for e in have_list}
+    want = _want_to_device(config)
+    commands = []
 
     if state == "overridden":
-        want_keys = {(e["afi"], h["hook"]) for e in (config or []) for h in e.get("hooks", [])}
-        for e in have_list:
-            for h in e.get("hooks", []):
-                if (e["afi"], h["hook"]) not in want_keys:
-                    cmds.append(("delete", _BASE + [e["afi"], h["hook"], "filter"]))
+        want_pairs = {(afi, hook) for afi, hooks in want.items() for hook in hooks}
+        for afi in _AFIS:
+            for hook in _HOOKS:
+                if (afi, hook) not in want_pairs and (
+                    (raw_have.get(afi) or {}).get(hook) or {}
+                ).get(
+                    "filter",
+                ):
+                    commands.append(("delete", _BASE + [afi, hook, "filter"]))
 
-    for entry in config or []:
-        afi = entry["afi"]
-        have_afi = have_map.get(afi, {})
+    for afi, hooks in want.items():
+        for hook, want_hook in hooks.items():
+            hbase = _BASE + [afi, hook, "filter"]
+            have_filter = ((norm_have.get(afi) or {}).get(hook) or {}).get("filter") or {}
+            want_filter = want_hook.get("filter", {})
 
-        for hook_entry in entry.get("hooks") or []:
-            hook = hook_entry["hook"]
-            have_hook = have_afi.get(hook)
+            if state in ("replaced", "overridden"):
+                commands += dict_op(want_filter, have_filter, hbase, op="purge")
+            commands += dict_op(want_filter, have_filter, hbase, op="set")
 
-            if state == "replaced" and have_hook:
-                want_cmds = _hook_cmds(afi, hook_entry, {}, "merged")
-                have_hook_entry = {
-                    "hook": hook,
-                    "default_action": have_hook.get("default_action"),
-                    "rules": have_hook.get("rules", []),
-                }
-                have_cmds = _hook_cmds(afi, have_hook_entry, {}, "merged")
-                if want_cmds != have_cmds:
-                    cmds.append(("delete", _BASE + [afi, hook, "filter"]))
-                    have_hook = None
-
-            effective_state = state if state not in ("replaced", "overridden") else "merged"
-            cmds += _hook_cmds(afi, hook_entry, have_hook, effective_state)
-
-    return cmds
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -444,12 +413,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -460,7 +430,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

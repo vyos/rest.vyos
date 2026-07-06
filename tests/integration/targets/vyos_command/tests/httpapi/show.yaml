@@ -1,0 +1,45 @@
+---
+- debug:
+    msg: START vyos_command show integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Run show version
+      register: result
+      vyos.rest.vyos_command:
+        commands:
+          - version
+
+    - assert:
+        that:
+          - result.stdout | length == 1
+          - result.stdout[0] | length > 0
+          - "'VyOS' in result.stdout[0]"
+          - result.stdout_lines | length == 1
+
+    - name: Run multiple show commands
+      register: result
+      vyos.rest.vyos_command:
+        commands:
+          - interfaces
+          - ip route
+          - system uptime
+
+    - assert:
+        that:
+          - result.stdout | length == 3
+          - result.stdout_lines | length == 3
+          - result.stdout[0] | length > 0
+          - result.stdout[1] | length > 0
+          - result.stdout[2] | length > 0
+
+    - name: Run show commands as lists
+      register: result
+      vyos.rest.vyos_command:
+        commands:
+          - - system
+            - uptime
+
+    - assert:
+        that:
+          - result.stdout | length == 1
+          - "'Uptime' in result.stdout[0]"

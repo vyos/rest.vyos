@@ -3,9 +3,9 @@
     msg: START vyos_ntp_global replaced integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Replace the existing configuration with the provided configuration
       register: result
       vyos.rest.vyos_ntp_global: &id001
@@ -31,8 +31,8 @@
         that:
           - "'10.4.9.0/24' not in gathered.gathered.allow_clients"
           - "'10.99.99.0/24' in gathered.gathered.allow_clients"
-          - "'server-new.example.com' in gathered.gathered.servers"
-          - "'10.3.6.5' not in gathered.gathered.servers"
+          - "'server-new.example.com' in gathered.gathered.servers | map(attribute='server')"
+          - "'10.3.6.5' not in gathered.gathered.servers | map(attribute='server')"
 
     - name: Replace the provided configuration (IDEMPOTENT)
       register: result

@@ -1,0 +1,63 @@
+---
+- debug:
+    msg: START vyos_system present integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Configure domain and name servers
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: lab.example.com
+        name_server:
+          - 8.8.8.8
+          - 8.8.4.4
+        state: present
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Configure domain and name servers (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: lab.example.com
+        name_server:
+          - 8.8.8.8
+          - 8.8.4.4
+        state: present
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Update domain name
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: new.example.com
+        state: present
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Update domain name (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: new.example.com
+        state: present
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
+
+    - name: Remove new domain name
+      vyos.rest.vyos_system:
+        domain_name: new.example.com
+        state: absent
+      ignore_errors: true

@@ -1,0 +1,54 @@
+---
+- debug:
+    msg: START vyos_ha merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge HA configuration
+      vyos.rest.vyos_ha: &id001
+        config:
+          vrrp:
+            global_parameters:
+              startup_delay: 30
+            groups:
+              - name: g1
+                interface: eth0
+                vrid: 20
+                priority: 100
+                address:
+                  - 192.168.1.100/24
+            sync_groups:
+              - name: sg1
+                member: [g1]
+                health_check:
+                  failure_count: 3
+                  ping: 192.168.1.1
+            snmp: enabled
+          virtual_servers:
+            - name: s1
+              address: 10.10.10.5
+              port: 80
+              protocol: tcp
+              real_server:
+                - address: 10.10.50.2
+                  port: 8080
+        state: merged
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length > 0
+
+    - name: Merge again (IDEMPOTENT)
+      vyos.rest.vyos_ha: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

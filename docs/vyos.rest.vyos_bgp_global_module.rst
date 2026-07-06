@@ -841,7 +841,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">dictionary</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>always</td>
                 <td>
                             <div>Raw API response.</div>
                     <br/>
@@ -856,7 +856,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">boolean</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>when changed</td>
                 <td>
                             <div>Whether the config was saved after changes.</div>
                     <br/>

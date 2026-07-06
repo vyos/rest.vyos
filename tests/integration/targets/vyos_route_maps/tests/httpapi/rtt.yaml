@@ -14,40 +14,150 @@
                 action: permit
                 match:
                   peer: 192.0.2.32
+                  metric: 100
+                  protocol: bgp
                 set:
-                  metric: "5"
+                  metric: 5
+                  as_path_exclude: "111"
+                  aggregator:
+                    as: 100
+                  community:
+                    add:
+                      - "no-export"
+          - route_map: my_route_map
+            entries:
+              - sequence: 10
+                action: permit
+                continue_sequence: 20
+              - sequence: 20
+                action: permit
+                set:
+                  large_community:
+                    none: true
+          - route_map: test3
+            entries:
+              - sequence: 1
+                action: permit
+                match:
+                  metric: 1
+                  peer: 192.0.2.32
+                set:
+                  local_preference: 4
+                  metric: 5
+                  metric_type: type-1
+                  origin: egp
+                  originator_id: 192.0.2.34
+                  tag: 5
+                  weight: 4
         state: merged
 
-    - name: RTT - Gather configuration
+    - name: RTT - Gather
       register: gathered
       vyos.rest.vyos_route_maps:
         state: gathered
 
-    - name: RTT - Assert gathered matches applied
+    - name: RTT - Assert base configuration present
       assert:
         that:
-          - gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | list | length == 1
+          - "'RM-TEST-EXPORT-POLICY' in gathered.gathered | map(attribute='route_map')"
+          - "'my_route_map' in gathered.gathered | map(attribute='route_map')"
+          - "'test3' in gathered.gathered | map(attribute='route_map')"
+          - (gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].match.metric == 100
+          - (gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].match.protocol == 'bgp'
+          - (gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].set.aggregator.as_ == 100
+          - (gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].set.community.add == ['no-export']
+          - (gathered.gathered | selectattr('route_map', 'eq', 'my_route_map') | first).entries[0].continue_sequence == 20
+          - (gathered.gathered | selectattr('route_map', 'eq', 'my_route_map') | first).entries[1].set.large_community.none == true
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.local_preference == 4
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.metric_type == 'type-1'
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.origin == 'egp'
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.originator_id == '192.0.2.34'
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.tag == 5
+          - (gathered.gathered | selectattr('route_map', 'eq', 'test3') | first).entries[0].set.weight == 4
 
-    - name: RTT - Modify configuration
+    - name: RTT - Modify configuration (replaced -- remove RM-TEST-EXPORT-POLICY's community, add a new route map)
       vyos.rest.vyos_route_maps:
         config:
           - route_map: RM-TEST-EXPORT-POLICY
             entries:
               - sequence: 10
                 action: permit
+                match:
+                  peer: 192.0.2.32
                 set:
-                  metric: "20"
+                  metric: 5
+                  as_path_exclude: "111"
+                  aggregator:
+                    as: 100
+          - route_map: my_route_map
+            entries:
+              - sequence: 10
+                action: permit
+                continue_sequence: 20
+              - sequence: 20
+                action: permit
+                set:
+                  large_community:
+                    none: true
         state: replaced
 
-    - name: RTT - Gather modified configuration
+    - name: RTT - Gather after modify
       register: gathered2
       vyos.rest.vyos_route_maps:
         state: gathered
 
-    - name: RTT - Assert modification applied correctly
+    - name: RTT - Assert stale community removed and match cleared, my_route_map untouched
       assert:
         that:
-          - gathered2.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | list | length == 1
+          - "'community' not in (gathered2.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].set"
+          - "'metric' not in (gathered2.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].match"
+          - (gathered2.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | first).entries[0].set.aggregator.as_ == 100
+          - (gathered2.gathered | selectattr('route_map', 'eq', 'my_route_map') | first).entries[0].continue_sequence == 20
+
+    - name: RTT - Re-establish the original baseline
+      vyos.rest.vyos_route_maps: &baseline_config
+        config: "{{ gathered.gathered }}"
+        state: overridden
+
+    - name: RTT - Gather the re-established baseline
+      register: rebaselined
+      vyos.rest.vyos_route_maps:
+        state: gathered
+
+    - name: RTT - Apply an unrelated temporary route map
+      vyos.rest.vyos_route_maps:
+        config:
+          - route_map: temp_policy
+            entries:
+              - sequence: 5
+                action: deny
+        state: merged
+
+    - name: RTT - Revert to the original baseline via gather + overridden
+      register: reverted
+      vyos.rest.vyos_route_maps: *baseline_config
+
+    - name: RTT - Gather after revert
+      register: gathered3
+      vyos.rest.vyos_route_maps:
+        state: gathered
+
+    - name: RTT - Assert the revert exactly restores the baseline and is then idempotent
+      assert:
+        that:
+          - reverted.changed == true
+          - "'temp_policy' not in gathered3.gathered | map(attribute='route_map')"
+          - gathered3.gathered | symmetric_difference(rebaselined.gathered) == []
+
+    - name: RTT - Confirm reverted baseline is idempotent
+      register: reverted_again
+      vyos.rest.vyos_route_maps: *baseline_config
+
+    - name: RTT - Assert idempotent
+      assert:
+        that:
+          - reverted_again.changed == false
+          - reverted_again.commands == []
 
   always:
     - include_tasks: _remove_config.yaml

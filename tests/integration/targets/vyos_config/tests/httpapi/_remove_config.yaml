@@ -1,0 +1,6 @@
+---
+- name: Remove test configuration
+  vyos.rest.vyos_config:
+    lines:
+      - delete interfaces ethernet eth1 description
+    match: none

@@ -181,21 +181,30 @@ gathered:
   type: dict
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    dict_op,
+    from_device,
+    normalize_have,
+)
 
 
 _BASE = ["firewall", "group"]
 
-# Map argspec key -> API key, value key
+# argspec_key -> (device_key, member_key). A genuinely minimal, unavoidable
+# mapping: VyOS's 5 group types have different kebab-case device names and
+# different member-list field names (address/network/port/interface), none
+# of which is a mechanical snake<->kebab transform of the other.
 _GROUP_TYPES = {
     "address_group": ("address-group", "address"),
     "network_group": ("network-group", "network"),
@@ -204,103 +213,81 @@ _GROUP_TYPES = {
     "ipv6_network_group": ("ipv6-network-group", "network"),
 }
 
+# Each of the 5 device_keys above is itself a tag node (keyed by group
+# name) that can collapse to a bare string for a single group with no
+# other config. The member fields (address/network/port/interface) are
+# NOT tag nodes -- confirmed against vyos-1x (leafNode with <multi/>) --
+# they're plain multi-value leaves, so dict_op's own native list handling
+# applies to them directly; no reshaping needed.
+_TAG_KEYS = {device_key for device_key, _member_key in _GROUP_TYPES.values()}
 
-def _parse_group_type(raw, val_key):
-    """Parse a group dict from API raw data."""
-    if not raw or not isinstance(raw, dict):
+
+def _group_to_device(g, member_key):
+    entry = autoclean({k: v for k, v in g.items() if k not in ("name", member_key)})
+    members = g.get(member_key)
+    if members:
+        entry[member_key] = [str(m) for m in members]
+    return entry
+
+
+def _groups_to_device(groups, member_key):
+    return {g["name"]: _group_to_device(g, member_key) for g in groups or []}
+
+
+def _want_to_device(config):
+    group = (config or {}).get("group") or {}
+    want = {}
+    for arg_key, (device_key, member_key) in _GROUP_TYPES.items():
+        groups = group.get(arg_key) or []
+        if groups:
+            want[device_key] = _groups_to_device(groups, member_key)
+    return want
+
+
+def _group_from_device(name, data, member_key):
+    data = dict(data or {})
+    members = data.pop(member_key, None)
+    entry = {"name": name, **from_device(data)}
+    if members is not None:
+        member_list = [members] if isinstance(members, str) else members
+        entry[member_key] = sorted(str(m) for m in member_list)
+    return entry
+
+
+def _groups_from_device(raw_groups, member_key):
+    if not raw_groups or not isinstance(raw_groups, dict):
         return []
-    result = []
-    for name, data in sorted(raw.items()):
-        entry = {"name": name}
-        data = data or {}
-        if data.get("description"):
-            entry["description"] = data["description"]
-        val = data.get(val_key)
-        if val is not None:
-            if isinstance(val, list):
-                entry[val_key.replace("-", "_")] = val
-            elif isinstance(val, str):
-                entry[val_key.replace("-", "_")] = [val]
-            elif isinstance(val, dict):
-                entry[val_key.replace("-", "_")] = list(val.keys())
-        result.append(entry)
-    return result
+    return [_group_from_device(name, data, member_key) for name, data in sorted(raw_groups.items())]
 
 
 def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
+    return vyos.get_config(_BASE) or {}
+
+
+def _device_to_argspec(raw):
     if not raw or not isinstance(raw, dict):
         return {}
-    result = {"group": {}}
-
-    for arg_key, (api_key, val_key) in _GROUP_TYPES.items():
-        groups = _parse_group_type(raw.get(api_key), val_key)
+    group = {}
+    for arg_key, (device_key, member_key) in _GROUP_TYPES.items():
+        groups = _groups_from_device(raw.get(device_key), member_key)
         if groups:
-            result["group"][arg_key] = groups
-
-    if not result["group"]:
-        return {}
-    return result
+            group[arg_key] = groups
+    return {"group": group} if group else {}
 
 
-def _group_cmds(arg_key, groups, have_groups, state):
-    cmds = []
-    api_key, val_key = _GROUP_TYPES[arg_key]
-    have_map = {g["name"]: g for g in (have_groups or [])}
-    want_map = {g["name"]: g for g in (groups or [])}
-
-    if state == "replaced":
-        for name in set(have_map) - set(want_map):
-            cmds.append(("delete", _BASE + [api_key, name]))
-
-    for name, group in want_map.items():
-        have_group = have_map.get(name, {})
-        gbase = _BASE + [api_key, name]
-
-        if group.get("description") and group["description"] != have_group.get("description"):
-            cmds.append(("set", gbase + ["description", group["description"]]))
-
-        # normalize val_key for argspec (underscores)
-        arg_val_key = val_key.replace("-", "_")
-        want_vals = set(group.get(arg_val_key) or [])
-        have_vals = set(have_group.get(arg_val_key) or [])
-
-        for val in want_vals - have_vals:
-            cmds.append(("set", gbase + [val_key, val]))
-
-        if state == "replaced":
-            for val in have_vals - want_vals:
-                cmds.append(("delete", gbase + [val_key, val]))
-
-    return cmds
-
-
-def build_commands(config, have, state):
-    cmds = []
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    want = _want_to_device(config)
+    norm_have = normalize_have(raw_have, _TAG_KEYS)
 
     if state == "deleted":
-        if have:
-            cmds.append(("delete", _BASE))
-        return cmds
+        return [("delete", _BASE)] if raw_have else []
 
+    commands = []
     if state == "replaced":
-        # Check if anything differs
-        would_set = build_commands(config, {}, "merged")
-        have_set = build_commands(have, {}, "merged")
-        if would_set == have_set:
-            return []
-
-    config = config or {}
-    want_group = config.get("group") or {}
-    have_group = have.get("group") or {}
-
-    for arg_key in _GROUP_TYPES:
-        want_groups = want_group.get(arg_key) or []
-        have_groups = have_group.get(arg_key) or []
-        if want_groups or (state == "replaced" and have_groups):
-            cmds += _group_cmds(arg_key, want_groups, have_groups, state)
-
-    return cmds
+        commands += dict_op(want, norm_have, _BASE, op="purge")
+    commands += dict_op(want, norm_have, _BASE, op="set")
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -373,12 +360,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -389,7 +377,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

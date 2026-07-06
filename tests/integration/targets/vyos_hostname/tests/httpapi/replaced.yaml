@@ -2,9 +2,9 @@
 - debug:
     msg: START vyos_hostname replaced integration tests on connection={{ ansible_connection }}
 
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Replace hostname configuration
       register: result
       vyos.rest.vyos_hostname: &id001

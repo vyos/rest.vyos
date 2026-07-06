@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_nat deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Delete all NAT configuration
+      vyos.rest.vyos_nat: &id001
+        state: deleted
+      register: result
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather after delete
+      vyos.rest.vyos_nat:
+        state: gathered
+      register: gathered
+
+    - assert:
+        that:
+          - gathered.gathered == {}
+
+    - name: Delete again (IDEMPOTENT)
+      vyos.rest.vyos_nat: *id001
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

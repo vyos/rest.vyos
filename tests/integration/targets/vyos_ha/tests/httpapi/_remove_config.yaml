@@ -1,0 +1,4 @@
+---
+- name: Remove all HA configuration
+  vyos.rest.vyos_ha:
+    state: deleted

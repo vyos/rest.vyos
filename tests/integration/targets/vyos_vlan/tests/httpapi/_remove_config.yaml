@@ -1,0 +1,9 @@
+---
+- name: Remove test VLANs
+  vyos.rest.vyos_vlan:
+    config:
+      - vlan_id: 10
+        interfaces: [eth1]
+      - vlan_id: 20
+        interfaces: [eth1]
+    state: absent

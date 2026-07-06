@@ -1,0 +1,24 @@
+---
+minor_changes:
+  - vyos_banner - Add new module and tests.
+  - vyos_bgp_address_family - Add new module and tests.
+  - vyos_bgp_global - Add new module and tests.
+  - vyos_command - Add new module and tests.
+  - vyos_config - Add new module and tests.
+  - vyos_facts - Add new module and tests.
+  - vyos_firewall_global - Add new module and tests.
+  - vyos_firewall_interfaces - Add new module and tests.
+  - vyos_firewall_rules - Add new module and tests.
+  - vyos_ha - Add new module and tests.
+  - vyos_hostname - Add new module and tests.
+  - vyos_lldp_global - Add new module and tests.
+  - vyos_logging_global - Add new module and tests.
+  - vyos_nat - Add new module and tests.
+  - vyos_ntp_global - Add new module and tests.
+  - vyos_prefix_lists - Add new module and tests.
+  - vyos_route_maps - Add new module and tests.
+  - vyos_snmp_server - Add new module and tests.
+  - vyos_static_routes - Add new module and tests.
+  - vyos_system - Add new module and tests.
+  - vyos_user - Add new module and tests.
+  - vyos_vlan - Add new module and tests.
