@@ -115,3 +115,5 @@ automation.
 | Connection plugin | `ansible.netcommon.network_cli` | `ansible.netcommon.httpapi` |
 | VyOS requirement | Any | VyOS 1.3+ with REST API enabled |
 | Atomic commits | Per-command | Batch (single commit) |
+
+
