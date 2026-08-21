@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_static_routes deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete all static_routes configuration
+      register: result
+      vyos.rest.vyos_static_routes: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete static_routes configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_static_routes: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml
