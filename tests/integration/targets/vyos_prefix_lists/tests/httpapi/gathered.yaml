@@ -1,0 +1,20 @@
+---
+- debug:
+    msg: START vyos_prefix_lists gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather prefix_lists configuration
+      register: result
+      vyos.rest.vyos_prefix_lists:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered | selectattr('afi','eq','ipv4') | list | length > 0
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,37 @@
+---
+- debug:
+    msg: START vyos_static_routes merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge static_routes configuration
+      register: result
+      vyos.rest.vyos_static_routes: &id001
+        config:
+          - afi: ipv4
+            routes:
+              - dest: 192.0.2.0/24
+                next_hops:
+                  - forward_router_address: 10.0.0.1
+              - dest: 203.0.113.0/24
+                blackhole_config:
+                  distance: 200
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge static_routes configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_static_routes: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

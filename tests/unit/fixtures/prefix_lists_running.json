@@ -6,14 +6,12 @@
         "2": {
           "action": "permit",
           "prefix": "92.168.10.0/26",
-          "le": "32",
-          "description": "Rule 2 given by ansible"
+          "le": "32"
         },
         "3": {
           "action": "deny",
           "prefix": "72.168.2.0/24",
-          "ge": "26",
-          "description": "Rule 3"
+          "ge": "26"
         }
       }
     }
@@ -25,8 +23,7 @@
         "5": {
           "action": "permit",
           "prefix": "2001:db8:8000::/35",
-          "le": "37",
-          "description": "Permit rule"
+          "le": "37"
         }
       }
     },

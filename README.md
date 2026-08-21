@@ -83,14 +83,17 @@ Name | Description
 [vyos.rest.vyos_l3_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_l3_interfaces_module.rst)|Manage L3 interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_lag_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lag_interfaces_module.rst)|Manage LAG interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_lldp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_global_module.rst)|Manage LLDP global configuration on VyOS via REST API.
-[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_interfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_int
+erfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_logging_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_logging_global_module.rst)|Manage syslog configuration on VyOS devices using REST API
 [vyos.rest.vyos_ntp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
 [vyos.rest.vyos_ospf_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospf_interfaces_module.rst)|Manage OSPF interface configuration on VyOS devices using REST API
 [vyos.rest.vyos_ospfv2](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv2_module.rst)|Manage OSPFv2 configuration on VyOS devices using REST API
 [vyos.rest.vyos_ospfv3](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv3_module.rst)|Manage OSPFv3 configuration on VyOS devices using REST API
+[vyos.rest.vyos_prefix_lists](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_prefix_lists_module.rst)|Manage prefix-list configuration on VyOS devices using REST API
 [vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
 [vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
+[vyos.rest.vyos_static_routes](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_static_routes_module.rst)|Manage static routes on VyOS devices via REST API.
 
 <!--end collection content-->
 
