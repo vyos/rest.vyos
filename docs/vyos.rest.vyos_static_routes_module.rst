@@ -18,7 +18,7 @@ Version added: 1.0.0
 Synopsis
 --------
 - Manages IPv4 and IPv6 static routes on VyOS devices using the HTTPS REST API.
-- Mirrors ``vyos.vyos.vyos_static_routes`` but uses the HTTP API instead of CLI.
+- Covers blackhole routes (distance) and next-hop routes (distance, disable, outgoing interface). VyOS's static-route schema is considerably larger than this -- reject routes (an ICMP-unreachable counterpart to blackhole), a top-level per-route interface (a route resolved via an outgoing interface with no next-hop address at all), route tags, route descriptions, ECMP segment weighting, VRF leaking, and BFD monitoring on next-hops are not modeled here. That is a real, documented limitation, not an oversight.
 
 
 
@@ -102,7 +102,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Blackhole route configuration.</div>
+                        <div>Blackhole route configuration (silently discard matching packets).</div>
                 </td>
             </tr>
                                 <tr>
@@ -121,24 +121,6 @@ Parameters
                 </td>
                 <td>
                         <div>Administrative distance (1-255).</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>type</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Blackhole type.</div>
                 </td>
             </tr>
 
@@ -193,7 +175,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Administrative distance for this next-hop.</div>
+                        <div>Administrative distance for this next-hop (1-255).</div>
                 </td>
             </tr>
             <tr>
@@ -278,7 +260,7 @@ Parameters
                 </td>
                 <td>
                         <div><code>merged</code> - Add routes without removing existing ones.</div>
-                        <div><code>replaced</code> - Replace routes for listed destinations.</div>
+                        <div><code>replaced</code> - Replace each named route (by afi + dest) exactly as specified.</div>
                         <div><code>overridden</code> - Replace the entire static route table.</div>
                         <div><code>deleted</code> - Remove listed or all static routes.</div>
                         <div><code>gathered</code> - Read static routes from device without changes.</div>
