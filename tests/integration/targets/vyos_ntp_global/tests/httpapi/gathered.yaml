@@ -3,9 +3,9 @@
     msg: START vyos_ntp_global gathered integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Gather NTP configuration
       register: result
       vyos.rest.vyos_ntp_global:
@@ -16,8 +16,8 @@
           - result.changed == false
           - "'10.4.9.0/24' in result.gathered.allow_clients"
           - "'10.1.9.16' in result.gathered.listen_addresses"
-          - "'10.3.6.5' in result.gathered.servers"
-          - "'server4.example.com' in result.gathered.servers"
+          - "'10.3.6.5' in result.gathered.servers | map(attribute='server')"
+          - "'server4.example.com' in result.gathered.servers | map(attribute='server')"
 
   always:
     - include_tasks: _remove_config.yaml

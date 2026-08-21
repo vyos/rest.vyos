@@ -1,0 +1,24 @@
+{
+  "ethernet": {
+    "eth1": {
+      "hw-id": "52:54:00:xx",
+      "vif": {
+        "10": {
+          "description": "VLAN10",
+          "address": "192.168.10.1/24"
+        },
+        "20": {
+          "description": "VLAN20"
+        }
+      }
+    },
+    "eth2": {
+      "hw-id": "52:54:00:yy",
+      "vif": {
+        "10": {
+          "description": "VLAN10"
+        }
+      }
+    }
+  }
+}

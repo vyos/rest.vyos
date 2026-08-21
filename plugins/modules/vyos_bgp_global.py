@@ -205,254 +205,197 @@ gathered:
   type: dict
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 response:
   description: Raw API response.
-  returned: when changes are applied
+  returned: always
   type: dict
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    normalize_have,
+    scope_to_spec,
+)
 
 
 _BASE = ["protocols", "bgp"]
 
+# "neighbor" and "peer-group" are genuine tag nodes (like network/
+# redistribute in vyos_bgp_address_family) that VyOS's REST API can
+# collapse to a bare string for a single entry with no other config.
+_TAG_KEYS = {"neighbor", "peer-group"}
 
-def _parse_parameters(raw):
-    if not raw or not isinstance(raw, dict):
-        return {}
-    result = {}
-    if "router-id" in raw:
-        result["router_id"] = raw["router-id"]
-    if "log-neighbor-changes" in raw:
-        result["log_neighbor_changes"] = True
-    if "no-ipv4-unicast" in raw:
-        result["no_ipv4_unicast"] = True
-    if "graceful-restart" in raw:
-        result["graceful_restart"] = True
-    bp = raw.get("bestpath", {}) or {}
-    if bp:
-        bestpath = {}
-        if "as-path" in bp:
-            bestpath["as_path"] = bp["as-path"]
-        if bestpath:
-            result["bestpath"] = bestpath
-    conf = raw.get("confederation", {}) or {}
-    if conf:
-        confederation = {}
-        if "identifier" in conf:
-            confederation["identifier"] = int(conf["identifier"])
-        if "peers" in conf:
-            peers = conf["peers"]
-            if isinstance(peers, list):
-                confederation["peers"] = [int(p) for p in peers]
-            else:
-                confederation["peers"] = [int(peers)]
-        if confederation:
-            result["confederation"] = confederation
+
+# ---------------------------------------------------------------------------
+# want -> device / device -> argspec
+#
+# Every leaf here is a direct structural match between argspec and device
+# shape (unlike vyos_bgp_address_family, this module has zero device-shape
+# exceptions) -- only the two tag-node reshapes (neighbors keyed by
+# address, peer_groups keyed by name) are unavoidable structural work.
+# ---------------------------------------------------------------------------
+
+
+def _neighbors_to_device(neighbors):
+    return {
+        nb["neighbor_address"]: autoclean(
+            {k: v for k, v in nb.items() if k != "neighbor_address"},
+        )
+        for nb in neighbors or []
+    }
+
+
+def _neighbors_from_device(raw):
+    result = []
+    for addr, data in sorted((raw or {}).items()):
+        scoped = scope_to_spec(data or {}, _NEIGHBOR_OPTIONS, exclude={"neighbor_address"})
+        entry = {"neighbor_address": addr, **from_device(scoped)}
+        cast_by_spec(entry, _NEIGHBOR_OPTIONS)
+        result.append(entry)
     return result
 
 
-def _parse_neighbor(nb_id, data):
-    nb = {"neighbor_address": nb_id}
-    data = data or {}
-    if "remote-as" in data:
-        nb["remote_as"] = int(data["remote-as"])
-    if "description" in data:
-        nb["description"] = data["description"]
-    if "ebgp-multihop" in data:
-        nb["ebgp_multihop"] = int(data["ebgp-multihop"])
-    if "local-as" in data:
-        nb["local_as"] = int(data["local-as"])
-    if "password" in data:
-        nb["password"] = data["password"]
-    if "peer-group" in data:
-        nb["peer_group"] = data["peer-group"]
-    if "shutdown" in data:
-        nb["shutdown"] = True
-    if "update-source" in data:
-        nb["update_source"] = data["update-source"]
-    if "disable-connected-check" in data:
-        nb["disable_connected_check"] = True
-    timers = data.get("timers", {}) or {}
-    if timers:
-        t = {}
-        if "holdtime" in timers:
-            t["holdtime"] = int(timers["holdtime"])
-        if "keepalive" in timers:
-            t["keepalive"] = int(timers["keepalive"])
-        if t:
-            nb["timers"] = t
-    return nb
+def _peer_groups_to_device(peer_groups):
+    return {
+        pg["peer_group"]: autoclean({k: v for k, v in pg.items() if k != "peer_group"})
+        for pg in peer_groups or []
+    }
 
 
-def _parse_peer_group(pg_name, data):
-    pg = {"peer_group": pg_name}
-    data = data or {}
-    if "remote-as" in data:
-        pg["remote_as"] = int(data["remote-as"])
-    if "description" in data:
-        pg["description"] = data["description"]
-    if "ebgp-multihop" in data:
-        pg["ebgp_multihop"] = int(data["ebgp-multihop"])
-    if "password" in data:
-        pg["password"] = data["password"]
-    if "update-source" in data:
-        pg["update_source"] = data["update-source"]
-    timers = data.get("timers", {}) or {}
-    if timers:
-        t = {}
-        if "holdtime" in timers:
-            t["holdtime"] = int(timers["holdtime"])
-        if "keepalive" in timers:
-            t["keepalive"] = int(timers["keepalive"])
-        if t:
-            pg["timers"] = t
-    return pg
+def _peer_groups_from_device(raw):
+    result = []
+    for name, data in sorted((raw or {}).items()):
+        scoped = scope_to_spec(data or {}, _PEER_GROUP_OPTIONS, exclude={"peer_group"})
+        entry = {"peer_group": name, **from_device(scoped)}
+        cast_by_spec(entry, _PEER_GROUP_OPTIONS)
+        result.append(entry)
+    return result
+
+
+def _want_to_device(config):
+    config = config or {}
+    result = {}
+    if config.get("as_number") is not None:
+        result["system_as"] = config["as_number"]
+    if config.get("parameters"):
+        result["parameters"] = autoclean(config["parameters"])
+    if config.get("neighbors"):
+        result["neighbor"] = _neighbors_to_device(config["neighbors"])
+    if config.get("peer_groups"):
+        result["peer_group"] = _peer_groups_to_device(config["peer_groups"])
+    return result
 
 
 def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
+    return vyos.get_config(_BASE) or {}
+
+
+def _device_to_argspec(raw):
     if not raw or not isinstance(raw, dict):
         return {}
     result = {}
-
     if "system-as" in raw:
         result["as_number"] = int(raw["system-as"])
-
-    params = _parse_parameters(raw.get("parameters"))
-    if params:
+    if raw.get("parameters"):
+        params = from_device(raw["parameters"])
+        cast_by_spec(params, _PARAMETERS_OPTIONS)
         result["parameters"] = params
-
-    neighbors = []
-    for nb_id, data in sorted((raw.get("neighbor") or {}).items()):
-        neighbors.append(_parse_neighbor(nb_id, data))
+    neighbors = _neighbors_from_device(raw.get("neighbor"))
     if neighbors:
         result["neighbors"] = neighbors
-
-    peer_groups = []
-    for pg_name, data in sorted((raw.get("peer-group") or {}).items()):
-        peer_groups.append(_parse_peer_group(pg_name, data))
+    peer_groups = _peer_groups_from_device(raw.get("peer-group"))
     if peer_groups:
         result["peer_groups"] = peer_groups
-
     return result
 
 
-def _neighbor_cmds(nb, have_nb):
-    cmds = []
-    nb_addr = nb["neighbor_address"]
-    nbase = _BASE + ["neighbor", nb_addr]
-    have_nb = have_nb or {}
-
-    if nb.get("remote_as") and nb["remote_as"] != have_nb.get("remote_as"):
-        cmds.append(("set", nbase + ["remote-as", str(nb["remote_as"])]))
-    if nb.get("description") and nb["description"] != have_nb.get("description"):
-        cmds.append(("set", nbase + ["description", nb["description"]]))
-    if nb.get("ebgp_multihop") and nb["ebgp_multihop"] != have_nb.get("ebgp_multihop"):
-        cmds.append(("set", nbase + ["ebgp-multihop", str(nb["ebgp_multihop"])]))
-    if nb.get("local_as") and nb["local_as"] != have_nb.get("local_as"):
-        cmds.append(("set", nbase + ["local-as", str(nb["local_as"])]))
-    if nb.get("password") and nb["password"] != have_nb.get("password"):
-        cmds.append(("set", nbase + ["password", nb["password"]]))
-    if nb.get("peer_group") and nb["peer_group"] != have_nb.get("peer_group"):
-        cmds.append(("set", nbase + ["peer-group", nb["peer_group"]]))
-    if nb.get("update_source") and nb["update_source"] != have_nb.get("update_source"):
-        cmds.append(("set", nbase + ["update-source", nb["update_source"]]))
-    if nb.get("shutdown") and not have_nb.get("shutdown"):
-        cmds.append(("set", nbase + ["shutdown"]))
-    if nb.get("disable_connected_check") and not have_nb.get("disable_connected_check"):
-        cmds.append(("set", nbase + ["disable-connected-check"]))
-
-    want_t = nb.get("timers") or {}
-    have_t = have_nb.get("timers") or {}
-    if want_t.get("holdtime") and want_t["holdtime"] != have_t.get("holdtime"):
-        cmds.append(("set", nbase + ["timers", "holdtime", str(want_t["holdtime"])]))
-    if want_t.get("keepalive") and want_t["keepalive"] != have_t.get("keepalive"):
-        cmds.append(("set", nbase + ["timers", "keepalive", str(want_t["keepalive"])]))
-
-    return cmds
+# ---------------------------------------------------------------------------
+# Command building — dict_op scoped per owned subtree, with one exception.
+#
+# "protocols bgp" is a shared root with vyos_bgp_address_family, and each
+# neighbor entry mixes fields owned by *both* modules (this module owns
+# remote-as/timers/etc.; the sibling module owns the nested address-family
+# subtree). Every dict_op call for a neighbor or peer-group here first
+# goes through scope_to_spec() against this module's own ARGUMENT_SPEC, so
+# a foreign subtree like address-family is never visible to purge/set —
+# without hardcoding its name, since this module's argspec simply never
+# declared it.
+#
+# The one exception: removing system-as. VyOS rejects any commit that
+# leaves "protocols bgp" non-empty without an AS number defined, so that
+# specific transition can't be done with scoped/incremental commands --
+# see the short-circuit at the top of build_commands().
+# ---------------------------------------------------------------------------
 
 
-def _peer_group_cmds(pg, have_pg):
-    cmds = []
-    pg_name = pg["peer_group"]
-    pbase = _BASE + ["peer-group", pg_name]
-    have_pg = have_pg or {}
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    # "deleted" is "replaced" with an empty desired state -- same scoped
+    # purge mechanics, no separate blanket-delete-the-whole-root logic
+    # (which would have wiped the sibling module's config too)...
+    want = _want_to_device({} if state == "deleted" else config)
+    effective_state = "replaced" if state == "deleted" else state
 
-    if pg.get("remote_as") and pg["remote_as"] != have_pg.get("remote_as"):
-        cmds.append(("set", pbase + ["remote-as", str(pg["remote_as"])]))
-    if pg.get("description") and pg["description"] != have_pg.get("description"):
-        cmds.append(("set", pbase + ["description", pg["description"]]))
-    if pg.get("ebgp_multihop") and pg["ebgp_multihop"] != have_pg.get("ebgp_multihop"):
-        cmds.append(("set", pbase + ["ebgp-multihop", str(pg["ebgp_multihop"])]))
-    if pg.get("password") and pg["password"] != have_pg.get("password"):
-        cmds.append(("set", pbase + ["password", pg["password"]]))
-    if pg.get("update_source") and pg["update_source"] != have_pg.get("update_source"):
-        cmds.append(("set", pbase + ["update-source", pg["update_source"]]))
+    # ...EXCEPT for one case: VyOS requires system-as to be defined
+    # whenever "protocols bgp" has any content at all, and rejects the
+    # commit otherwise. So if system-as is being removed (present in
+    # have, absent from want) under replaced/deleted -- the only states
+    # that purge at all -- the only valid action is to delete the entire
+    # tree in one atomic commit, including address-family, which cannot
+    # validly exist without an AS number anyway. This is a real
+    # device-model cascade, not cross-module scope creep. It must never
+    # fire for "merged": an omitted config/as_number there is a no-op by
+    # definition, and merged's set-only dict_op flow below already
+    # leaves system-as untouched correctly on its own.
+    if effective_state == "replaced" and "system-as" in raw_have and "system_as" not in want:
+        return [("delete", _BASE)]
 
-    want_t = pg.get("timers") or {}
-    have_t = have_pg.get("timers") or {}
-    if want_t.get("holdtime") and want_t["holdtime"] != have_t.get("holdtime"):
-        cmds.append(("set", pbase + ["timers", "holdtime", str(want_t["holdtime"])]))
-    if want_t.get("keepalive") and want_t["keepalive"] != have_t.get("keepalive"):
-        cmds.append(("set", pbase + ["timers", "keepalive", str(want_t["keepalive"])]))
+    commands = []
 
-    return cmds
+    norm_have = normalize_have(raw_have, _TAG_KEYS)
 
+    top_have = {k: v for k, v in raw_have.items() if k in ("system-as", "parameters")}
+    top_want = {k: v for k, v in want.items() if k in ("system_as", "parameters")}
+    if effective_state == "replaced":
+        commands += dict_op(top_want, top_have, _BASE, op="purge")
+    commands += dict_op(top_want, top_have, _BASE, op="set")
 
-def build_commands(config, have, state):
-    cmds = []
+    raw_neighbors = norm_have.get("neighbor") or {}
+    want_neighbors = want.get("neighbor", {})
+    for addr in sorted(set(want_neighbors) | set(raw_neighbors)):
+        nbase = _BASE + ["neighbor", addr]
+        have_scoped = scope_to_spec(
+            raw_neighbors.get(addr) or {},
+            _NEIGHBOR_OPTIONS,
+            exclude={"neighbor_address"},
+        )
+        want_entry = want_neighbors.get(addr, {})
+        if effective_state == "replaced":
+            commands += dict_op(want_entry, have_scoped, nbase, op="purge")
+        commands += dict_op(want_entry, have_scoped, nbase, op="set")
 
-    if state == "deleted":
-        if have:
-            cmds.append(("delete", _BASE))
-        return cmds
+    raw_peer_groups = norm_have.get("peer-group") or {}
+    want_peer_groups = want.get("peer_group", {})
+    for name in sorted(set(want_peer_groups) | set(raw_peer_groups)):
+        pbase = _BASE + ["peer-group", name]
+        have_scoped = scope_to_spec(
+            raw_peer_groups.get(name) or {},
+            _PEER_GROUP_OPTIONS,
+            exclude={"peer_group"},
+        )
+        want_entry = want_peer_groups.get(name, {})
+        if effective_state == "replaced":
+            commands += dict_op(want_entry, have_scoped, pbase, op="purge")
+        commands += dict_op(want_entry, have_scoped, pbase, op="set")
 
-    if state == "replaced":
-        would_set = build_commands(config, {}, "merged")
-        have_set = build_commands(have, {}, "merged")
-        if would_set == have_set:
-            return []
-        if have:
-            cmds.append(("delete", _BASE))
-        have = {}
-
-    config = config or {}
-
-    # system-as — must be first
-    if config.get("as_number") and config["as_number"] != have.get("as_number"):
-        cmds.append(("set", _BASE + ["system-as", str(config["as_number"])]))
-
-    # parameters
-    params = config.get("parameters") or {}
-    have_params = have.get("parameters") or {}
-    if params.get("router_id") and params["router_id"] != have_params.get("router_id"):
-        cmds.append(("set", _BASE + ["parameters", "router-id", params["router_id"]]))
-    if params.get("log_neighbor_changes") and not have_params.get("log_neighbor_changes"):
-        cmds.append(("set", _BASE + ["parameters", "log-neighbor-changes"]))
-    if params.get("no_ipv4_unicast") and not have_params.get("no_ipv4_unicast"):
-        cmds.append(("set", _BASE + ["parameters", "no-ipv4-unicast"]))
-    if params.get("graceful_restart") and not have_params.get("graceful_restart"):
-        cmds.append(("set", _BASE + ["parameters", "graceful-restart"]))
-    bp = params.get("bestpath") or {}
-    have_bp = have_params.get("bestpath") or {}
-    if bp.get("as_path") and bp["as_path"] != have_bp.get("as_path"):
-        cmds.append(("set", _BASE + ["parameters", "bestpath", "as-path", bp["as_path"]]))
-
-    # neighbors
-    have_nb_map = {n["neighbor_address"]: n for n in (have.get("neighbors") or [])}
-    for nb in config.get("neighbors") or []:
-        cmds += _neighbor_cmds(nb, have_nb_map.get(nb["neighbor_address"]))
-
-    # peer_groups
-    have_pg_map = {p["peer_group"]: p for p in (have.get("peer_groups") or [])}
-    for pg in config.get("peer_groups") or []:
-        cmds += _peer_group_cmds(pg, have_pg_map.get(pg["peer_group"]))
-
-    return cmds
+    return commands
 
 
 ARGUMENT_SPEC = dict(
@@ -535,6 +478,13 @@ ARGUMENT_SPEC = dict(
     ),
 )
 
+# Populated post-definition (avoids forward-reference ordering); backs
+# cast_by_spec/scope_to_spec so have-side casting and cross-module
+# protection are both derived from the spec itself.
+_PARAMETERS_OPTIONS = ARGUMENT_SPEC["config"]["options"]["parameters"]["options"]
+_NEIGHBOR_OPTIONS = ARGUMENT_SPEC["config"]["options"]["neighbors"]["options"]
+_PEER_GROUP_OPTIONS = ARGUMENT_SPEC["config"]["options"]["peer_groups"]["options"]
+
 
 def main():
     module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
@@ -543,12 +493,13 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
-        module.exit_json(changed=False, gathered=have)
+        module.exit_json(changed=False, gathered=have, commands=[])
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
         module.exit_json(changed=bool(commands), commands=commands, before=have)
@@ -559,7 +510,7 @@ def main():
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,

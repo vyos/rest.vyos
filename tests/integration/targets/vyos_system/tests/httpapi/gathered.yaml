@@ -1,0 +1,14 @@
+---
+- debug:
+    msg: START vyos_system gathered integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Gather system configuration
+      register: result
+      vyos.rest.vyos_system:
+        state: present
+
+    - assert:
+        that:
+          - result.before['host-name'] is defined
+          - result.before['host-name'] | length > 0

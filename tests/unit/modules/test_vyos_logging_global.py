@@ -4,235 +4,271 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-import os
-import sys
 import unittest
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import dict_op
 from ansible_collections.vyos.rest.plugins.modules.vyos_logging_global import (
-    build_commands,
-    normalize_config,
-    normalize_running,
+    _device_to_argspec,
+    _fac_device_to_list,
+    _fac_list_to_device,
+    _want_to_device,
 )
 
 
-class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
+_BASE = ["system", "syslog"]
 
-    def test_normalize_config_console_severity_is_string(self):
-        cfg = {
-            "console": {
-                "facilities": [{"facility": "local7", "severity": "err"}],
-            },
-        }
-        result = normalize_config(cfg)
-        self.assertIn("local7", result["console"]["facilities"])
-        # severity is stored as plain string, not dict
-        self.assertEqual(result["console"]["facilities"]["local7"], "err")
 
-    def test_normalize_config_console_no_severity(self):
-        cfg = {
-            "console": {
-                "facilities": [{"facility": "all"}],
-            },
-        }
-        result = normalize_config(cfg)
-        self.assertIsNone(result["console"]["facilities"]["all"])
+class TestFacHelpers(unittest.TestCase):
+    """Test facility list <-> device dict conversion helpers."""
 
-    def test_normalize_config_hosts(self):
-        cfg = {
+    def test_fac_list_to_device_with_severity(self):
+        facs = [{"facility": "local7", "severity": "err"}]
+        result = _fac_list_to_device(facs)
+        self.assertEqual(result, {"local7": {"level": "err"}})
+
+    def test_fac_list_to_device_no_severity(self):
+        facs = [{"facility": "all"}]
+        result = _fac_list_to_device(facs)
+        self.assertEqual(result, {"all": {}})
+
+    def test_fac_list_to_device_with_protocol(self):
+        facs = [{"facility": "all", "protocol": "udp"}]
+        result = _fac_list_to_device(facs)
+        self.assertEqual(result["all"]["protocol"], "udp")
+        self.assertNotIn("level", result["all"])
+
+    def test_fac_list_to_device_empty(self):
+        self.assertEqual(_fac_list_to_device([]), {})
+        self.assertEqual(_fac_list_to_device(None), {})
+
+    def test_fac_device_to_list_with_level(self):
+        raw = {"local7": {"level": "err"}, "all": {}}
+        result = _fac_device_to_list(raw)
+        names = [f["facility"] for f in result]
+        self.assertIn("local7", names)
+        self.assertIn("all", names)
+        local7 = next(f for f in result if f["facility"] == "local7")
+        self.assertEqual(local7["severity"], "err")
+
+    def test_fac_device_to_list_empty(self):
+        self.assertEqual(_fac_device_to_list({}), [])
+        self.assertEqual(_fac_device_to_list(None), [])
+
+    def test_fac_device_to_list_sorted(self):
+        raw = {"z-fac": {}, "a-fac": {}}
+        result = _fac_device_to_list(raw)
+        self.assertEqual(result[0]["facility"], "a-fac")
+        self.assertEqual(result[1]["facility"], "z-fac")
+
+
+class TestWantToDevice(unittest.TestCase):
+    """Test argspec -> device shape conversion."""
+
+    def test_empty(self):
+        self.assertEqual(_want_to_device({}), {})
+        self.assertEqual(_want_to_device(None), {})
+
+    def test_console_facilities(self):
+        config = {"console": {"facilities": [{"facility": "local7", "severity": "err"}]}}
+        result = _want_to_device(config)
+        self.assertIn("console", result)
+        self.assertEqual(result["console"]["facility"]["local7"], {"level": "err"})
+
+    def test_global_params_facilities(self):
+        config = {"global_params": {"facilities": [{"facility": "cron", "severity": "debug"}]}}
+        result = _want_to_device(config)
+        self.assertIn("local", result)
+        self.assertEqual(result["local"]["facility"]["cron"], {"level": "debug"})
+
+    def test_global_params_marker_interval(self):
+        config = {"global_params": {"marker_interval": 111}}
+        result = _want_to_device(config)
+        self.assertEqual(result["marker"], {"interval": 111})
+
+    def test_global_params_preserve_fqdn(self):
+        config = {"global_params": {"preserve_fqdn": True}}
+        result = _want_to_device(config)
+        self.assertEqual(result["preserve-fqdn"], {})
+
+    def test_hosts_mapped_to_remote(self):
+        config = {
             "hosts": [
                 {
                     "hostname": "172.16.0.1",
                     "port": 514,
-                    "facilities": [
-                        {"facility": "local7", "severity": "all"},
-                        {"facility": "all", "protocol": "udp"},
-                    ],
+                    "facilities": [{"facility": "local7", "severity": "all"}],
                 },
             ],
         }
-        result = normalize_config(cfg)
-        self.assertIn("172.16.0.1", result["hosts"])
-        host = result["hosts"]["172.16.0.1"]
+        result = _want_to_device(config)
+        self.assertIn("remote", result)
+        self.assertIn("172.16.0.1", result["remote"])
+        self.assertEqual(result["remote"]["172.16.0.1"]["port"], 514)
+        self.assertIn("local7", result["remote"]["172.16.0.1"]["facility"])
+
+    def test_users_mapped_to_user(self):
+        config = {
+            "users": [
+                {
+                    "username": "vyos",
+                    "facilities": [{"facility": "local7", "severity": "debug"}],
+                },
+            ],
+        }
+        result = _want_to_device(config)
+        self.assertIn("user", result)
+        self.assertIn("vyos", result["user"])
+
+
+class TestDeviceToArgspec(unittest.TestCase):
+    """Test device response -> argspec shape conversion."""
+
+    def test_empty(self):
+        self.assertEqual(_device_to_argspec({}), {})
+        self.assertEqual(_device_to_argspec(None), {})
+
+    def test_console(self):
+        raw = {"console": {"facility": {"local7": {"level": "err"}}}}
+        result = _device_to_argspec(raw)
+        self.assertIn("console", result)
+        facs = result["console"]["facilities"]
+        self.assertEqual(facs[0]["facility"], "local7")
+        self.assertEqual(facs[0]["severity"], "err")
+
+    def test_local_to_global_params(self):
+        raw = {"local": {"facility": {"cron": {"level": "debug"}}}}
+        result = _device_to_argspec(raw)
+        self.assertIn("global_params", result)
+        facs = result["global_params"]["facilities"]
+        self.assertEqual(facs[0]["facility"], "cron")
+
+    def test_marker_interval(self):
+        raw = {"marker": {"interval": "111"}}
+        result = _device_to_argspec(raw)
+        self.assertEqual(result["global_params"]["marker_interval"], "111")
+
+    def test_preserve_fqdn(self):
+        raw = {"preserve-fqdn": {}}
+        result = _device_to_argspec(raw)
+        self.assertTrue(result["global_params"]["preserve_fqdn"])
+
+    def test_remote_to_hosts(self):
+        raw = {
+            "remote": {
+                "172.16.0.1": {
+                    "port": 514,
+                    "facility": {"local7": {"level": "all"}},
+                },
+            },
+        }
+        result = _device_to_argspec(raw)
+        self.assertIn("hosts", result)
+        host = result["hosts"][0]
+        self.assertEqual(host["hostname"], "172.16.0.1")
         self.assertEqual(host["port"], 514)
-        self.assertIn("local7", host["facilities"])
-        # host facilities are dicts with severity/protocol
-        self.assertEqual(host["facilities"]["local7"]["severity"], "all")
-        self.assertEqual(host["facilities"]["all"]["protocol"], "udp")
+        self.assertEqual(host["facilities"][0]["facility"], "local7")
 
-    def test_normalize_config_global_preserve_fqdn(self):
-        cfg = {"global_params": {"preserve_fqdn": True}}
-        result = normalize_config(cfg)
-        self.assertTrue(result["global"]["preserve_fqdn"])
+    def test_user_to_users(self):
+        raw = {"user": {"vyos": {"facility": {"local7": {"level": "debug"}}}}}
+        result = _device_to_argspec(raw)
+        self.assertIn("users", result)
+        self.assertEqual(result["users"][0]["username"], "vyos")
 
-    def test_normalize_config_global_archive(self):
-        cfg = {"global_params": {"archive": {"file_num": 2, "size": 111}}}
-        result = normalize_config(cfg)
-        self.assertEqual(result["global"]["archive"]["file_num"], 2)
-        self.assertEqual(result["global"]["archive"]["size"], 111)
+    def test_hosts_sorted(self):
+        raw = {"remote": {"z.host": {}, "a.host": {}}}
+        result = _device_to_argspec(raw)
+        self.assertEqual(result["hosts"][0]["hostname"], "a.host")
 
-    def test_normalize_config_empty(self):
-        result = normalize_config({})
-        self.assertEqual(result["console"]["facilities"], {})
-        self.assertEqual(result["hosts"], {})
-        self.assertEqual(result["files"], {})
-        self.assertEqual(result["users"], {})
 
-    def test_normalize_running_console_severity_is_string(self):
-        raw = {
-            "console": {
-                "facility": {
-                    "local7": {"level": "err"},
-                    "all": {},
-                },
+class TestDictOpLogging(unittest.TestCase):
+    """Test dict_op behaviour with logging device shapes."""
+
+    def test_merged_adds_console_facility(self):
+        want = _want_to_device(
+            {
+                "console": {"facilities": [{"facility": "local7", "severity": "err"}]},
             },
-        }
-        result = normalize_running(raw)
-        self.assertIn("local7", result["console"]["facilities"])
-        # severity is plain string from "level" key
-        self.assertEqual(result["console"]["facilities"]["local7"], "err")
-        self.assertIsNone(result["console"]["facilities"]["all"])
-
-    def test_normalize_running_host_port_not_cast(self):
-        """Port is NOT cast to int — stored as-is from API response."""
-        raw = {
-            "remote": {
-                "172.16.0.1": {
-                    "port": "514",
-                    "facility": {},
-                },
-            },
-        }
-        result = normalize_running(raw)
-        # port stays as string — module does not cast
-        self.assertEqual(result["hosts"]["172.16.0.1"]["port"], "514")
-
-    def test_normalize_running_global_archive_key(self):
-        """Archive stored under 'archive' key — no file_num remapping."""
-        raw = {
-            "local": {
-                "archive": {"file": "2", "size": "111"},
-                "marker": {"interval": "111"},
-                "preserve-fqdn": {},
-            },
-        }
-        result = normalize_running(raw)
-        # archive stored as-is from API
-        self.assertEqual(result["global"]["archive"]["file"], "2")
-        self.assertEqual(result["global"]["archive"]["size"], "111")
-        # marker_interval stored as string — no cast
-        self.assertEqual(result["global"]["marker_interval"], "111")
-        self.assertTrue(result["global"]["preserve_fqdn"])
-
-    def test_normalize_running_empty(self):
-        result = normalize_running({})
-        self.assertEqual(result["console"]["facilities"], {})
-        self.assertEqual(result["hosts"], {})
-
-    def test_normalize_running_host_facilities(self):
-        raw = {
-            "remote": {
-                "172.16.0.1": {
-                    "facility": {
-                        "local7": {"level": "all"},
-                        "all": {"protocol": "udp"},
-                    },
-                    "port": "223",
-                },
-            },
-        }
-        result = normalize_running(raw)
-        h = result["hosts"]["172.16.0.1"]
-        self.assertEqual(h["facilities"]["local7"]["severity"], "all")
-        self.assertEqual(h["facilities"]["all"]["protocol"], "udp")
-
-
-class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
-
-    def _empty_have(self):
-        return {
-            "console": {"facilities": {}},
-            "global": {"facilities": {}},
-            "hosts": {},
-            "files": {},
-            "users": {},
-        }
-
-    def test_merged_adds_console_facility_with_severity(self):
-        want = self._empty_have()
-        want["console"]["facilities"]["local7"] = "err"
-        cmds = build_commands(want, self._empty_have(), "merged")
-        self.assertIn(
-            ("set", ["system", "syslog", "console", "facility", "local7", "level", "err"]),
-            cmds,
         )
-
-    def test_merged_adds_console_facility_no_severity(self):
-        want = self._empty_have()
-        want["console"]["facilities"]["all"] = None
-        cmds = build_commands(want, self._empty_have(), "merged")
-        self.assertIn(
-            ("set", ["system", "syslog", "console", "facility", "all"]),
-            cmds,
-        )
+        cmds = dict_op(want, {}, _BASE, op="set")
+        paths = [c[1] for c in cmds]
+        self.assertIn(_BASE + ["console", "facility", "local7", "level", "err"], paths)
 
     def test_merged_idempotent_console(self):
-        facs = {"local7": "err"}
-        want = self._empty_have()
-        have = self._empty_have()
-        want["console"]["facilities"] = facs
-        have["console"]["facilities"] = dict(facs)
-        cmds = build_commands(want, have, "merged")
+        want = _want_to_device(
+            {
+                "console": {"facilities": [{"facility": "local7", "severity": "err"}]},
+            },
+        )
+        have = {"console": {"facility": {"local7": {"level": "err"}}}}
+        cmds = dict_op(want, have, _BASE, op="set")
         self.assertEqual(cmds, [])
 
-    def test_merged_adds_host(self):
-        want = self._empty_have()
-        want["hosts"]["172.16.0.1"] = {
-            "port": 514,
-            "facilities": {"local7": {"severity": "all", "protocol": None}},
-        }
-        cmds = build_commands(want, self._empty_have(), "merged")
+    def test_merged_adds_preserve_fqdn(self):
+        want = _want_to_device({"global_params": {"preserve_fqdn": True}})
+        cmds = dict_op(want, {}, _BASE, op="set")
         paths = [c[1] for c in cmds]
-        # diff_map only adds the host key, not per-facility details
-        self.assertIn(["system", "syslog", "remote", "172.16.0.1"], paths)
+        self.assertIn(_BASE + ["preserve-fqdn"], paths)
 
-    def test_replaced_removes_extra_host(self):
-        want = self._empty_have()
-        have = self._empty_have()
-        have["hosts"]["172.16.0.1"] = {"port": None, "facilities": {}}
-        cmds = build_commands(want, have, "replaced")
-        self.assertIn(("delete", ["system", "syslog", "remote", "172.16.0.1"]), cmds)
+    def test_preserve_fqdn_idempotent(self):
+        want = _want_to_device({"global_params": {"preserve_fqdn": True}})
+        have = {"preserve-fqdn": {}}
+        cmds = dict_op(want, have, _BASE, op="set")
+        self.assertEqual(cmds, [])
 
-    def test_deleted_removes_per_field(self):
-        """deleted state removes per-facility entries, not single subtree."""
-        have = self._empty_have()
-        have["console"]["facilities"]["all"] = None
-        cmds = build_commands(self._empty_have(), have, "deleted")
-        self.assertIn(
-            ("delete", ["system", "syslog", "console", "facility", "all"]),
-            cmds,
+    def test_purge_removes_extra_remote_host(self):
+        want = _want_to_device(
+            {
+                "hosts": [{"hostname": "10.0.0.1", "facilities": []}],
+            },
         )
+        have = {
+            "remote": {
+                "10.0.0.1": {},
+                "10.0.0.2": {},
+            },
+        }
+        cmds = dict_op(want, have, _BASE, op="purge")
+        paths = [c[1] for c in cmds]
+        self.assertIn(_BASE + ["remote", "10.0.0.2"], paths)
+        self.assertNotIn(_BASE + ["remote", "10.0.0.1"], paths)
 
-    def test_overridden_deletes_all_then_merges(self):
-        want = self._empty_have()
-        want["console"]["facilities"]["local7"] = "err"
-        have = self._empty_have()
-        have["console"]["facilities"]["all"] = None
-        cmds = build_commands(want, have, "overridden")
-        # first command is full syslog delete
-        self.assertEqual(cmds[0], ("delete", ["system", "syslog"]))
-        # then adds wanted facility
-        self.assertIn(
-            ("set", ["system", "syslog", "console", "facility", "local7", "level", "err"]),
-            cmds,
-        )
+    def test_merged_adds_marker_interval(self):
+        want = _want_to_device({"global_params": {"marker_interval": 111}})
+        cmds = dict_op(want, {}, _BASE, op="set")
+        paths = [c[1] for c in cmds]
+        self.assertIn(_BASE + ["marker", "interval", "111"], paths)
 
     def test_no_commands_when_already_correct(self):
-        state = self._empty_have()
-        state["console"]["facilities"]["local7"] = "err"
-        cmds = build_commands(state, state, "merged")
+        config = {
+            "console": {"facilities": [{"facility": "local7", "severity": "err"}]},
+            "global_params": {"marker_interval": 111},
+        }
+        want = _want_to_device(config)
+        have = {
+            "console": {"facility": {"local7": {"level": "err"}}},
+            "marker": {"interval": 111},
+        }
+        cmds = dict_op(want, have, _BASE, op="set")
+        self.assertEqual(cmds, [])
+
+    def test_overridden_idempotent(self):
+        config = {
+            "console": {"facilities": [{"facility": "local7", "severity": "err"}]},
+            "global_params": {"marker_interval": 111},
+        }
+        want = _want_to_device(config)
+        have = {
+            "console": {"facility": {"local7": {"level": "err"}}},
+            "marker": {"interval": 111},
+        }
+        # First pass — purge+set
+        purge_cmds = []
+        for section, section_want in want.items():
+            section_have = have.get(section, {})
+            purge_cmds += dict_op(section_want, section_have, _BASE + [section], op="purge")
+        set_cmds = dict_op(want, have, _BASE, op="set")
+        cmds = purge_cmds + set_cmds
+        # Second pass — should be empty (idempotent)
         self.assertEqual(cmds, [])
 
 

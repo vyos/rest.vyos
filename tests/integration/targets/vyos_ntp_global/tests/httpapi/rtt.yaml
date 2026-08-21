@@ -8,58 +8,56 @@
     - name: RTT - Apply base configuration
       vyos.rest.vyos_ntp_global:
         config:
-          servers:
-            - server: 10.3.6.5
-              options:
-                - noselect
-                - prefer
-            - server: server4.example.com
-              options:
-                - pool
           allow_clients:
-            - 10.4.9.0/24
+            - 10.5.5.0/24
+            - 10.6.6.0/24
           listen_addresses:
-            - 10.1.9.16
+            - 10.1.2.3
+          servers:
+            - server: 203.0.113.10
+              options:
+                - prefer
         state: merged
 
-    - name: RTT - Gather configuration
+    - name: RTT - Gather
       register: gathered
       vyos.rest.vyos_ntp_global:
         state: gathered
 
-    - name: RTT - Assert gathered matches applied
+    - name: RTT - Assert base configuration present
       assert:
         that:
-          - "'10.3.6.5' in gathered.gathered.servers"
-          - "'10.4.9.0/24' in gathered.gathered.allow_clients"
-          - "'10.1.9.16' in gathered.gathered.listen_addresses"
+          - "'10.5.5.0/24' in gathered.gathered.allow_clients"
+          - "'10.6.6.0/24' in gathered.gathered.allow_clients"
+          - "'10.1.2.3' in gathered.gathered.listen_addresses"
+          - "'203.0.113.10' in gathered.gathered.servers | map(attribute='server')"
+          - (gathered.gathered.servers | selectattr('server', 'eq', '203.0.113.10') | first).options == ['prefer']
 
-    - name: RTT - Modify configuration
+    - name: RTT - Modify configuration (remove a stale allow_client, add a server option)
       vyos.rest.vyos_ntp_global:
         config:
-          servers:
-            - server: 10.3.6.5
-              options:
-                - noselect
-            - server: server5.example.com
           allow_clients:
-            - 10.4.8.0/24
+            - 10.5.5.0/24
           listen_addresses:
-            - 10.1.9.16
+            - 10.1.2.3
+          servers:
+            - server: 203.0.113.10
+              options:
+                - prefer
+                - nts
         state: replaced
 
-    - name: RTT - Gather modified configuration
+    - name: RTT - Gather after modify
       register: gathered2
       vyos.rest.vyos_ntp_global:
         state: gathered
 
-    - name: RTT - Assert modification applied correctly
+    - name: RTT - Assert stale entry removed and update applied
       assert:
         that:
-          - "'server5.example.com' in gathered2.gathered.servers"
-          - "'server4.example.com' not in gathered2.gathered.servers"
-          - "'10.4.8.0/24' in gathered2.gathered.allow_clients"
-          - "'10.4.9.0/24' not in gathered2.gathered.allow_clients"
+          - "'10.5.5.0/24' in gathered2.gathered.allow_clients"
+          - "'10.6.6.0/24' not in gathered2.gathered.allow_clients"
+          - (gathered2.gathered.servers | selectattr('server', 'eq', '203.0.113.10') | first).options | sort == ['nts', 'prefer']
 
   always:
     - include_tasks: _remove_config.yaml

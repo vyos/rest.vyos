@@ -1,0 +1,30 @@
+---
+- debug:
+    msg: START vyos_nat gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Gather NAT configuration
+      vyos.rest.vyos_nat:
+        state: gathered
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - "'nat' in result.gathered"
+          - "'source' in result.gathered.nat"
+          - "'destination' in result.gathered.nat"
+          - "'static' in result.gathered.nat"
+          - result.gathered.nat.source.rule | length == 2
+          - result.gathered.nat.source.rule[0].id == 100
+          - result.gathered.nat.source.rule[1].id == 101
+          - result.gathered.nat.destination.rule[0].id == 200
+          - result.gathered.nat.destination.rule[0].protocol == "tcp"
+          - result.gathered.nat.static.rule[0].id == 300
+          - result.gathered.nat.static.rule[0].inbound_interface == "eth0"
+
+  always:
+    - include_tasks: _remove_config.yaml

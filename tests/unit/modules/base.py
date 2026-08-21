@@ -13,12 +13,23 @@ import unittest
 from unittest.mock import MagicMock  # noqa: F401
 
 
+_fixture_cache = {}
+
+
 def load_fixture(filename):
-    """Load a JSON fixture file from tests/unit/fixtures/."""
+    """Load a fixture file from tests/unit/fixtures/. Results are cached."""
     fixtures_dir = os.path.join(os.path.dirname(__file__), "..", "fixtures")
     path = os.path.join(fixtures_dir, filename)
+    if path in _fixture_cache:
+        return _fixture_cache[path]
     with open(path) as f:
-        return json.load(f)
+        data = f.read()
+    try:
+        data = json.loads(data)
+    except json.JSONDecodeError:
+        pass
+    _fixture_cache[path] = data
+    return data
 
 
 class VyOSModuleTestCase(unittest.TestCase):

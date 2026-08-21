@@ -8,46 +8,101 @@
     - name: RTT - Apply base configuration
       vyos.rest.vyos_snmp_server:
         config:
+          contact: admin@example.com
           communities:
             - name: switches
               authorization_type: rw
-          contact: admin@example.com
+            - name: bridges
+              clients:
+                - 1.1.1.1
+                - 12.1.1.10
           listen_addresses:
             - address: 20.1.1.1
+          snmp_v3:
+            engine_id: "000000000000000000000002"
+            groups:
+              - group: admins
+                mode: rw
+                seclevel: priv
+                view: all
+            users:
+              - user: admin_user
+                group: admins
+                authentication:
+                  type: sha
+                  plaintext_key: authpass123
+                privacy:
+                  type: aes
+                  plaintext_key: privpass123
+            views:
+              - view: all
+                oid: "1.3.6.1.2.1.1"
+                mask: "ff.ff"
         state: merged
 
-    - name: RTT - Gather configuration
+    - name: RTT - Gather
       register: gathered
       vyos.rest.vyos_snmp_server:
         state: gathered
 
-    - name: RTT - Assert gathered matches applied
+    - name: RTT - Assert base configuration present
       assert:
         that:
           - gathered.gathered.contact == "admin@example.com"
-          - gathered.gathered.communities | selectattr('name', 'eq', 'switches') | list | length == 1
+          - "'switches' in gathered.gathered.communities | map(attribute='name')"
+          - "'bridges' in gathered.gathered.communities | map(attribute='name')"
+          - gathered.gathered.snmp_v3.engine_id == "000000000000000000000002"
+          - "'admins' in gathered.gathered.snmp_v3.groups | map(attribute='group')"
+          - (gathered.gathered.snmp_v3.users | selectattr('user', 'eq', 'admin_user') | first).authentication.type == 'sha'
+          - (gathered.gathered.snmp_v3.views | selectattr('view', 'eq', 'all') | first).oid == '1.3.6.1.2.1.1'
+          - (gathered.gathered.snmp_v3.views | selectattr('view', 'eq', 'all') | first).mask == 'ff.ff'
 
-    - name: RTT - Modify configuration
+    - name: RTT - Modify configuration (remove a stale community, add a trap target)
       vyos.rest.vyos_snmp_server:
         config:
+          contact: admin@example.com
           communities:
             - name: switches
-              authorization_type: ro
-          contact: ops@example.com
+              authorization_type: rw
           listen_addresses:
             - address: 20.1.1.1
+          trap_target:
+            address: 203.0.113.5
+            community: switches
+            port: 162
+          snmp_v3:
+            engine_id: "000000000000000000000002"
+            groups:
+              - group: admins
+                mode: rw
+                seclevel: priv
+                view: all
+            users:
+              - user: admin_user
+                group: admins
+                authentication:
+                  type: sha
+                privacy:
+                  type: aes
+            views:
+              - view: all
+                oid: "1.3.6.1.2.1.1"
+                mask: "ff.ff"
         state: replaced
 
-    - name: RTT - Gather modified configuration
+    - name: RTT - Gather after modify
       register: gathered2
       vyos.rest.vyos_snmp_server:
         state: gathered
 
-    - name: RTT - Assert modification applied correctly
+    - name: RTT - Assert stale community removed and trap target added
       assert:
         that:
-          - gathered2.gathered.contact == "ops@example.com"
-          - gathered2.gathered.communities | selectattr('name', 'eq', 'switches') | map(attribute='authorization_type') | first == 'ro'
+          - "'bridges' not in gathered2.gathered.communities | map(attribute='name')"
+          - "'switches' in gathered2.gathered.communities | map(attribute='name')"
+          - gathered2.gathered.trap_target.address == "203.0.113.5"
+          - gathered2.gathered.trap_target.community == "switches"
+          - gathered2.gathered.trap_target.port == 162
 
   always:
     - include_tasks: _remove_config.yaml

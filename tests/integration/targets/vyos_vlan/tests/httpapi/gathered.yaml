@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_vlan gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Setup VLANs
+      vyos.rest.vyos_vlan:
+        config:
+          - vlan_id: 10
+            description: VLAN10
+            address: 192.168.10.1/24
+            interfaces: [eth1]
+        state: present
+
+    - name: Gather VLANs
+      register: result
+      vyos.rest.vyos_vlan:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered | selectattr('vlan_id', 'eq', 10) | list | length == 1
+          - (result.gathered | selectattr('vlan_id', 'eq', 10) | first).description == 'VLAN10'
+
+  always:
+    - include_tasks: _remove_config.yaml

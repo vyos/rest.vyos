@@ -5,7 +5,12 @@
         "default-action": "accept",
         "rule": {
           "10": { "action": "accept", "state": "established" },
-          "20": { "action": "drop", "state": "invalid" }
+          "20": {
+            "action": "drop",
+            "state": "invalid",
+            "source": { "address": "10.0.0.0/8" },
+            "destination": { "port": "22" }
+          }
         }
       }
     },
@@ -17,6 +22,13 @@
     "output": {
       "filter": {
         "default-action": "accept"
+      }
+    },
+    "name": {
+      "my-ruleset": {
+        "rule": {
+          "1": { "action": "accept" }
+        }
       }
     }
   },

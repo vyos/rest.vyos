@@ -155,22 +155,6 @@ Parameters
             <tr>
                 <td colspan="3">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>running_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Used only with state <code>parsed</code>.</div>
-                        <div>Provide the output of <code>show configuration commands | grep ntp</code>.</div>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="3">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -184,8 +168,6 @@ Parameters
                                     <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
-                                    <li>rendered</li>
-                                    <li>parsed</li>
                         </ul>
                 </td>
                 <td>
@@ -314,43 +296,13 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
             <tr>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>parsed</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">dictionary</span>
-                    </div>
-                </td>
-                <td>when state is parsed</td>
-                <td>
-                            <div>Structured data parsed from running_config.</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>rendered</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is rendered</td>
-                <td>
-                            <div>CLI commands generated for the provided config (offline).</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
                     <b>saved</b>
                     <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
                     <div style="font-size: small">
                       <span style="color: purple">boolean</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>when changed</td>
                 <td>
                             <div>Whether the config was saved after changes.</div>
                     <br/>

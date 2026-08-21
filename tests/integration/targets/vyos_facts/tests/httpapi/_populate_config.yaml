@@ -1,0 +1,16 @@
+---
+- name: Configure logging for facts testing
+  vyos.rest.vyos_logging_global:
+    config:
+      global_params:
+        facilities:
+          - facility: all
+            severity: notice
+    state: merged
+
+- name: Configure NTP for facts testing
+  vyos.rest.vyos_ntp_global:
+    config:
+      servers:
+        - server: time1.vyos.net
+    state: merged

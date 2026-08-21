@@ -1,0 +1,8 @@
+---
+- name: Remove logging config
+  vyos.rest.vyos_logging_global:
+    state: deleted
+
+- name: Remove NTP config
+  vyos.rest.vyos_ntp_global:
+    state: deleted

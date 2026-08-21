@@ -63,12 +63,6 @@ options:
               - ptp
               - interleave
 
-  running_config:
-    description:
-      - Used only with state C(parsed).
-      - Provide the output of C(show configuration commands | grep ntp).
-    type: str
-
   state:
     description:
       - The desired state of the NTP configuration.
@@ -80,8 +74,6 @@ options:
       - overridden
       - deleted
       - gathered
-      - rendered
-      - parsed
 """
 
 EXAMPLES = r"""
@@ -137,194 +129,139 @@ gathered:
   description: Current NTP configuration as structured data.
   returned: when state is gathered
   type: dict
-rendered:
-  description: CLI commands generated for the provided config (offline).
-  returned: when state is rendered
-  type: list
-parsed:
-  description: Structured data parsed from running_config.
-  returned: when state is parsed
-  type: dict
 saved:
   description: Whether the config was saved after changes.
-  returned: when changes are applied
+  returned: when changed
   type: bool
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.utils import normalize_to_list
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    dict_op,
+    normalize_have,
+    to_tag_dict,
+)
 
 
-def normalize_config(config):
-    result = {
-        "allow_clients": sorted(config.get("allow_clients") or []),
-        "listen_addresses": sorted(config.get("listen_addresses") or []),
-        "servers": {},
-    }
-    for s in config.get("servers") or []:
-        name = s["server"]
-        result["servers"][name] = sorted(s.get("options") or [])
+_BASE = ["service", "ntp"]
+
+# "server" is a genuine tag node (keyed by server address) that VyOS's
+# REST API can collapse to a bare value for a single server with no
+# options set.
+_TAG_KEYS = {"server"}
+
+
+def _servers_to_device(servers):
+    """server[].options is the one genuine structural exception here:
+    the argspec wraps per-server options in a named "options" list
+    field, but confirmed against vyos-1x (service_ntp.xml.in) each
+    option (noselect/nts/pool/prefer/ptp/interleave) is a direct
+    valueless leafNode sibling under the server tagNode itself -- there
+    is no "options" wrapper node on the device side at all.
+    """
+    return {s["server"]: {opt: {} for opt in (s.get("options") or [])} for s in servers or []}
+
+
+def _servers_from_device(raw):
+    result = []
+    for name, data in sorted((raw or {}).items()):
+        entry = {"server": name}
+        if data:
+            entry["options"] = sorted(to_tag_dict(data).keys())
+        result.append(entry)
     return result
 
 
-def normalize_servers(value):
-    result = {}
-    if isinstance(value, dict):
-        for server, data in value.items():
-            if isinstance(data, dict):
-                result[server] = sorted(list(data.keys()))
-            elif isinstance(data, list):
-                result[server] = sorted(data)
-            elif isinstance(data, str):
-                result[server] = [data]
-            else:
-                result[server] = []
-    elif isinstance(value, list):
-        for server in value:
-            result[server] = []
-    elif isinstance(value, str):
-        result[value] = []
-    return result
+def _want_to_device(config):
+    want = {}
+    if config.get("allow_clients"):
+        # allow_clients is a flat argspec list, but confirmed against
+        # vyos-1x (allow-client.xml.i) the device nests the multi-value
+        # leaf one level deeper, under a literal "address" child --
+        # allow-client itself is a plain grouping node, not the leaf.
+        want["allow-client"] = {"address": list(config["allow_clients"])}
+    if config.get("listen_addresses"):
+        want["listen-address"] = list(config["listen_addresses"])
+    if config.get("servers"):
+        want["server"] = _servers_to_device(config["servers"])
+    return want
 
 
 def get_running_config(vyos):
-    raw = vyos.get_config(["service", "ntp"])
-    result = {
-        "allow_clients": [],
-        "listen_addresses": [],
-        "servers": {},
-    }
-    if not raw:
-        return result
+    return vyos.get_config(_BASE) or {}
 
-    # allow-client: handle both VyOS schemas
-    #   1.4:  {"allow-client": {"address": {"10.x.x.x/y": {}}}}
-    #   1.5+: {"allow-client": {"10.x.x.x/y": {}}}  (no address subnode)
-    allow_raw_outer = raw.get("allow-client", {})
-    if "address" in allow_raw_outer:
-        allow_raw = allow_raw_outer.get("address", [])
+
+def _device_to_argspec(raw):
+    raw = raw or {}
+    result = {"allow_clients": [], "listen_addresses": [], "servers": []}
+
+    # allow-client: handle both VyOS schema variants (this module
+    # targets VyOS 1.4+) --
+    #   1.4:  {"allow-client": {"address": {...}}}
+    #   1.5+: {"allow-client": {...}}  (no "address" subnode observed
+    #         on some REST responses)
+    # Confirmed current vyos-1x schema always declares the "address"
+    # child, but this stays defensive for older devices/REST variants.
+    allow_outer = raw.get("allow-client") or {}
+    if isinstance(allow_outer, dict) and "address" in allow_outer:
+        allow_raw = allow_outer["address"]
     else:
-        allow_raw = allow_raw_outer
-    result["allow_clients"] = sorted(normalize_to_list(allow_raw))
+        allow_raw = allow_outer
+    if allow_raw:
+        result["allow_clients"] = sorted(to_tag_dict(allow_raw).keys())
 
-    result["listen_addresses"] = sorted(
-        normalize_to_list(raw.get("listen-address", [])),
-    )
-    result["servers"] = normalize_servers(raw.get("server", {}))
+    listen_raw = raw.get("listen-address")
+    if listen_raw:
+        result["listen_addresses"] = sorted(to_tag_dict(listen_raw).keys())
+
+    result["servers"] = _servers_from_device(raw.get("server"))
     return result
 
 
-def build_commands(desired, existing, state):
-    cmds = []
+def _normalize_allow_client(raw_have):
+    """Ensure allow-client always presents the shape _want_to_device
+    emits and dict_op compares against -- a dict with a plain LIST
+    under "address" -- regardless of which VyOS schema/REST variant the
+    device actually returned (a missing "address" wrapper, or the
+    address values themselves collapsed to a dict-of-presence or a bare
+    string instead of a plain array). This keeps dict_op only ever
+    comparing list-vs-list for this field, the same well-exercised path
+    used throughout the rest of this collection, rather than needing
+    any change to the shared engine for a dict-vs-list case.
+    """
+    allow_outer = raw_have.get("allow-client")
+    if not allow_outer:
+        return raw_have
+
+    if isinstance(allow_outer, dict) and "address" in allow_outer:
+        address_raw = allow_outer["address"]
+    else:
+        address_raw = allow_outer
+
+    raw_have = dict(raw_have)
+    raw_have["allow-client"] = {"address": sorted(to_tag_dict(address_raw).keys())}
+    return raw_have
+
+
+def build_commands(config, raw_have, state):
+    raw_have = _normalize_allow_client(raw_have or {})
+    config = config or {}
 
     if state == "overridden":
         state = "replaced"
 
     if state == "deleted":
-        if existing["servers"] or existing["allow_clients"] or existing["listen_addresses"]:
-            cmds.append(("delete", ["service", "ntp"]))
-        return cmds
+        return [("delete", _BASE)] if raw_have else []
 
-    cmds += diff_list(
-        "allow-client",
-        "address",
-        desired["allow_clients"],
-        existing["allow_clients"],
-        state,
-    )
-    cmds += diff_list(
-        "listen-address",
-        None,
-        desired["listen_addresses"],
-        existing["listen_addresses"],
-        state,
-    )
-    cmds += diff_servers(desired["servers"], existing["servers"], state)
-    return cmds
+    want = _want_to_device(config)
+    norm_have = normalize_have(raw_have, _TAG_KEYS)
 
-
-def diff_list(node, subnode, desired, existing, state):
-    cmds = []
-    desired = set(desired)
-    existing = set(existing)
-
-    if state in ("merged", "replaced"):
-        for v in desired - existing:
-            path = ["service", "ntp", node]
-            if subnode:
-                path += [subnode, v]
-            else:
-                path += [v]
-            cmds.append(("set", path))
-
-    if state in ("replaced", "deleted"):
-        for v in existing - desired:
-            path = ["service", "ntp", node]
-            if subnode:
-                path += [subnode, v]
-            else:
-                path += [v]
-            cmds.append(("delete", path))
-
-    return cmds
-
-
-def diff_servers(desired, existing, state):
-    cmds = []
-    desired_set = set(desired.keys())
-    existing_set = set(existing.keys())
-
-    if state in ("merged", "replaced"):
-        for server in desired_set:
-            desired_opts = set(desired[server])
-            existing_opts = set(existing.get(server, []))
-            if server not in existing_set:
-                cmds.append(("set", ["service", "ntp", "server", server]))
-            for opt in desired_opts - existing_opts:
-                cmds.append(("set", ["service", "ntp", "server", server, opt]))
-            if state == "replaced":
-                for opt in existing_opts - desired_opts:
-                    cmds.append(("delete", ["service", "ntp", "server", server, opt]))
-
-    if state in ("replaced", "deleted"):
-        for server in existing_set - desired_set:
-            cmds.append(("delete", ["service", "ntp", "server", server]))
-
-    return cmds
-
-
-def parse_running_config(text):
-    result = {"allow_clients": [], "listen_addresses": [], "servers": {}}
-    for line in text.splitlines():
-        parts = line.strip().split()
-        if len(parts) < 4:
-            continue
-        if parts[3] == "allow-clients":
-            result["allow_clients"].append(parts[-1])
-        elif parts[3] == "listen-address":
-            result["listen_addresses"].append(parts[-1])
-        elif parts[3] == "server":
-            server = parts[4]
-            if server not in result["servers"]:
-                result["servers"][server] = []
-            if len(parts) > 5:
-                result["servers"][server].append(parts[5])
-    return result
-
-
-def render_commands(config):
-    cmds = []
-    for c in config["allow_clients"]:
-        cmds.append("set service ntp allow-client address {c}".format(c=c))
-    for la in config["listen_addresses"]:
-        cmds.append("set service ntp listen-address {la}".format(la=la))
-    for server, opts in config["servers"].items():
-        if not opts:
-            cmds.append("set service ntp server {s}".format(s=server))
-        for opt in opts:
-            cmds.append("set service ntp server {s} {o}".format(s=server, o=opt))
-    return cmds
+    commands = []
+    if state == "replaced":
+        commands += dict_op(want, norm_have, _BASE, op="purge")
+    commands += dict_op(want, norm_have, _BASE, op="set")
+    return commands
 
 
 def main():
@@ -357,7 +294,6 @@ def main():
                 ),
             ),
         ),
-        running_config=dict(type="str"),
         state=dict(
             default="merged",
             choices=[
@@ -366,8 +302,6 @@ def main():
                 "overridden",
                 "deleted",
                 "gathered",
-                "rendered",
-                "parsed",
             ],
         ),
     )
@@ -378,40 +312,30 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    if state == "parsed":
-        module.exit_json(parsed=parse_running_config(module.params["running_config"]))
-
-    desired = normalize_config(config)
-
-    if state == "rendered":
-        module.exit_json(rendered=render_commands(desired))
-
-    existing = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
-        module.exit_json(gathered=existing)
+        module.exit_json(gathered=have)
 
-    if state == "deleted":
-        desired = {"allow_clients": [], "listen_addresses": [], "servers": {}}
-
-    commands = build_commands(desired, existing, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=existing)
+        module.exit_json(changed=bool(commands), commands=commands, before=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
         module.exit_json(
             changed=True,
-            before=existing,
-            after=desired,
+            before=have,
+            after=_device_to_argspec(get_running_config(vyos)),
             commands=commands,
             saved=saved,
             response=response,
         )
 
-    module.exit_json(changed=False, before=existing, after=existing, commands=[])
+    module.exit_json(changed=False, before=have, after=have, commands=[])
 
 
 if __name__ == "__main__":

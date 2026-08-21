@@ -1,0 +1,44 @@
+---
+- debug:
+    msg: START vyos_config lines integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Apply configuration lines
+      register: result
+      vyos.rest.vyos_config:
+        lines:
+          - set interfaces ethernet eth1 description "Test description"
+        save: true
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands | length == 1
+
+    - name: Apply same config (match=line IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_config:
+        lines:
+          - set interfaces ethernet eth1 description "Test description"
+        match: line
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Apply with match=none (always apply)
+      register: result
+      vyos.rest.vyos_config:
+        lines:
+          - set interfaces ethernet eth1 description "Test description"
+        match: none
+
+    - assert:
+        that:
+          - result.changed == true
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,43 @@
+---
+- debug:
+    msg: START vyos_vlan round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Configure VLAN
+      vyos.rest.vyos_vlan:
+        config:
+          - vlan_id: 10
+            description: VLAN10
+            interfaces: [eth1]
+        state: present
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_vlan:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered.gathered | selectattr('vlan_id', 'eq', 10) | list | length == 1
+
+    - name: RTT - Update description
+      vyos.rest.vyos_vlan:
+        config:
+          - vlan_id: 10
+            description: VLAN10-updated
+            interfaces: [eth1]
+        state: present
+
+    - name: RTT - Gather after update
+      register: gathered2
+      vyos.rest.vyos_vlan:
+        state: gathered
+
+    - assert:
+        that:
+          - (gathered2.gathered | selectattr('vlan_id', 'eq', 10) | first).description == 'VLAN10-updated'
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,29 @@
+---
+- debug:
+    msg: START vyos_ha gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- block:
+    - include_tasks: _populate_config.yaml
+
+    - name: Gather HA configuration
+      vyos.rest.vyos_ha:
+        state: gathered
+      register: result
+
+    - assert:
+        that:
+          - result.changed == false
+          - "'vrrp' in result.gathered"
+          - "'virtual_servers' in result.gathered"
+          - result.gathered.vrrp.groups | length == 2
+          - result.gathered.vrrp.groups | selectattr('name','equalto','g1') | list | length == 1
+          - result.gathered.vrrp.groups | selectattr('name','equalto','g2') | list | length == 1
+          - result.gathered.vrrp.snmp == "enabled"
+          - result.gathered.vrrp.global_parameters.startup_delay == 30
+          - result.gathered.vrrp.sync_groups[0].name == "sg1"
+          - result.gathered.vrrp.sync_groups[0].member == ["g1"]
+          - result.gathered.virtual_servers[0].name == "s1"
+
+  always:
+    - include_tasks: _remove_config.yaml

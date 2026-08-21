@@ -1,0 +1,48 @@
+---
+- debug:
+    msg: START vyos_system absent integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Setup system configuration
+      vyos.rest.vyos_system:
+        domain_name: lab.example.com
+        name_server:
+          - 8.8.8.8
+        state: present
+
+    - name: Remove domain name
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: lab.example.com
+        state: absent
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Remove domain name (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_system:
+        domain_name: lab.example.com
+        state: absent
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Remove name server
+      register: result
+      vyos.rest.vyos_system:
+        name_server:
+          - 8.8.8.8
+        state: absent
+
+    - assert:
+        that:
+          - result.changed == true
+
+  always:
+    - include_tasks: _remove_config.yaml

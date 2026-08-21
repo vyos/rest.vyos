@@ -4,7 +4,7 @@
     "ipv4-unicast": {
       "network": {
         "192.0.2.0/24": {},
-        "192.0.3.0/24": {}
+        "192.0.3.0/24": { "route-map": "RM-OUT", "backdoor": {} }
       },
       "redistribute": {
         "connected": { "metric": "10" },
@@ -18,7 +18,20 @@
       "address-family": {
         "ipv4-unicast": {
           "nexthop-self": {},
-          "soft-reconfiguration": { "inbound": {} }
+          "soft-reconfiguration": { "inbound": {} },
+          "attribute-unchanged": {
+            "as-path": {},
+            "med": {}
+          },
+          "capability": {
+            "orf": {
+              "prefix-list": { "receive": {} }
+            }
+          },
+          "distribute-list": {
+            "import": "10",
+            "export": "20"
+          }
         },
         "ipv6-unicast": {
           "soft-reconfiguration": { "inbound": {} }

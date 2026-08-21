@@ -564,6 +564,7 @@ Notes
    - Requires ``ansible_connection=httpapi`` with the VyOS httpapi plugin.
    - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
    - Rule sets are identified by AFI and name. Deleting a rule set removes all its rules.
+   - The ``group`` suboption can only reference an address-group. VyOS also supports network-group/port-group/domain-group references, which this module can read back (via ``gathered``) if already configured by other means, but cannot create -- the argspec has no group-type discriminator.
 
 
 
@@ -690,7 +691,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">dictionary</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>always</td>
                 <td>
                             <div>Raw API response.</div>
                     <br/>
@@ -705,7 +706,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">boolean</span>
                     </div>
                 </td>
-                <td>when changes are applied</td>
+                <td>when changed</td>
                 <td>
                             <div>Whether the config was saved after changes.</div>
                     <br/>

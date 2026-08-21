@@ -1,0 +1,11 @@
+{
+  "config-management": { "commit-revisions": "100" },
+  "console": { "device": { "ttyS0": { "speed": "115200" } } },
+  "host-name": "vyos150",
+  "domain-name": "lab.example.com",
+  "login": {
+    "user": { "vyos": { "authentication": { "encrypted-password": "$6$abc" } } }
+  },
+  "name-server": ["8.8.8.8", "8.8.4.4"],
+  "syslog": { "local": {} }
+}

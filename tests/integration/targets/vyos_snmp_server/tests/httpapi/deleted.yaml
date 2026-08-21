@@ -2,9 +2,9 @@
 - debug:
     msg: START vyos_snmp_server deleted integration tests on connection={{ ansible_connection }}
 
-- include_tasks: _populate_config.yaml
-
 - block:
+    - include_tasks: _populate_config.yaml
+
     - name: Delete all snmp_server configuration
       register: result
       vyos.rest.vyos_snmp_server: &id001

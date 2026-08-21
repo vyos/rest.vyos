@@ -4,11 +4,18 @@
       "rule": {
         "10": {
           "action": "permit",
-          "match": { "peer": "192.0.2.32" },
+          "match": {
+            "peer": "192.0.2.32",
+            "ip": {
+              "address": { "prefix-list": "PL-MATCH" },
+              "nexthop": { "address": "10.0.0.1" }
+            }
+          },
           "set": {
             "aggregator": { "as": "100" },
             "as-path": { "exclude": "111" },
-            "metric": "5"
+            "metric": "5",
+            "community": { "add": ["no-export", "no-advertise"] }
           }
         }
       }

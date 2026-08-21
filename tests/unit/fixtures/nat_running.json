@@ -1,0 +1,80 @@
+{
+  "nat": {
+    "source": {
+      "rule": {
+        "100": {
+          "description": "Source rule 100",
+          "outbound-interface": { "name": "eth0" },
+          "translation": { "address": "masquerade" },
+          "load-balance": {
+            "hash": "random",
+            "backend": {
+              "192.168.1.10": { "weight": "50" },
+              "192.168.1.11": {}
+            }
+          }
+        },
+        "101": {
+          "outbound-interface": { "name": "eth1" },
+          "translation": { "address": "masquerade" }
+        }
+      }
+    },
+    "destination": {
+      "rule": {
+        "200": {
+          "protocol": "tcp",
+          "inbound-interface": { "name": "eth0" },
+          "destination": { "address": "198.51.100.10", "port": "80" },
+          "translation": { "address": "192.168.1.10", "port": "8080" }
+        }
+      }
+    },
+    "static": {
+      "rule": {
+        "300": {
+          "inbound-interface": "eth0",
+          "destination": { "address": "198.51.100.20" },
+          "translation": { "address": "192.168.1.20" }
+        }
+      }
+    },
+    "cgnat": {
+      "log-allocation": {},
+      "pool": {
+        "external": {
+          "EXT1": {
+            "external-port-range": "1024-65535",
+            "range": {
+              "203.0.113.1-203.0.113.10": { "seq": "1" }
+            }
+          }
+        },
+        "internal": {
+          "INT1": {
+            "range": ["10.0.0.0/24", "10.0.1.0/24"]
+          }
+        }
+      },
+      "rule": {
+        "1": {
+          "destination": { "group": { "address-group": "CGNAT-DST" } }
+        }
+      }
+    }
+  },
+  "nat64": {
+    "source": {
+      "rule": {
+        "10": {
+          "source": { "prefix": "2001:db8::/96" },
+          "translation": {
+            "pool": {
+              "1": { "address": "192.168.100.10", "port": "1-65535" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
