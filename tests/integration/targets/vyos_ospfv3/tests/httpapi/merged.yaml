@@ -1,0 +1,48 @@
+---
+- debug:
+    msg: START vyos_ospfv3 merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge OSPFv3 configuration
+      register: result
+      vyos.rest.vyos_ospfv3:
+        config:
+          parameters:
+            router_id: 192.0.2.10
+          redistribute:
+            - route_type: bgp
+          areas:
+            - area_id: "2"
+              export_list: export1
+              range:
+                - address: "2001:db10::/32"
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge OSPFv3 configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospfv3:
+        config:
+          parameters:
+            router_id: 192.0.2.10
+          redistribute:
+            - route_type: bgp
+          areas:
+            - area_id: "2"
+              export_list: export1
+              range:
+                - address: "2001:db10::/32"
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_ospfv3 replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace OSPFv3 configuration
+      register: result
+      vyos.rest.vyos_ospfv3: &id001
+        config:
+          parameters:
+            router_id: 192.0.2.11
+          areas:
+            - area_id: "3"
+              range:
+                - address: "2001:db40::/32"
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace OSPFv3 configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospfv3: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

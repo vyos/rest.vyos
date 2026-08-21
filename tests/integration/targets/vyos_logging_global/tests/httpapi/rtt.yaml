@@ -1,0 +1,58 @@
+---
+- debug:
+    msg: START vyos_logging_global round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_logging_global:
+        config:
+          console:
+            facilities:
+              - facility: local7
+                severity: err
+          global_params:
+            facilities:
+              - facility: cron
+                severity: debug
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_logging_global:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered.console is defined
+          - gathered.gathered.global is defined
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_logging_global:
+        config:
+          console:
+            facilities:
+              - facility: local7
+                severity: warning
+          global_params:
+            facilities:
+              - facility: cron
+                severity: info
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_logging_global:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered.console is defined
+          - gathered2.gathered.global is defined
+          - gathered2.gathered.global.facilities.cron == "info"
+
+  always:
+    - include_tasks: _remove_config.yaml

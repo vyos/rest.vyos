@@ -1,0 +1,21 @@
+---
+- debug:
+    msg: START vyos_lldp_interfaces gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather LLDP interface configuration
+      register: result
+      vyos.rest.vyos_lldp_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered | selectattr('name', 'eq', 'eth0') | list | length == 1
+          - result.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='mode') | first == 'disable'
+
+  always:
+    - include_tasks: _remove_config.yaml

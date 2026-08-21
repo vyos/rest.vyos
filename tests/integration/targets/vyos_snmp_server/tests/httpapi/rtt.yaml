@@ -1,0 +1,53 @@
+---
+- debug:
+    msg: START vyos_snmp_server round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_snmp_server:
+        config:
+          communities:
+            - name: switches
+              authorization_type: rw
+          contact: admin@example.com
+          listen_addresses:
+            - address: 20.1.1.1
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_snmp_server:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered.contact == "admin@example.com"
+          - gathered.gathered.communities | selectattr('name', 'eq', 'switches') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_snmp_server:
+        config:
+          communities:
+            - name: switches
+              authorization_type: ro
+          contact: ops@example.com
+          listen_addresses:
+            - address: 20.1.1.1
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_snmp_server:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered.contact == "ops@example.com"
+          - gathered2.gathered.communities | selectattr('name', 'eq', 'switches') | map(attribute='authorization_type') | first == 'ro'
+
+  always:
+    - include_tasks: _remove_config.yaml

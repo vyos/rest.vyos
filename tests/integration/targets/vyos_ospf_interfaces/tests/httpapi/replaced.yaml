@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace OSPF interface configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces: &id001
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 200
+              - afi: ipv6
+                passive: true
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace OSPF interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospf_interfaces: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_l3_interfaces merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge L3 interface configuration
+      register: result
+      vyos.rest.vyos_l3_interfaces: &id001
+        config:
+          - name: lo
+            ipv4:
+              - address: 10.0.0.1/32
+              - address: 10.0.0.2/32
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge L3 interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_l3_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

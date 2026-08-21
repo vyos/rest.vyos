@@ -1,0 +1,5 @@
+---
+- name: Remove LLDP interface config
+  vyos.rest.vyos_lldp_interfaces:
+    state: deleted
+  ignore_errors: true

@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_l3_interfaces replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace L3 interface configuration
+      register: result
+      vyos.rest.vyos_l3_interfaces: &id001
+        config:
+          - name: lo
+            ipv4:
+              - address: 10.0.0.1/32
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Replace L3 interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_l3_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,65 @@
+---
+- debug:
+    msg: START vyos_ntp_global round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_ntp_global:
+        config:
+          servers:
+            - server: 10.3.6.5
+              options:
+                - noselect
+                - prefer
+            - server: server4.example.com
+              options:
+                - pool
+          allow_clients:
+            - 10.4.9.0/24
+          listen_addresses:
+            - 10.1.9.16
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_ntp_global:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - "'10.3.6.5' in gathered.gathered.servers"
+          - "'10.4.9.0/24' in gathered.gathered.allow_clients"
+          - "'10.1.9.16' in gathered.gathered.listen_addresses"
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_ntp_global:
+        config:
+          servers:
+            - server: 10.3.6.5
+              options:
+                - noselect
+            - server: server5.example.com
+          allow_clients:
+            - 10.4.8.0/24
+          listen_addresses:
+            - 10.1.9.16
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_ntp_global:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - "'server5.example.com' in gathered2.gathered.servers"
+          - "'server4.example.com' not in gathered2.gathered.servers"
+          - "'10.4.8.0/24' in gathered2.gathered.allow_clients"
+          - "'10.4.9.0/24' not in gathered2.gathered.allow_clients"
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,53 @@
+---
+- debug:
+    msg: START vyos_route_maps round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_route_maps:
+        config:
+          - route_map: RM-TEST-EXPORT-POLICY
+            entries:
+              - sequence: 10
+                action: permit
+                match:
+                  peer: 192.0.2.32
+                set:
+                  metric: "5"
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_route_maps:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_route_maps:
+        config:
+          - route_map: RM-TEST-EXPORT-POLICY
+            entries:
+              - sequence: 10
+                action: permit
+                set:
+                  metric: "20"
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_route_maps:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered | selectattr('route_map', 'eq', 'RM-TEST-EXPORT-POLICY') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,48 @@
+---
+- debug:
+    msg: START vyos_lldp_interfaces merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Merge LLDP interface configuration
+      register: result
+      vyos.rest.vyos_lldp_interfaces: &id001
+        config:
+          - name: eth0
+            mode: disable
+            location:
+              elin: "1234567890"
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+
+    - name: Merge LLDP interface — add elin change
+      register: result
+      vyos.rest.vyos_lldp_interfaces: &id002
+        config:
+          - name: eth0
+            mode: disable
+            location:
+              elin: "0000000911"
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge LLDP interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_interfaces: *id002
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

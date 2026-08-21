@@ -1,0 +1,55 @@
+---
+- debug:
+    msg: START vyos_lldp_interfaces round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Ensure LLDP service is enabled
+      vyos.rest.vyos_configure:
+        commands:
+          - "set service lldp"
+
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_lldp_interfaces:
+        config:
+          - name: eth0
+            mode: disable
+            location:
+              elin: "1234567890"
+        state: merged
+
+    - name: RTT - Gather configuration
+      register: gathered
+      vyos.rest.vyos_lldp_interfaces:
+        state: gathered
+
+    - name: RTT - Assert gathered matches applied
+      assert:
+        that:
+          - gathered.gathered | selectattr('name', 'eq', 'eth0') | list | length == 1
+          - gathered.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='mode') | first == 'disable'
+          - gathered.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='location') | map(attribute='elin') | first == '1234567890'
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_lldp_interfaces:
+        config:
+          - name: eth0
+            mode: rx-tx
+            location:
+              elin: "9876543210"
+        state: replaced
+
+    - name: RTT - Gather modified configuration
+      register: gathered2
+      vyos.rest.vyos_lldp_interfaces:
+        state: gathered
+
+    - name: RTT - Assert modification applied correctly
+      assert:
+        that:
+          - gathered2.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='mode') | first == 'rx-tx'
+          - gathered2.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='location') | map(attribute='elin') | first == '9876543210'
+
+  always:
+    - include_tasks: _remove_config.yaml

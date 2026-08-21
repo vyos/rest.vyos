@@ -1,0 +1,7 @@
+---
+- name: Remove interface L2 config
+  vyos.rest.vyos_interfaces:
+    config:
+      - name: eth0
+    state: deleted
+  ignore_errors: true

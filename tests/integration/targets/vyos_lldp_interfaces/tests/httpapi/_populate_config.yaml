@@ -1,0 +1,16 @@
+---
+- name: Ensure LLDP service is enabled
+  vyos.rest.vyos_configure:
+    commands:
+      - "set service lldp"
+  ignore_errors: true
+
+- name: Populate LLDP interface config for testing
+  vyos.rest.vyos_lldp_interfaces:
+    config:
+      - name: eth0
+        mode: disable
+        location:
+          elin: "1234567890"
+    state: merged
+  ignore_errors: true

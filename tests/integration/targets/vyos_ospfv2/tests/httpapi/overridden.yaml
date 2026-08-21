@@ -1,0 +1,37 @@
+---
+- debug:
+    msg: START vyos_ospfv2 overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override OSPFv2 configuration
+      register: result
+      vyos.rest.vyos_ospfv2: &id001
+        config:
+          parameters:
+            router_id: 192.0.1.2
+          areas:
+            - area_id: "2"
+              area_type:
+                normal: true
+              network:
+                - address: 192.0.2.0/24
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override OSPFv2 configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospfv2: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

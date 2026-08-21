@@ -1,0 +1,28 @@
+---
+- debug:
+    msg: START vyos_lldp_interfaces deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete LLDP interface configuration
+      register: result
+      vyos.rest.vyos_lldp_interfaces: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete LLDP interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lldp_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml

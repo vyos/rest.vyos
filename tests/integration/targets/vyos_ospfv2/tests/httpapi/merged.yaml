@@ -1,0 +1,56 @@
+---
+- debug:
+    msg: START vyos_ospfv2 merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge OSPFv2 configuration
+      register: result
+      vyos.rest.vyos_ospfv2:
+        config:
+          parameters:
+            router_id: 192.0.1.1
+          auto_cost:
+            reference_bandwidth: 2
+          areas:
+            - area_id: "2"
+              area_type:
+                normal: true
+              network:
+                - address: 192.0.2.0/24
+          redistribute:
+            - route_type: bgp
+              metric: 10
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge OSPFv2 configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospfv2:
+        config:
+          parameters:
+            router_id: 192.0.1.1
+          auto_cost:
+            reference_bandwidth: 2
+          areas:
+            - area_id: "2"
+              area_type:
+                normal: true
+              network:
+                - address: 192.0.2.0/24
+          redistribute:
+            - route_type: bgp
+              metric: 10
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

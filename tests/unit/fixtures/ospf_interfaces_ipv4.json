@@ -1,0 +1,4 @@
+{
+  "eth1": { "cost": "100", "transmit-delay": "50", "priority": "26" },
+  "eth2": { "cost": "200" }
+}

@@ -1,0 +1,9 @@
+---
+- name: Populate interface config for testing
+  vyos.rest.vyos_interfaces:
+    config:
+      - name: eth0
+        description: Ansible test interface
+        mtu: 1450
+    state: merged
+  ignore_errors: true

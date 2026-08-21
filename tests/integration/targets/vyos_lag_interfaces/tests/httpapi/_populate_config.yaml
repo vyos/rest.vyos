@@ -1,0 +1,13 @@
+---
+- name: Populate LAG config for testing
+  vyos.rest.vyos_lag_interfaces:
+    config:
+      - name: bond0
+        mode: active-backup
+        hash_policy: layer2
+        arp_monitor:
+          interval: 100
+          target:
+            - 192.0.2.1
+    state: merged
+  ignore_errors: true

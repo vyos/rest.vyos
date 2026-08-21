@@ -1,0 +1,15 @@
+{
+  "ethernet": {
+    "eth0": {
+      "address": "dhcp",
+      "description": "Management",
+      "duplex": "auto",
+      "hw-id": "52:54:00:65:5a:24",
+      "mtu": "1500",
+      "speed": "auto"
+    }
+  },
+  "loopback": {
+    "lo": {}
+  }
+}

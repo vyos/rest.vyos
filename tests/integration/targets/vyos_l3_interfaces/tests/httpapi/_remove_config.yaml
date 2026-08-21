@@ -1,0 +1,10 @@
+---
+- name: Remove test L3 config
+  vyos.rest.vyos_l3_interfaces:
+    config:
+      - name: lo
+      - name: eth0
+        vifs:
+          - vlan_id: 100
+    state: deleted
+  ignore_errors: true

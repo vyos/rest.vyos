@@ -1,0 +1,35 @@
+---
+- debug:
+    msg: START vyos_l3_interfaces overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override L3 interface configuration
+      register: result
+      vyos.rest.vyos_l3_interfaces: &id001
+        config:
+          - name: eth0
+            ipv4:
+              - address: dhcp
+          - name: lo
+            ipv4:
+              - address: 10.0.0.1/32
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override L3 interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_l3_interfaces: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

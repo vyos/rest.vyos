@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_lag_interfaces merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge LAG configuration
+      register: result
+      vyos.rest.vyos_lag_interfaces: &id001
+        config:
+          - name: bond0
+            mode: active-backup
+            hash_policy: layer2
+            arp_monitor:
+              interval: 100
+              target:
+                - 192.0.2.1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge LAG configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_lag_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,44 @@
+---
+- debug:
+    msg: START vyos_ospf_interfaces merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge OSPF interface configuration
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 100
+                transmit_delay: 50
+              - afi: ipv6
+                dead_interval: 39
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge OSPF interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_ospf_interfaces:
+        config:
+          - name: eth1
+            address_family:
+              - afi: ipv4
+                cost: 100
+                transmit_delay: 50
+              - afi: ipv6
+                dead_interval: 39
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

@@ -1,0 +1,5 @@
+---
+- name: Remove pre-existing ospf_interfaces config
+  vyos.rest.vyos_ospf_interfaces:
+    state: deleted
+  ignore_errors: true

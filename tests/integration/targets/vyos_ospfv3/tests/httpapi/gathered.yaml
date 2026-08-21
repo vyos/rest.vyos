@@ -1,0 +1,21 @@
+---
+- debug:
+    msg: START vyos_ospfv3 gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather OSPFv3 configuration
+      register: result
+      vyos.rest.vyos_ospfv3:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.parameters.router_id == "192.0.2.10"
+          - result.gathered.redistribute | selectattr('route_type', 'eq', 'bgp') | list | length == 1
+          - result.gathered.areas | selectattr('area_id', 'eq', '2') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

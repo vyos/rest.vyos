@@ -98,7 +98,7 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
     def test_normalize_running_host_port_not_cast(self):
         """Port is NOT cast to int — stored as-is from API response."""
         raw = {
-            "host": {
+            "remote": {
                 "172.16.0.1": {
                     "port": "514",
                     "facility": {},
@@ -112,7 +112,7 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
     def test_normalize_running_global_archive_key(self):
         """Archive stored under 'archive' key — no file_num remapping."""
         raw = {
-            "global": {
+            "local": {
                 "archive": {"file": "2", "size": "111"},
                 "marker": {"interval": "111"},
                 "preserve-fqdn": {},
@@ -133,7 +133,7 @@ class TestVyOSLoggingGlobalNormalize(unittest.TestCase):
 
     def test_normalize_running_host_facilities(self):
         raw = {
-            "host": {
+            "remote": {
                 "172.16.0.1": {
                     "facility": {
                         "local7": {"level": "all"},
@@ -196,14 +196,14 @@ class TestVyOSLoggingGlobalBuildCommands(unittest.TestCase):
         cmds = build_commands(want, self._empty_have(), "merged")
         paths = [c[1] for c in cmds]
         # diff_map only adds the host key, not per-facility details
-        self.assertIn(["system", "syslog", "host", "172.16.0.1"], paths)
+        self.assertIn(["system", "syslog", "remote", "172.16.0.1"], paths)
 
     def test_replaced_removes_extra_host(self):
         want = self._empty_have()
         have = self._empty_have()
         have["hosts"]["172.16.0.1"] = {"port": None, "facilities": {}}
         cmds = build_commands(want, have, "replaced")
-        self.assertIn(("delete", ["system", "syslog", "host", "172.16.0.1"]), cmds)
+        self.assertIn(("delete", ["system", "syslog", "remote", "172.16.0.1"]), cmds)
 
     def test_deleted_removes_per_field(self):
         """deleted state removes per-facility entries, not single subtree."""
