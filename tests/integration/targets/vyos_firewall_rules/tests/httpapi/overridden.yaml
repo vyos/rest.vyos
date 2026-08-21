@@ -1,0 +1,36 @@
+---
+- debug:
+    msg: START vyos_firewall_rules overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override firewall rules configuration
+      register: result
+      vyos.rest.vyos_firewall_rules: &id001
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: NEW-SET
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override firewall rules configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_rules: *id001
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

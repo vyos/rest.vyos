@@ -1,0 +1,55 @@
+---
+- debug:
+    msg: START vyos_firewall_global round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_firewall_global:
+        config:
+          group:
+            address_group:
+              - name: SERVERS
+                address:
+                  - 192.168.1.10
+            network_group:
+              - name: LAN
+                network:
+                  - 192.168.0.0/16
+        state: merged
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_firewall_global:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered.gathered.group.address_group | selectattr('name', 'eq', 'SERVERS') | list | length == 1
+          - gathered.gathered.group.network_group | selectattr('name', 'eq', 'LAN') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_firewall_global:
+        config:
+          group:
+            network_group:
+              - name: LAN
+                network:
+                  - 192.168.0.0/16
+              - name: DMZ
+                network:
+                  - 10.0.0.0/8
+        state: merged
+
+    - name: RTT - Gather after modify
+      register: gathered2
+      vyos.rest.vyos_firewall_global:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered2.gathered.group.network_group | selectattr('name', 'eq', 'DMZ') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

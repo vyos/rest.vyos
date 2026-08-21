@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_facts subsets integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Gather hostname only
+      vyos.rest.vyos_facts:
+        gather_subset:
+          - hostname
+
+    - assert:
+        that:
+          - ansible_facts.vyos_hostname is defined
+
+    - name: Gather users
+      vyos.rest.vyos_facts:
+        gather_subset:
+          - users
+
+    - assert:
+        that:
+          - ansible_facts.vyos_users is defined
+          - ansible_facts.vyos_users | selectattr('name', 'eq', 'vyos') | list | length == 1
+
+    - name: Gather config
+      vyos.rest.vyos_facts:
+        gather_subset:
+          - config
+
+    - assert:
+        that:
+          - ansible_facts.vyos_config is defined
+          - ansible_facts.vyos_config.system is defined

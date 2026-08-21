@@ -1,0 +1,33 @@
+---
+- debug:
+    msg: START vyos_bgp_address_family deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete BGP address-family configuration
+      register: result
+      vyos.rest.vyos_bgp_address_family:
+        config:
+          as_number: 65000
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete BGP address-family configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_bgp_address_family:
+        config:
+          as_number: 65000
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

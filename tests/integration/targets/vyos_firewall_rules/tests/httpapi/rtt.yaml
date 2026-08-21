@@ -1,0 +1,52 @@
+---
+- debug:
+    msg: START vyos_firewall_rules round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_firewall_rules:
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: RULE-SET1
+                default_action: drop
+                rules:
+                  - number: 10
+                    action: accept
+                    protocol: tcp
+        state: merged
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_firewall_rules:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered.gathered | selectattr('afi', 'eq', 'ipv4') | list | length == 1
+
+    - name: RTT - Modify configuration
+      vyos.rest.vyos_firewall_rules:
+        config:
+          - afi: ipv4
+            rule_sets:
+              - name: RULE-SET1
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+        state: replaced
+
+    - name: RTT - Gather after modify
+      register: gathered2
+      vyos.rest.vyos_firewall_rules:
+        state: gathered
+
+    - assert:
+        that:
+          - (gathered2.gathered | selectattr('afi', 'eq', 'ipv4') | first).rule_sets[0].default_action == 'accept'
+
+  always:
+    - include_tasks: _remove_config.yaml

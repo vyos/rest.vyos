@@ -1,0 +1,43 @@
+---
+- debug:
+    msg: START vyos_user absent integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Create users for deletion test
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User
+            password: S3cur3P@ss!
+          - name: testuser2
+            full_name: Test User 2
+            password: S3cur3P@ss!
+        state: present
+
+    - name: Delete specific user
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+        state: absent
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete specific user (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+        state: absent
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

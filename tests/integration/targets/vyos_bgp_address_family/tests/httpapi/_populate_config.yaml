@@ -1,0 +1,32 @@
+---
+- name: Setup BGP global
+  vyos.rest.vyos_bgp_global:
+    config:
+      as_number: 65000
+      parameters:
+        router_id: 192.0.1.1
+      neighbors:
+        - neighbor_address: 192.0.2.1
+          remote_as: 65001
+    state: merged
+  ignore_errors: true
+
+- name: Populate BGP address-family config
+  vyos.rest.vyos_bgp_address_family:
+    config:
+      as_number: 65000
+      address_family:
+        - afi: ipv4
+          networks:
+            - prefix: 192.0.2.0/24
+          redistribute:
+            - protocol: connected
+              metric: 10
+      neighbors:
+        - neighbor_address: 192.0.2.1
+          address_family:
+            - afi: ipv4
+              soft_reconfiguration: true
+              nexthop_self: true
+    state: merged
+  ignore_errors: true

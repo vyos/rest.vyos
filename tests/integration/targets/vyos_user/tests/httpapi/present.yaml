@@ -1,0 +1,63 @@
+---
+- debug:
+    msg: START vyos_user present integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Create user
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User
+            password: S3cur3P@ss!
+            update_password: on_create
+        state: present
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Create user (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User
+            password: S3cur3P@ss!
+            update_password: on_create
+        state: present
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Update full_name
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User Updated
+        state: present
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Update full_name (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_user:
+        users:
+          - name: testuser
+            full_name: Test User Updated
+        state: present
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

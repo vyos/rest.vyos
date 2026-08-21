@@ -1,0 +1,46 @@
+---
+- debug:
+    msg: START vyos_firewall_interfaces merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge firewall interfaces configuration
+      register: result
+      vyos.rest.vyos_firewall_interfaces:
+        config:
+          - afi: ipv4
+            hooks:
+              - hook: input
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+                    state: established
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge firewall interfaces configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_interfaces:
+        config:
+          - afi: ipv4
+            hooks:
+              - hook: input
+                default_action: accept
+                rules:
+                  - number: 10
+                    action: accept
+                    state: established
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

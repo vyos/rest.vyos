@@ -1,0 +1,44 @@
+---
+- debug:
+    msg: START vyos_bgp_global merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge BGP global configuration
+      register: result
+      vyos.rest.vyos_bgp_global:
+        config:
+          as_number: 65000
+          parameters:
+            router_id: 192.0.1.1
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              remote_as: 65001
+              description: peer1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge BGP global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_bgp_global:
+        config:
+          as_number: 65000
+          parameters:
+            router_id: 192.0.1.1
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              remote_as: 65001
+              description: peer1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

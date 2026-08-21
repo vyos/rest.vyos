@@ -1,0 +1,5 @@
+---
+- name: Remove firewall global configuration
+  vyos.rest.vyos_firewall_global:
+    state: deleted
+  ignore_errors: true

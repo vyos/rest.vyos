@@ -1,0 +1,65 @@
+---
+- debug:
+    msg: START vyos_bgp_address_family merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Setup BGP global
+      vyos.rest.vyos_bgp_global:
+        config:
+          as_number: 65000
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              remote_as: 65001
+        state: merged
+
+    - name: Merge BGP address-family configuration
+      register: result
+      vyos.rest.vyos_bgp_address_family:
+        config:
+          as_number: 65000
+          address_family:
+            - afi: ipv4
+              networks:
+                - prefix: 192.0.2.0/24
+              redistribute:
+                - protocol: connected
+                  metric: 10
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              address_family:
+                - afi: ipv4
+                  soft_reconfiguration: true
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge BGP address-family configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_bgp_address_family:
+        config:
+          as_number: 65000
+          address_family:
+            - afi: ipv4
+              networks:
+                - prefix: 192.0.2.0/24
+              redistribute:
+                - protocol: connected
+                  metric: 10
+          neighbors:
+            - neighbor_address: 192.0.2.1
+              address_family:
+                - afi: ipv4
+                  soft_reconfiguration: true
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

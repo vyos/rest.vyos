@@ -1,0 +1,22 @@
+{
+  "user": {
+    "vyos": {
+      "authentication": {
+        "encrypted-password": "$6$abc123",
+        "plaintext-password": ""
+      }
+    },
+    "alice": {
+      "authentication": {
+        "encrypted-password": "$6$def456",
+        "public-keys": {
+          "alice-laptop": {
+            "key": "AAAAB3NzaC1yc2EAAAA",
+            "type": "ssh-rsa"
+          }
+        }
+      },
+      "full-name": "Alice Smith"
+    }
+  }
+}

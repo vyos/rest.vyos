@@ -1,0 +1,5 @@
+---
+- name: Remove firewall rules configuration
+  vyos.rest.vyos_firewall_rules:
+    state: deleted
+  ignore_errors: true

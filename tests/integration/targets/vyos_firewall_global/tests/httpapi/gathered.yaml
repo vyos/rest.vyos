@@ -1,0 +1,21 @@
+---
+- debug:
+    msg: START vyos_firewall_global gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather firewall global configuration
+      register: result
+      vyos.rest.vyos_firewall_global:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.group.address_group | selectattr('name', 'eq', 'SERVERS') | list | length == 1
+          - result.gathered.group.network_group | selectattr('name', 'eq', 'LAN') | list | length == 1
+          - result.gathered.group.port_group | selectattr('name', 'eq', 'WEB-PORTS') | list | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

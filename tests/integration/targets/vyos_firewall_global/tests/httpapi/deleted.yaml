@@ -1,0 +1,29 @@
+---
+- debug:
+    msg: START vyos_firewall_global deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete firewall global configuration
+      register: result
+      vyos.rest.vyos_firewall_global:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete firewall global configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_firewall_global:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

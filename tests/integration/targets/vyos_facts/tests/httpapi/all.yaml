@@ -1,0 +1,16 @@
+---
+- debug:
+    msg: START vyos_facts all integration tests on connection={{ ansible_connection }}
+
+- block:
+    - name: Gather all facts
+      vyos.rest.vyos_facts:
+        gather_subset: all
+
+    - assert:
+        that:
+          - ansible_facts.vyos_hostname is defined
+          - ansible_facts.vyos_interfaces is defined
+          - ansible_facts.vyos_users is defined
+          - ansible_facts.vyos_config is defined
+          - ansible_facts.vyos_logging is defined

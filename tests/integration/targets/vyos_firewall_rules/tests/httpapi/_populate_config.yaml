@@ -1,0 +1,28 @@
+---
+- name: Populate firewall rules config for testing
+  vyos.rest.vyos_firewall_rules:
+    config:
+      - afi: ipv4
+        rule_sets:
+          - name: RULE-SET1
+            default_action: drop
+            rules:
+              - number: 10
+                action: accept
+                protocol: tcp
+                source:
+                  address: 192.168.1.0/24
+                destination:
+                  port: "80"
+              - number: 20
+                action: drop
+                state: invalid
+      - afi: ipv6
+        rule_sets:
+          - name: RULE-SET6
+            default_action: accept
+            rules:
+              - number: 10
+                action: accept
+    state: merged
+  ignore_errors: true

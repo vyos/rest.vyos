@@ -1,0 +1,28 @@
+{
+  "host-name": "vyos-test",
+  "login": {
+    "user": {
+      "vyos": {
+        "authentication": {
+          "encrypted-password": "$6$abc123"
+        }
+      },
+      "alice": {
+        "full-name": "Alice Smith",
+        "authentication": {
+          "encrypted-password": "$6$def456",
+          "public-keys": {
+            "alice-key": {
+              "key": "AAAAB3...",
+              "type": "ssh-rsa"
+            }
+          }
+        }
+      }
+    }
+  },
+  "syslog": {
+    "local": {},
+    "console": {}
+  }
+}
