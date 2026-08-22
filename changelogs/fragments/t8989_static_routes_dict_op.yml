@@ -1,0 +1,3 @@
+---
+minor_changes:
+  - vyos_statc_routes - Refactor to convert to dict_op.
