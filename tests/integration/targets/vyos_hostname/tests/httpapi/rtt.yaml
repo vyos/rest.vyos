@@ -1,48 +1,41 @@
 ---
 - debug:
-    msg: START vyos_interfaces round trip integration tests on connection={{ ansible_connection }}
+    msg: START vyos_hostname round trip integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
 
 - block:
     - name: RTT - Apply base configuration
-      vyos.rest.vyos_interfaces:
+      vyos.rest.vyos_hostname:
         config:
-          - name: eth0
-            description: Ansible RTT interface
-            mtu: 1450
+          hostname: ansible-rtt-host
         state: merged
 
     - name: RTT - Gather configuration
       register: gathered
-      vyos.rest.vyos_interfaces:
+      vyos.rest.vyos_hostname:
         state: gathered
 
     - name: RTT - Assert gathered matches applied
       assert:
         that:
-          - gathered.gathered | selectattr('name', 'eq', 'eth0') | list | length == 1
-          - gathered.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='description') | first == 'Ansible RTT interface'
-          - gathered.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='mtu') | first == 1450
+          - gathered.gathered.hostname == "ansible-rtt-host"
 
     - name: RTT - Modify configuration
-      vyos.rest.vyos_interfaces:
+      vyos.rest.vyos_hostname:
         config:
-          - name: eth0
-            description: Ansible RTT modified
-            mtu: 1400
+          hostname: ansible-rtt-modified
         state: replaced
 
     - name: RTT - Gather modified configuration
       register: gathered2
-      vyos.rest.vyos_interfaces:
+      vyos.rest.vyos_hostname:
         state: gathered
 
     - name: RTT - Assert modification applied correctly
       assert:
         that:
-          - gathered2.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='description') | first == 'Ansible RTT modified'
-          - gathered2.gathered | selectattr('name', 'eq', 'eth0') | map(attribute='mtu') | first == 1400
+          - gathered2.gathered.hostname == "ansible-rtt-modified"
 
   always:
     - include_tasks: _remove_config.yaml
