@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Unit tests for the shared functions in plugins/module_utils/vyos.py.
 
-Kept separate from any single module's test file since these test
+Kept separate from any single module's test file since these tests
 shared, cross-module infrastructure (cast_by_spec, dict_op, autoclean,
 from_device) rather than any one module's own behavior -- a fix here
 should be verifiable, and shippable, independently of any module that
