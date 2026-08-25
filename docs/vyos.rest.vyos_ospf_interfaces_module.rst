@@ -17,10 +17,10 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- Manages OSPF and OSPFv3 interface configuration on VyOS devices via the REST API.
-- IPv4 OSPF maps to ``protocols ospf interface``.
-- IPv6 OSPFv3 maps to ``protocols ospfv3 interface``.
+- Manages OSPFv2 (IPv4) and OSPFv3 (IPv6) per-interface configuration on VyOS devices via the REST API.
+- IPv4 maps to ``protocols ospf interface`` -- a genuinely separate device subtree from IPv6's ``protocols ospfv3 interface``, not two views onto one shared tree.
 - Uses REST API (``connection=httpapi``) instead of CLI.
+- Scope matches the current vyos.vyos.vyos_ospf_interfaces (CLI collection) module. Confirmed against vyos-1x: ``cost``, ``priority``, ``dead_interval``, ``hello_interval``, ``retransmit_interval``, ``transmit_delay``, ``network``, and ``mtu_ignore`` are genuinely shared across both address families (this module's previous documentation incorrectly labeled ``mtu_ignore`` and ``passive`` as address-family exclusive -- corrected here). ``authentication`` and ``bandwidth`` are confirmed IPv4-only; ``ifmtu`` and ``instance`` are confirmed IPv6-only. ``network``'s valid values genuinely differ by address family (IPv4 additionally allows ``non-broadcast``/``point-to-multipoint``) -- argspec ``choices`` can't express a per-AFI restriction, so an invalid combination is only caught by the device itself, not ahead of time. ``hello_multiplier`` and ``retransmit_window`` (IPv4-only device options) are not modeled, matching the CLI module's own scope.
 
 
 
@@ -198,7 +198,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Interface bandwidth in kbps (IPv4 only).</div>
+                        <div>Interface bandwidth in Mbit/s (IPv4 only).</div>
                 </td>
             </tr>
             <tr>
@@ -304,7 +304,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Disable MTU check (IPv4 only).</div>
+                        <div>Disable MTU mismatch detection.</div>
                 </td>
             </tr>
             <tr>
@@ -327,7 +327,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Network type (IPv4 only).</div>
+                        <div>Network type. IPv6 only allows <code>broadcast</code>/<code>point-to-point</code>; <code>non-broadcast</code>/<code>point-to-multipoint</code> are IPv4-only, but this isn&#x27;t enforced at the argspec level -- an invalid combination is rejected by the device itself.</div>
                 </td>
             </tr>
             <tr>
@@ -348,7 +348,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Disable adjacency formation (IPv6 only).</div>
+                        <div>Suppress adjacency formation on this interface.</div>
                 </td>
             </tr>
             <tr>
@@ -459,6 +459,14 @@ Notes
    - Requires ``ansible_connection=httpapi`` with the VyOS httpapi plugin.
    - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
 
+
+See Also
+--------
+
+.. seealso::
+
+   :ref:`vyos.vyos.vyos_ospf_interfaces_module`
+      The official documentation on the **vyos.vyos.vyos_ospf_interfaces** module.
 
 
 Examples
