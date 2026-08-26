@@ -14,25 +14,6 @@ short_description: Manage OSPF interface configuration on VyOS devices using RES
 description:
   - Manages OSPFv2 (IPv4) and OSPFv3 (IPv6) per-interface configuration on
     VyOS devices via the REST API.
-  - IPv4 maps to C(protocols ospf interface) -- a genuinely separate device
-    subtree from IPv6's C(protocols ospfv3 interface), not two views onto
-    one shared tree.
-  - Uses REST API (C(connection=httpapi)) instead of CLI.
-  - >-
-    Scope matches the current vyos.vyos.vyos_ospf_interfaces (CLI
-    collection) module. Confirmed against vyos-1x: C(cost), C(priority),
-    C(dead_interval), C(hello_interval), C(retransmit_interval),
-    C(transmit_delay), C(network), and C(mtu_ignore) are genuinely shared
-    across both address families (this module's previous documentation
-    incorrectly labeled C(mtu_ignore) and C(passive) as address-family
-    exclusive -- corrected here). C(authentication) and C(bandwidth) are
-    confirmed IPv4-only; C(ifmtu) and C(instance) are confirmed IPv6-only.
-    C(network)'s valid values genuinely differ by address family (IPv4
-    additionally allows C(non-broadcast)/C(point-to-multipoint)) --
-    argspec C(choices) can't express a per-AFI restriction, so an invalid
-    combination is only caught by the device itself, not ahead of time.
-    C(hello_multiplier) and C(retransmit_window) (IPv4-only device
-    options) are not modeled, matching the CLI module's own scope.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -95,11 +76,7 @@ options:
             description: Disable MTU mismatch detection.
             type: bool
           network:
-            description: >-
-              Network type. IPv6 only allows C(broadcast)/C(point-to-point);
-              C(non-broadcast)/C(point-to-multipoint) are IPv4-only, but
-              this isn't enforced at the argspec level -- an invalid
-              combination is rejected by the device itself.
+            description: Network type.
             type: str
             choices: [broadcast, non-broadcast, point-to-multipoint, point-to-point]
           passive:
@@ -140,26 +117,7 @@ EXAMPLES = r"""
         address_family:
           - afi: ipv4
             cost: 100
-            transmit_delay: 50
-            priority: 26
-          - afi: ipv6
-            dead_interval: 39
-            passive: true
     state: merged
-
-- name: Delete OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    config:
-      - name: eth1
-    state: deleted
-
-- name: Delete all OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    state: deleted
-
-- name: Gather current OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    state: gathered
 """
 
 RETURN = r"""
@@ -203,19 +161,10 @@ from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
 _BASE4 = ["protocols", "ospf", "interface"]
 _BASE6 = ["protocols", "ospfv3", "interface"]
 
-# Confirmed against vyos-1x: the only genuine renames needed. Everything
-# else shared between AFIs (cost, priority, dead_interval, hello_interval,
-# retransmit_interval, transmit_delay, network, mtu_ignore) is mechanical
-# kebab -- "instance" -> "instance-id" is IPv6-only and irreducible.
 _IPV6_RENAMES = {"instance": "instance-id"}
 
 
 def _derive_key_field(options_spec):
-    """The field identifying each entry in a named-list section is
-    never inferable from a generic walk alone -- but it doesn't need
-    to be hand-declared either: every named-list section in this
-    argspec already marks exactly one suboption required=True.
-    """
     required = [k for k, spec in options_spec.items() if spec.get("required")]
     if len(required) != 1:
         raise ValueError(
@@ -223,6 +172,11 @@ def _derive_key_field(options_spec):
             "found: {0}".format(required),
         )
     return required[0]
+
+
+def _kebab_fields(d):
+    cleaned = autoclean(d)
+    return {k.replace("_", "-"): v for k, v in cleaned.items()}
 
 
 def _keyed_list_to_device(items, key_field, entry_transform=None):
@@ -242,36 +196,6 @@ def _keyed_list_from_device(raw, key_field, entry_transform=None):
         {key_field: key, **entry_transform(data or {})}
         for key, data in sorted(to_tag_dict(raw).items())
     ]
-
-
-def _kebab_fields(d):
-    """autoclean, then kebab-convert the resulting keys.
-
-    Needed because dict_op requires have's keys to already be genuine
-    device kebab-case -- it only normalizes underscores to dashes for
-    its own lookup index, but uses have's key verbatim for the output
-    path. autoclean deliberately leaves keys exactly as given (dict_op
-    is meant to convert during its own want-vs-have comparison), which
-    only works when have comes straight from the device. Here, have is
-    reconstructed by round-tripping through this module's own entry-
-    transforms (needed for the confirmed structural exceptions below),
-    so any field passed through unconverted would stay snake_case and
-    dict_op would have no way to recover the real device key -- exactly
-    the bug confirmed and fixed in vyos_ospfv2's build. Safe here since
-    every call site is a leaf-level dict of schema field names, never
-    an opaque tag-node value like an interface name used as a dict key.
-    """
-    cleaned = autoclean(d)
-    return {k.replace("_", "-"): v for k, v in cleaned.items()}
-
-
-# ---------------------------------------------------------------------------
-# authentication -- IPv4 only. Confirmed against vyos-1x: plaintext-
-# password is a plain leaf; md5 is a fixed "key-id" node containing a
-# single tagNode entry (key-id value -> {md5-key: ...}) -- genuinely a
-# single-entry structure, not a list, matching the argspec's own single
-# md5_key dict rather than a list of them.
-# ---------------------------------------------------------------------------
 
 
 def _auth_to_device(auth):
@@ -354,10 +278,27 @@ def _want_to_device(config):
 
 
 def get_running_config(vyos):
+    """VyOS's REST API collapses a single-child tag node to a plain
+    string (or a list for multiple) -- confirmed by reproduction: an
+    unguarded .get("interface", ...) on a non-dict response raises
+    AttributeError, and consuming an unnormalized raw4/raw6 downstream
+    (e.g. in build_commands's deleted branch) iterates a collapsed
+    string's individual characters as if they were interface names,
+    producing corrupted delete paths. Guarding the unwrap and
+    normalizing via to_tag_dict here means every caller always
+    receives a genuine {name: {...}} dict, with no need to re-guard
+    at each use site.
+    """
     raw4 = vyos.get_config(_BASE4) or {}
-    raw4 = raw4.get("interface", raw4)
+    if isinstance(raw4, dict):
+        raw4 = raw4.get("interface", raw4)
+    raw4 = to_tag_dict(raw4)
+
     raw6 = vyos.get_config(_BASE6) or {}
-    raw6 = raw6.get("interface", raw6)
+    if isinstance(raw6, dict):
+        raw6 = raw6.get("interface", raw6)
+    raw6 = to_tag_dict(raw6)
+
     return raw4, raw6
 
 
@@ -374,6 +315,27 @@ def _device_to_argspec(raw4, raw6):
             ifaces.setdefault(name, {"name": name, "address_family": []})
             ifaces[name]["address_family"].append({"afi": "ipv6", **entry})
     return sorted(ifaces.values(), key=lambda i: i["name"])
+
+
+def _validate_config(config):
+    """Confirmed real bug: if a user sets authentication.md5_key.key
+    but omits key_id, _auth_to_device silently drops the whole md5
+    branch (key_id is required to identify which VyOS md5 key-id
+    entry this is) -- the task would then report success while the
+    device gets no MD5 authentication configured at all. Fail
+    explicitly instead of silently doing nothing.
+    """
+    for entry in config or []:
+        name = entry.get("name")
+        for af in entry.get("address_family") or []:
+            md5 = (af.get("authentication") or {}).get("md5_key") or {}
+            if md5.get("key") and md5.get("key_id") is None:
+                return (
+                    "address_family.authentication.md5_key.key was set for "
+                    "interface '{0}' but key_id was not -- both are required "
+                    "together.".format(name)
+                )
+    return None
 
 
 def build_commands(config, raw_have, state):
@@ -413,10 +375,22 @@ def build_commands(config, raw_have, state):
     if state == "overridden":
         commands += dict_op(want4, norm4, _BASE4, op="purge")
         commands += dict_op(want6, norm6, _BASE6, op="purge")
+        # Confirmed bug: an interface present on the raw device with
+        # an entirely empty per-AFI entry (bare presence, nothing
+        # configured under it) produces {} from _af*_entry_from_device,
+        # which _device_to_argspec silently omits -- invisible to both
+        # want and norm_have, so dict_op's purge above (which only
+        # ever iterates have's own keys) can never generate a delete
+        # for it. These names are, by construction, guaranteed absent
+        # from norm4/norm6, so there's no risk of duplicating a delete
+        # dict_op already issued.
+        for name in raw4 or {}:
+            if name not in norm4 and name not in want4:
+                commands.append(("delete", _BASE4 + [name]))
+        for name in raw6 or {}:
+            if name not in norm6 and name not in want6:
+                commands.append(("delete", _BASE6 + [name]))
     elif state == "replaced":
-        # Scoped per named interface (matching every other module's
-        # "replaced only touches what's named" semantic), and per AFI
-        # within it, since IPv4/IPv6 are separate device subtrees.
         for entry in config:
             name = entry.get("name")
             if not name:
@@ -494,6 +468,10 @@ def main():
 
     state = module.params["state"]
     config = module.params.get("config") or []
+
+    validation_error = _validate_config(config)
+    if validation_error:
+        module.fail_json(msg=validation_error)
 
     raw_have = get_running_config(vyos)
     have = _device_to_argspec(*raw_have)

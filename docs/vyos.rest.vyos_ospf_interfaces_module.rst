@@ -18,9 +18,6 @@ Version added: 1.0.0
 Synopsis
 --------
 - Manages OSPFv2 (IPv4) and OSPFv3 (IPv6) per-interface configuration on VyOS devices via the REST API.
-- IPv4 maps to ``protocols ospf interface`` -- a genuinely separate device subtree from IPv6's ``protocols ospfv3 interface``, not two views onto one shared tree.
-- Uses REST API (``connection=httpapi``) instead of CLI.
-- Scope matches the current vyos.vyos.vyos_ospf_interfaces (CLI collection) module. Confirmed against vyos-1x: ``cost``, ``priority``, ``dead_interval``, ``hello_interval``, ``retransmit_interval``, ``transmit_delay``, ``network``, and ``mtu_ignore`` are genuinely shared across both address families (this module's previous documentation incorrectly labeled ``mtu_ignore`` and ``passive`` as address-family exclusive -- corrected here). ``authentication`` and ``bandwidth`` are confirmed IPv4-only; ``ifmtu`` and ``instance`` are confirmed IPv6-only. ``network``'s valid values genuinely differ by address family (IPv4 additionally allows ``non-broadcast``/``point-to-multipoint``) -- argspec ``choices`` can't express a per-AFI restriction, so an invalid combination is only caught by the device itself, not ahead of time. ``hello_multiplier`` and ``retransmit_window`` (IPv4-only device options) are not modeled, matching the CLI module's own scope.
 
 
 
@@ -327,7 +324,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Network type. IPv6 only allows <code>broadcast</code>/<code>point-to-point</code>; <code>non-broadcast</code>/<code>point-to-multipoint</code> are IPv4-only, but this isn&#x27;t enforced at the argspec level -- an invalid combination is rejected by the device itself.</div>
+                        <div>Network type.</div>
                 </td>
             </tr>
             <tr>
@@ -481,26 +478,7 @@ Examples
             address_family:
               - afi: ipv4
                 cost: 100
-                transmit_delay: 50
-                priority: 26
-              - afi: ipv6
-                dead_interval: 39
-                passive: true
         state: merged
-
-    - name: Delete OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        config:
-          - name: eth1
-        state: deleted
-
-    - name: Delete all OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        state: deleted
-
-    - name: Gather current OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        state: gathered
 
 
 
