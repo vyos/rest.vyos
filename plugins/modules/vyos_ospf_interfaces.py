@@ -318,22 +318,47 @@ def _device_to_argspec(raw4, raw6):
 
 
 def _validate_config(config):
-    """Confirmed real bug: if a user sets authentication.md5_key.key
-    but omits key_id, _auth_to_device silently drops the whole md5
-    branch (key_id is required to identify which VyOS md5 key-id
-    entry this is) -- the task would then report success while the
-    device gets no MD5 authentication configured at all. Fail
-    explicitly instead of silently doing nothing.
+    """Confirmed real bugs, both by reproduction:
+
+    1. md5_key.key/key_id were checked by truthiness, not presence --
+       key_id set without key reached _auth_to_device and produced
+       {"md5-key": None} in the generated command (a broken device
+       write, not a validation failure); an empty-string key without
+       key_id silently passed validation and then got dropped
+       entirely by _auth_to_device's own key_id is not None check
+       (the original confirmed bug, just reachable via a second
+       value). is not None checks catch both directions and don't
+       treat a legitimately-empty (but explicitly set) value as
+       "unset".
+
+    2. authentication is documented and confirmed (via vyos-1x
+       schema) as IPv4-only -- OSPFv3's interface config has no
+       authentication node at all -- but the shared argspec doesn't
+       enforce this, and _af6_entry_to_device would silently forward
+       it into the ipv6 device path, where the real device would
+       reject it at apply time instead of failing cleanly upfront.
     """
     for entry in config or []:
         name = entry.get("name")
         for af in entry.get("address_family") or []:
-            md5 = (af.get("authentication") or {}).get("md5_key") or {}
-            if md5.get("key") and md5.get("key_id") is None:
+            afi = af.get("afi")
+            auth = af.get("authentication") or {}
+
+            if afi == "ipv6" and auth:
                 return (
-                    "address_family.authentication.md5_key.key was set for "
-                    "interface '{0}' but key_id was not -- both are required "
-                    "together.".format(name)
+                    "address_family.authentication was set for interface "
+                    "'{0}' with afi: ipv6 -- authentication is IPv4-only "
+                    "and has no corresponding OSPFv3 device path.".format(name)
+                )
+
+            md5 = auth.get("md5_key") or {}
+            has_key = md5.get("key") is not None
+            has_key_id = md5.get("key_id") is not None
+            if has_key != has_key_id:
+                return (
+                    "address_family.authentication.md5_key.key and .key_id "
+                    "were not both set for interface '{0}' -- both are "
+                    "required together.".format(name)
                 )
     return None
 
