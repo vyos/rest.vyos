@@ -1,13 +1,19 @@
 {
   "ethernet": {
     "eth0": {
-      "address": "dhcp",
-      "description": "Management",
-      "duplex": "auto",
-      "hw-id": "52:54:00:65:5a:24",
+      "description": "mgmt",
       "mtu": "1500",
-      "speed": "auto"
+      "duplex": "auto",
+      "speed": "auto",
+      "vrf": "mgmt",
+      "vif": { "200": { "description": "vif200", "mtu": "1400" } }
+    },
+    "eth1": {
+      "disable": {}
     }
+  },
+  "bonding": {
+    "bond0": { "description": "lag" }
   },
   "loopback": {
     "lo": {}
