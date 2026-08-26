@@ -37,6 +37,16 @@ options:
             type: str
             choices: [ipv4, ipv6]
             required: true
+          area:
+            description: >-
+              OSPF area to assign this interface to (C(set protocols
+              ospf[v3] interface <name> area <id>)). This is the
+              primary mechanism that enables OSPF on an interface at
+              all -- confirmed via VyOS's official documentation
+              across 1.4+/1.5 LTS/rolling as the current syntax,
+              distinct from and superseding the older (1.3-era)
+              C(area <id> interface <name>) form.
+            type: str
           authentication:
             description: Authentication settings (IPv4 only).
             type: dict
@@ -455,6 +465,7 @@ _AUTH_OPTIONS = dict(
 
 _AF_OPTIONS = dict(
     afi=dict(type="str", choices=["ipv4", "ipv6"], required=True),
+    area=dict(type="str"),
     authentication=dict(type="dict", options=_AUTH_OPTIONS),
     bandwidth=dict(type="int"),
     cost=dict(type="int"),
