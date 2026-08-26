@@ -205,8 +205,8 @@ def _auth_to_device(auth):
     if auth.get("plaintext_password"):
         device["plaintext-password"] = auth["plaintext_password"]
     md5 = auth.get("md5_key") or {}
-    if md5.get("key_id") is not None:
-        device["md5"] = {"key-id": {str(md5["key_id"]): {"md5-key": md5.get("key")}}}
+    if md5.get("key_id") is not None and md5.get("key") is not None:
+        device["md5"] = {"key-id": {str(md5["key_id"]): {"md5-key": md5["key"]}}}
     return device
 
 
