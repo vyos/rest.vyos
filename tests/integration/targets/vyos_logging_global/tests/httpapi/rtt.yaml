@@ -27,7 +27,9 @@
       assert:
         that:
           - gathered.gathered.console is defined
-          - gathered.gathered.global is defined
+          - (gathered.gathered.console.facilities | selectattr('facility', 'eq', 'local7') | map(attribute='severity') | first) == 'err'
+          - gathered.gathered.global_params is defined
+          - (gathered.gathered.global_params.facilities | selectattr('facility', 'eq', 'cron') | map(attribute='severity') | first) == 'debug'
 
     - name: RTT - Modify configuration
       vyos.rest.vyos_logging_global:
@@ -51,8 +53,9 @@
       assert:
         that:
           - gathered2.gathered.console is defined
-          - gathered2.gathered.global is defined
-          - gathered2.gathered.global.facilities.cron == "info"
+          - (gathered2.gathered.console.facilities | selectattr('facility', 'eq', 'local7') | map(attribute='severity') | first) == 'warning'
+          - gathered2.gathered.global_params is defined
+          - (gathered2.gathered.global_params.facilities | selectattr('facility', 'eq', 'cron') | map(attribute='severity') | first) == 'info'
 
   always:
     - include_tasks: _remove_config.yaml
