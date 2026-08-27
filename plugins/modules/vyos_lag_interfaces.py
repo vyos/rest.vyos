@@ -14,7 +14,13 @@ short_description: Manage LAG interface configuration on VyOS devices via REST A
 description:
   - Manages Link Aggregation Group (LAG/bonding) interface configuration on VyOS
     devices using the HTTPS REST API.
-  - Mirrors C(vyos.vyos.vyos_lag_interfaces) but uses the HTTP API instead of CLI.
+  - >-
+    A bonding interface's device path (C(interfaces bonding <name>)) is
+    shared with M(vyos.rest.vyos_interfaces) (L2 attributes: description,
+    mtu, vrf) and M(vyos.rest.vyos_l3_interfaces) (addresses) -- every
+    command this module generates is scoped to exactly C(mode)/
+    C(primary)/C(hash-policy)/C(member)/C(arp-monitor), never the bond's
+    subtree as a whole, so it never touches those other modules' fields.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -68,9 +74,6 @@ options:
             description: IP addresses to use for ARP monitoring.
             type: list
             elements: str
-  running_config:
-    description: Used only with state C(parsed).
-    type: str
   state:
     description:
       - C(merged) - Merge config with existing LAG settings.
@@ -78,13 +81,13 @@ options:
       - C(overridden) - Replace config for all LAG interfaces.
       - C(deleted) - Remove listed or all LAG interface config.
       - C(gathered) - Read LAG config from device without changes.
-      - C(rendered) - Return commands for provided config without connecting.
-      - C(parsed) - Parse running_config into structured data.
     type: str
-    choices: [merged, replaced, overridden, deleted, gathered, rendered, parsed]
+    choices: [merged, replaced, overridden, deleted, gathered]
     default: merged
 seealso:
   - module: vyos.vyos.vyos_lag_interfaces
+  - module: vyos.rest.vyos_interfaces
+  - module: vyos.rest.vyos_l3_interfaces
 """
 
 EXAMPLES = r"""
@@ -125,14 +128,6 @@ gathered:
   description: Current LAG configuration as structured data.
   returned: when state is gathered
   type: list
-rendered:
-  description: Commands for provided config (state=rendered).
-  returned: when state is rendered
-  type: list
-parsed:
-  description: Structured data parsed from running_config (state=parsed).
-  returned: when state is parsed
-  type: list
 saved:
   description: Whether the config was saved after changes.
   returned: when changes are applied
@@ -144,7 +139,16 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    _snake_to_kebab,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    scope_to_spec,
+    to_tag_dict,
+)
 
 
 _BASE = ["interfaces", "bonding"]
@@ -154,271 +158,220 @@ def _bond_base(name):
     return _BASE + [name]
 
 
+def _bond_entry_to_device(rest):
+    """Explicit allowlist -- confirmed critical given bond0's device
+    path is shared with vyos_interfaces and vyos_l3_interfaces. Only
+    mode/primary/hash_policy/members/arp_monitor are modeled here.
+
+    members and arp_monitor.target are built as keyed-presence
+    structures (name/address -> {}) separately from the simple scalar
+    fields, and merged in without going through autoclean: confirmed
+    real bug otherwise -- autoclean recursively drops nested
+    empty-dict values, treating a presence-only leaf like
+    {"eth1": {}} as "nothing to see here" and silently stripping it,
+    when it's actually a meaningful member-interface reference. Their
+    keys are opaque interface names/IP addresses needing no
+    underscore-to-kebab conversion regardless.
+    """
+    simple = autoclean({k: v for k, v in rest.items() if k not in ("members", "arp_monitor")})
+    device = {_snake_to_kebab(k): v for k, v in simple.items()}
+
+    members = rest.get("members") or []
+    member_names = [m.get("member") for m in members if m.get("member")]
+    if member_names:
+        device["member"] = {"interface": {m: {} for m in member_names}}
+
+    arp = rest.get("arp_monitor") or {}
+    arp_simple = autoclean({k: v for k, v in arp.items() if k != "target"})
+    arp_device = {_snake_to_kebab(k): v for k, v in arp_simple.items()}
+    targets = arp.get("target") or []
+    if targets:
+        arp_device["target"] = {t: {} for t in targets}
+    if arp_device:
+        device["arp-monitor"] = arp_device
+
+    return device
+
+
+def _bond_entry_from_device(data):
+    """scope_to_spec derives the allowlist directly from this
+    module's own argspec (mode/primary/hash_policy), so bond0's
+    device path being shared with vyos_interfaces (description/mtu/
+    vrf) and vyos_l3_interfaces (address) is never a leak risk --
+    confirmed existing utility in module_utils/vyos.py for exactly
+    this cross-module scope problem, used here instead of a second,
+    manually-maintained field list.
+
+    members and arp_monitor are excluded from that call and handled
+    separately: "members" (argspec) doesn't match the device's actual
+    key "member" (singular), and arp_monitor's nested target needs its
+    own keyed-dict-to-list conversion that scope_to_spec (a top-level
+    filter only) doesn't do.
+    """
+    scoped = scope_to_spec(data, _ENTRY_OPTIONS, exclude=("name", "members", "arp_monitor"))
+    entry = from_device(scoped)
+
+    iface_raw = (data.get("member") or {}).get("interface")
+    if iface_raw:
+        entry["members"] = [{"member": m} for m in sorted(to_tag_dict(iface_raw))]
+
+    arp = data.get("arp-monitor") or {}
+    arp_entry = {}
+    if "interval" in arp:
+        arp_entry["interval"] = int(arp["interval"])
+    target_raw = arp.get("target")
+    if target_raw:
+        arp_entry["target"] = sorted(to_tag_dict(target_raw))
+    if arp_entry:
+        entry["arp_monitor"] = arp_entry
+
+    return entry
+
+
 def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
-    if not raw or not isinstance(raw, dict):
-        return []
+    """VyOS's REST API collapses a single-child tag node to a plain
+    string (or a list for multiple) -- confirmed as a real failure
+    mode during vyos_ospf_interfaces's build. Normalizing through
+    to_tag_dict unconditionally means callers always receive a
+    genuine dict.
 
-    if len(raw) == 1 and "bonding" in raw:
-        raw = raw["bonding"]
+    The original module also defensively unwrapped a possible extra
+    "bonding" wrapper key around the response -- kept here rather
+    than dropped, since that defensive check was never independently
+    disproven, matching the same wrapper-key pattern confirmed real
+    elsewhere in this collection (e.g. vyos_route_maps).
+    """
+    raw = to_tag_dict(vyos.get_config(_BASE) or {})
+    if isinstance(raw, dict) and len(raw) == 1 and "bonding" in raw:
+        raw = to_tag_dict(raw["bonding"])
+    return raw
 
+
+def _device_to_argspec(raw):
     result = []
-    for name, data in sorted(raw.items()):
-        if name in ("bonding", "ethernet", "loopback"):
-            continue
-        data = data or {}
+    for name, data in sorted((raw or {}).items()):
         entry = {"name": name}
-
-        if data.get("mode"):
-            entry["mode"] = data["mode"]
-        if data.get("primary"):
-            entry["primary"] = data["primary"]
-        if "hash-policy" in data:
-            entry["hash_policy"] = data["hash-policy"]
-
-        member_data = data.get("member", {})
-        if isinstance(member_data, dict):
-            iface_data = member_data.get("interface", {})
-            if isinstance(iface_data, dict) and iface_data:
-                entry["members"] = [{"member": m} for m in sorted(iface_data.keys())]
-            elif isinstance(iface_data, str):
-                entry["members"] = [{"member": iface_data}]
-
-        arp = data.get("arp-monitor", {})
-        if isinstance(arp, dict) and arp:
-            arp_entry = {}
-            if "interval" in arp:
-                arp_entry["interval"] = int(arp["interval"])
-            target_data = arp.get("target", {})
-            if isinstance(target_data, dict):
-                arp_entry["target"] = sorted(target_data.keys())
-            elif isinstance(target_data, str):
-                arp_entry["target"] = [target_data]
-            if arp_entry:
-                entry["arp_monitor"] = arp_entry
-
+        entry.update(_bond_entry_from_device(data or {}))
         result.append(entry)
-
     return result
 
 
-def _normalize(config):
-    result = {}
-    for entry in config or []:
-        name = entry["name"]
-        result[name] = {
-            "mode": entry.get("mode"),
-            "primary": entry.get("primary"),
-            "hash_policy": entry.get("hash_policy"),
-            "members": sorted([m["member"] for m in (entry.get("members") or [])]),
-            "arp_interval": (entry.get("arp_monitor") or {}).get("interval"),
-            "arp_targets": sorted((entry.get("arp_monitor") or {}).get("target") or []),
-        }
-    return result
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    config = config or []
 
+    have_list = _device_to_argspec(raw_have)
+    have_by_name = {e["name"]: e for e in have_list}
+    want_by_name = {e["name"]: e for e in config if e.get("name")}
 
-def _bond_cmds(name, want, have):
-    cmds = []
-    base = _bond_base(name)
-    have = have or {}
-
-    if want.get("mode") and want["mode"] != have.get("mode"):
-        cmds.append(("set", base + ["mode", want["mode"]]))
-
-    if want.get("primary") and want["primary"] != have.get("primary"):
-        cmds.append(("set", base + ["primary", want["primary"]]))
-
-    if want.get("hash_policy") and want["hash_policy"] != have.get("hash_policy"):
-        cmds.append(("set", base + ["hash-policy", want["hash_policy"]]))
-
-    want_members = set(want.get("members") or [])
-    have_members = set(have.get("members") or [])
-    for m in want_members - have_members:
-        cmds.append(("set", base + ["member", "interface", m]))
-
-    want_interval = want.get("arp_interval")
-    have_interval = have.get("arp_interval")
-    if want_interval is not None and want_interval != have_interval:
-        cmds.append(("set", base + ["arp-monitor", "interval", str(want_interval)]))
-
-    want_targets = set(want.get("arp_targets") or [])
-    have_targets = set(have.get("arp_targets") or [])
-    for t in want_targets - have_targets:
-        cmds.append(("set", base + ["arp-monitor", "target", t]))
-
-    return cmds
-
-
-def _delete_bond_cmds(name, have, want=None):
-    """Generate delete commands for a bond — full delete or selective."""
-    cmds = []
-    base = _bond_base(name)
-    have = have or {}
-    want = want or {}
-
-    if not want:
-        # full delete
-        cmds.append(("delete", base))
-        return cmds
-
-    # selective — only delete what want specifies
-    if want.get("mode") and have.get("mode"):
-        cmds.append(("delete", base + ["mode"]))
-    if want.get("primary") and have.get("primary"):
-        cmds.append(("delete", base + ["primary"]))
-    if want.get("hash_policy") and have.get("hash_policy"):
-        cmds.append(("delete", base + ["hash-policy"]))
-    for m in set(want.get("members") or []) & set(have.get("members") or []):
-        cmds.append(("delete", base + ["member", "interface", m]))
-    if want.get("arp_interval") and have.get("arp_interval"):
-        cmds.append(("delete", base + ["arp-monitor", "interval"]))
-    for t in set(want.get("arp_targets") or []) & set(have.get("arp_targets") or []):
-        cmds.append(("delete", base + ["arp-monitor", "target", t]))
-
-    return cmds
-
-
-def build_commands(config, have_raw, state):
-    cmds = []
-    have_map = _normalize(have_raw)
+    def _scoped_purge(name, have_entry):
+        have_device = _bond_entry_to_device(
+            {k: v for k, v in have_entry.items() if k != "name"},
+        )
+        return dict_op({}, have_device, _bond_base(name), op="purge")
 
     if state == "deleted":
+        cmds = []
         if not config:
-            for name in have_map:
-                cmds.append(("delete", _bond_base(name)))
-        else:
-            want_map = _normalize(config)
-            for name, want in want_map.items():
-                have = have_map.get(name, {})
-                if not any(
-                    [
-                        want.get("mode"),
-                        want.get("primary"),
-                        want.get("hash_policy"),
-                        want.get("members"),
-                        want.get("arp_interval"),
-                        want.get("arp_targets"),
-                    ],
-                ):
-                    # delete entire bond
-                    if name in have_map:
-                        cmds.append(("delete", _bond_base(name)))
-                else:
-                    cmds += _delete_bond_cmds(name, have, want)
+            for name, have_entry in have_by_name.items():
+                cmds += _scoped_purge(name, have_entry)
+            return cmds
+        for entry in config:
+            name = entry.get("name")
+            if name and name in have_by_name:
+                cmds += _scoped_purge(name, have_by_name[name])
         return cmds
 
-    want_map = _normalize(config)
-
+    commands = []
     if state == "overridden":
-        for name in set(have_map) - set(want_map):
-            cmds.append(("delete", _bond_base(name)))
+        for name in set(have_by_name) - set(want_by_name):
+            commands += _scoped_purge(name, have_by_name[name])
 
-    for name, want in want_map.items():
-        have = have_map.get(name, {})
+    for name, want_entry in want_by_name.items():
+        have_entry = have_by_name.get(name, {})
+        want_device = _bond_entry_to_device(
+            {k: v for k, v in want_entry.items() if k != "name"},
+        )
+        have_device = _bond_entry_to_device(
+            {k: v for k, v in have_entry.items() if k != "name"},
+        )
+        base = _bond_base(name)
 
-        if state == "replaced" and name in have_map:
-            test_cmds = _bond_cmds(name, want, have)
-            # check for extra members/targets in have not in want
-            extra_members = set(have.get("members") or []) - set(want.get("members") or [])
-            extra_targets = set(have.get("arp_targets") or []) - set(want.get("arp_targets") or [])
-            have_fields = {k: v for k, v in have.items() if v}
-            want_fields = {k: v for k, v in want.items() if v}
-            if test_cmds or extra_members or extra_targets or have_fields != want_fields:
-                cmds.append(("delete", _bond_base(name)))
-                have = {}
-            else:
-                continue
+        if state in ("replaced", "overridden"):
+            commands += dict_op(want_device, have_device, base, op="purge")
+        commands += dict_op(want_device, have_device, base, op="set")
 
-        cmds += _bond_cmds(name, want, have)
+    return commands
 
-    return cmds
 
+_MEMBER_OPTIONS = dict(member=dict(type="str"))
+
+_ARP_MONITOR_OPTIONS = dict(
+    interval=dict(type="int"),
+    target=dict(type="list", elements="str"),
+)
+
+_ENTRY_OPTIONS = dict(
+    name=dict(type="str", required=True),
+    mode=dict(
+        type="str",
+        choices=[
+            "802.3ad",
+            "active-backup",
+            "broadcast",
+            "round-robin",
+            "transmit-load-balance",
+            "adaptive-load-balance",
+            "xor-hash",
+        ],
+    ),
+    members=dict(type="list", elements="dict", options=_MEMBER_OPTIONS),
+    primary=dict(type="str"),
+    hash_policy=dict(type="str", choices=["layer2", "layer2+3", "layer3+4"]),
+    arp_monitor=dict(type="dict", options=_ARP_MONITOR_OPTIONS),
+)
 
 ARGUMENT_SPEC = dict(
-    config=dict(
-        type="list",
-        elements="dict",
-        options=dict(
-            name=dict(type="str", required=True),
-            mode=dict(
-                type="str",
-                choices=[
-                    "802.3ad",
-                    "active-backup",
-                    "broadcast",
-                    "round-robin",
-                    "transmit-load-balance",
-                    "adaptive-load-balance",
-                    "xor-hash",
-                ],
-            ),
-            members=dict(
-                type="list",
-                elements="dict",
-                options=dict(member=dict(type="str")),
-            ),
-            primary=dict(type="str"),
-            hash_policy=dict(
-                type="str",
-                choices=["layer2", "layer2+3", "layer3+4"],
-            ),
-            arp_monitor=dict(
-                type="dict",
-                options=dict(
-                    interval=dict(type="int"),
-                    target=dict(type="list", elements="str"),
-                ),
-            ),
-        ),
-    ),
-    running_config=dict(type="str"),
+    config=dict(type="list", elements="dict", options=_ENTRY_OPTIONS),
     state=dict(
         type="str",
         default="merged",
-        choices=["merged", "replaced", "overridden", "deleted", "gathered", "rendered", "parsed"],
+        choices=["merged", "replaced", "overridden", "deleted", "gathered"],
     ),
 )
 
 
 def main():
-    module = AnsibleModule(
-        argument_spec=ARGUMENT_SPEC,
-        mutually_exclusive=[["config", "running_config"]],
-        required_if=[
-            ("state", "rendered", ["config"]),
-            ("state", "parsed", ["running_config"]),
-        ],
-        supports_check_mode=True,
-    )
+    module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
 
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    if state == "parsed":
-        module.exit_json(parsed=[])
-
-    if state == "rendered":
-        cmds = build_commands(config, [], "merged")
-        module.exit_json(rendered=cmds, commands=cmds)
-
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
+    for entry in have:
+        cast_by_spec(entry, _ENTRY_OPTIONS)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(after_raw)
+        for entry in after:
+            cast_by_spec(entry, _ENTRY_OPTIONS)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,

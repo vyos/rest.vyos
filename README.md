@@ -92,8 +92,7 @@ Name | Description
 [vyos.rest.vyos_l3_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_l3_interfaces_module.rst)|Manage L3 interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_lag_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lag_interfaces_module.rst)|Manage LAG interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_lldp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_global_module.rst)|Manage LLDP global configuration on VyOS via REST API.
-[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_int
-erfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_interfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
 [vyos.rest.vyos_logging_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_logging_global_module.rst)|Manage syslog configuration on VyOS devices using REST API
 [vyos.rest.vyos_nat](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_nat_module.rst)|Manage NAT configuration on VyOS devices using REST API
 [vyos.rest.vyos_ntp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
@@ -134,5 +133,3 @@ automation.
 | Connection plugin | `ansible.netcommon.network_cli` | `ansible.netcommon.httpapi` |
 | VyOS requirement | Any | VyOS 1.3+ with REST API enabled |
 | Atomic commits | Per-command | Batch (single commit) |
-
-
