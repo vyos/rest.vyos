@@ -3,9 +3,9 @@
     msg: START vyos_banner deleted integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
-- block:
-    - include_tasks: _populate_config.yaml
+- include_tasks: _populate_config.yaml
 
+- block:
     - name: Delete pre-login banner
       register: result
       vyos.rest.vyos_banner: &id001
@@ -25,6 +25,7 @@
       assert:
         that:
           - result.changed == false
+          - result.commands == []
 
   always:
     - include_tasks: _remove_config.yaml
