@@ -1,41 +1,47 @@
 ---
 - debug:
-    msg: START vyos_hostname round trip integration tests on connection={{ ansible_connection }}
+    msg: START vyos_banner round trip integration tests on connection={{ ansible_connection }}
 
 - include_tasks: _remove_config.yaml
 
 - block:
     - name: RTT - Apply base configuration
-      vyos.rest.vyos_hostname:
+      vyos.rest.vyos_banner:
         config:
-          hostname: ansible-rtt-host
+          banner: pre-login
+          text: "RTT pre-login banner"
         state: merged
 
     - name: RTT - Gather configuration
       register: gathered
-      vyos.rest.vyos_hostname:
+      vyos.rest.vyos_banner:
+        config:
+          banner: pre-login
         state: gathered
 
     - name: RTT - Assert gathered matches applied
       assert:
         that:
-          - gathered.gathered.hostname == "ansible-rtt-host"
+          - gathered.gathered.text == "RTT pre-login banner"
 
     - name: RTT - Modify configuration
-      vyos.rest.vyos_hostname:
+      vyos.rest.vyos_banner:
         config:
-          hostname: ansible-rtt-modified
+          banner: pre-login
+          text: "RTT modified pre-login banner"
         state: replaced
 
     - name: RTT - Gather modified configuration
       register: gathered2
-      vyos.rest.vyos_hostname:
+      vyos.rest.vyos_banner:
+        config:
+          banner: pre-login
         state: gathered
 
     - name: RTT - Assert modification applied correctly
       assert:
         that:
-          - gathered2.gathered.hostname == "ansible-rtt-modified"
+          - gathered2.gathered.text == "RTT modified pre-login banner"
 
   always:
     - include_tasks: _remove_config.yaml
