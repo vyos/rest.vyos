@@ -151,7 +151,7 @@ def cast_by_spec(entry, options):
         spec_type = spec.get("type")
         if spec_type == "int":
             val = entry[key]
-            if isinstance(val, list):
+            if isinstance(val, list) and len(val) <= 1:
                 val = val[0] if val else None
             entry[key] = int(val) if val is not None else None
         elif spec_type == "dict":
