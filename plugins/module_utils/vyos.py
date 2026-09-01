@@ -19,85 +19,6 @@ from ansible_collections.vyos.rest.plugins.module_utils.vyos_rest import (
 
 
 # ---------------------------------------------------------------------------
-# Legacy dynamic config utilities (used by Wave 1-3 modules)
-# ---------------------------------------------------------------------------
-
-
-def _kebab_to_snake(s):
-    """Convert kebab-case string to snake_case."""
-    return s.replace("-", "_")
-
-
-def _snake_to_kebab(s):
-    """Convert snake_case string to kebab-case."""
-    return s.replace("_", "-")
-
-
-def normalize(raw):
-    """Recursively normalize an API response dict to snake_case keys."""
-    if isinstance(raw, dict):
-        return {_kebab_to_snake(k): normalize(v) for k, v in raw.items()}
-    if isinstance(raw, list):
-        return [normalize(v) for v in raw]
-    return raw
-
-
-def denormalize_path(path):
-    """Convert a snake_case path list to kebab-case for the API."""
-    return [_snake_to_kebab(p) for p in path]
-
-
-def _diff_value(want_val, have_val, path, cmds, delete_missing):
-    if isinstance(want_val, dict):
-        if not want_val:
-            if have_val is None:
-                cmds.append(("set", denormalize_path(path)))
-        else:
-            have_dict = have_val if isinstance(have_val, dict) else {}
-            _diff_dict(want_val, have_dict, path, cmds, delete_missing)
-    elif isinstance(want_val, list):
-        have_set = set(have_val) if isinstance(have_val, list) else set()
-        for item in want_val:
-            if item not in have_set:
-                cmds.append(("set", denormalize_path(path + [str(item)])))
-        if delete_missing:
-            want_set = set(str(i) for i in want_val)
-            for item in have_val or []:
-                if str(item) not in want_set:
-                    cmds.append(("delete", denormalize_path(path + [str(item)])))
-    else:
-        if want_val != have_val:
-            cmds.append(("set", denormalize_path(path + [str(want_val)])))
-
-
-def _diff_dict(want, have, path, cmds, delete_missing):
-    for key, want_val in want.items():
-        _diff_value(want_val, have.get(key), path + [key], cmds, delete_missing)
-    if delete_missing:
-        for key in have:
-            if key not in want:
-                cmds.append(("delete", denormalize_path(path + [key])))
-
-
-def diff_configs(want, have, base_path, delete_missing=False):
-    """Diff two normalized config dicts and return API command tuples.
-
-    Args:
-        want (dict): Desired configuration (snake_case keys).
-        have (dict): Current configuration (snake_case keys).
-        base_path (list): Base API path for commands.
-        delete_missing (bool): Generate delete commands for keys in
-            ``have`` absent from ``want``.
-
-    Returns:
-        list: Tuples of ``("set", path)`` or ``("delete", path)``.
-    """
-    cmds = []
-    _diff_dict(want, have, base_path, cmds, delete_missing)
-    return cmds
-
-
-# ---------------------------------------------------------------------------
 # Generic dict diff engine (used by Wave 4+ modules)
 #
 # Design principles:
@@ -229,7 +150,10 @@ def cast_by_spec(entry, options):
             continue
         spec_type = spec.get("type")
         if spec_type == "int":
-            entry[key] = int(entry[key])
+            val = entry[key]
+            if isinstance(val, list) and len(val) <= 1:
+                val = val[0] if val else None
+            entry[key] = int(val) if val is not None else None
         elif spec_type == "dict":
             cast_by_spec(entry[key], spec.get("options"))
         elif spec_type == "list":
