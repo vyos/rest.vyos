@@ -19,6 +19,9 @@ Synopsis
 --------
 - Manages OSPFv3 configuration on VyOS devices via the REST API.
 - Uses REST API (``connection=httpapi``) instead of CLI.
+- Scope matches the current vyos.vyos.vyos_ospfv3 (CLI collection) module, confirmed against VyOS's official documentation (1.4+/1.5 LTS/rolling).
+- ``areas.interface`` (an area-to-interface assignment list) exists in the CLI module's argspec but was deliberately NOT carried over here -- confirmed via VyOS's official docs across multiple versions that ``set protocols ospfv3 area <id> interface <name>`` is the superseded, 1.3-era syntax. The current mechanism, ``set protocols ospfv3 interface <name> area <id>``, is a per-interface setting and is modeled in :ref:`vyos.rest.vyos_ospf_interfaces <vyos.rest.vyos_ospf_interfaces_module>`'s ``area`` field instead.
+- ``distance`` and ``graceful-restart`` are real, confirmed OSPFv3 features not modeled here, matching a genuine gap in the CLI module's own scope rather than an oversight.
 
 
 
@@ -133,7 +136,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Summarize routes matching prefix.</div>
+                        <div>Summarize routes matching prefix (border routers only).</div>
                 </td>
             </tr>
                                 <tr>
@@ -331,6 +334,16 @@ Notes
    - Requires ``ansible_connection=httpapi`` with the VyOS httpapi plugin.
    - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
 
+
+See Also
+--------
+
+.. seealso::
+
+   :ref:`vyos.vyos.vyos_ospfv3_module`
+      The official documentation on the **vyos.vyos.vyos_ospfv3** module.
+   :ref:`vyos.rest.vyos_ospf_interfaces_module`
+      The official documentation on the **vyos.rest.vyos_ospf_interfaces** module.
 
 
 Examples

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from __future__ import absolute_import, division, print_function
 
 
@@ -13,6 +14,21 @@ short_description: Manage OSPFv3 configuration on VyOS devices using REST API
 description:
   - Manages OSPFv3 configuration on VyOS devices via the REST API.
   - Uses REST API (C(connection=httpapi)) instead of CLI.
+  - >-
+    Scope matches the current vyos.vyos.vyos_ospfv3 (CLI collection) module,
+    confirmed against VyOS's official documentation (1.4+/1.5 LTS/rolling).
+  - >-
+    C(areas.interface) (an area-to-interface assignment list) exists in the
+    CLI module's argspec but was deliberately NOT carried over here --
+    confirmed via VyOS's official docs across multiple versions that
+    C(set protocols ospfv3 area <id> interface <name>) is the superseded,
+    1.3-era syntax. The current mechanism, C(set protocols ospfv3 interface
+    <name> area <id>), is a per-interface setting and is modeled in
+    M(vyos.rest.vyos_ospf_interfaces)'s C(area) field instead.
+  - >-
+    C(distance) and C(graceful-restart) are real, confirmed OSPFv3 features
+    not modeled here, matching a genuine gap in the CLI module's own scope
+    rather than an oversight.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -37,7 +53,7 @@ options:
             description: Name of import-list.
             type: str
           range:
-            description: Summarize routes matching prefix.
+            description: Summarize routes matching prefix (border routers only).
             type: list
             elements: dict
             suboptions:
@@ -83,6 +99,9 @@ options:
 notes:
   - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
   - C(ansible_network_os) must be set to C(vyos.rest.vyos).
+seealso:
+  - module: vyos.vyos.vyos_ospfv3
+  - module: vyos.rest.vyos_ospf_interfaces
 """
 
 EXAMPLES = r"""
@@ -139,184 +158,198 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    to_tag_dict,
+)
 
 
 _BASE = ["protocols", "ospfv3"]
 
 
-def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
-    if not raw or not isinstance(raw, dict):
-        return {}
-    return _parse_ospfv3(raw)
+def _kebab_fields(d):
+    """autoclean, then kebab-convert the resulting keys.
+
+    Needed because dict_op requires have's keys to already be genuine
+    device kebab-case -- it only normalizes underscores to dashes for
+    its own lookup index, but uses have's key verbatim for the output
+    path. autoclean deliberately leaves keys exactly as given (dict_op
+    is meant to convert during its own want-vs-have comparison), which
+    only works when have comes straight from the device. Here, have is
+    reconstructed by round-tripping through this module's own entry-
+    transforms, so any field passed through unconverted would stay
+    snake_case and dict_op would have no way to recover the real
+    device key -- confirmed as a real bug during vyos_ospfv2's build.
+    Safe here since every call site is a leaf-level dict of schema
+    field names, never an opaque tag-node value like an area ID used
+    as a dict key.
+    """
+    cleaned = autoclean(d)
+    return {k.replace("_", "-"): v for k, v in cleaned.items()}
 
 
-def _parse_ospfv3(raw):
+def _derive_key_field(options_spec):
+    required = [k for k, spec in options_spec.items() if spec.get("required")]
+    if len(required) != 1:
+        raise ValueError(
+            "expected exactly one required suboption to serve as the key field, "
+            "found: {0}".format(required),
+        )
+    return required[0]
+
+
+def _keyed_list_to_device(items, key_field, entry_transform=None):
+    entry_transform = entry_transform or _kebab_fields
     result = {}
-
-    # parameters
-    params = raw.get("parameters", {})
-    if params:
-        result["parameters"] = {}
-        if "router-id" in params:
-            result["parameters"]["router_id"] = params["router-id"]
-
-    # redistribute
-    redist_raw = raw.get("redistribute", {})
-    if redist_raw and isinstance(redist_raw, dict):
-        redist = []
-        for route_type, data in sorted(redist_raw.items()):
-            entry = {"route_type": route_type}
-            if isinstance(data, dict) and data.get("route-map"):
-                entry["route_map"] = data["route-map"]
-            redist.append(entry)
-        if redist:
-            result["redistribute"] = redist
-
-    # areas
-    area_raw = raw.get("area", {})
-    if area_raw and isinstance(area_raw, dict):
-        areas = []
-        for area_id, area_data in sorted(area_raw.items()):
-            area = {"area_id": area_id}
-            area_data = area_data or {}
-            if area_data.get("export-list"):
-                area["export_list"] = area_data["export-list"]
-            if area_data.get("import-list"):
-                area["import_list"] = area_data["import-list"]
-            range_raw = area_data.get("range", {})
-            if range_raw and isinstance(range_raw, dict):
-                ranges = []
-                for prefix, rdata in sorted(range_raw.items()):
-                    r = {"address": prefix}
-                    rdata = rdata or {}
-                    if "advertise" in rdata:
-                        r["advertise"] = True
-                    if "not-advertise" in rdata:
-                        r["not_advertise"] = True
-                    ranges.append(r)
-                if ranges:
-                    area["range"] = ranges
-            areas.append(area)
-        if areas:
-            result["areas"] = areas
-
+    for item in items or []:
+        if not item.get(key_field):
+            continue
+        rest = {k: v for k, v in item.items() if k != key_field}
+        result[str(item[key_field])] = entry_transform(rest)
     return result
 
 
-def build_commands(config, have, state):
-    cmds = []
+def _keyed_list_from_device(raw, key_field, entry_transform=None):
+    entry_transform = entry_transform or from_device
+    return [
+        {key_field: key, **entry_transform(data or {})}
+        for key, data in sorted(to_tag_dict(raw).items())
+    ]
+
+
+# ---------------------------------------------------------------------------
+# range -- confirmed against CLI: advertise/not_advertise are presence-
+# only opposite flags (not both meaningful at once, though the argspec
+# doesn't enforce mutual exclusivity -- matching the CLI's own scope).
+# Fully generic once keyed by address.
+# ---------------------------------------------------------------------------
+
+_RANGE_KEY = "address"
+
+
+def _area_entry_to_device(rest):
+    exclude = {"range"}
+    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
+    ranges = rest.get("range") or []
+    if ranges:
+        device["range"] = _keyed_list_to_device(ranges, _RANGE_KEY)
+    return device
+
+
+def _area_entry_from_device(data):
+    exclude = {"range"}
+    entry = from_device({k: v for k, v in data.items() if k not in exclude})
+    range_raw = data.get("range")
+    if range_raw:
+        entry["range"] = _keyed_list_from_device(range_raw, _RANGE_KEY)
+    return entry
+
+
+_REDISTRIBUTE_KEY = "route_type"
+_AREA_KEY = "area_id"
+
+
+def _want_to_device(config):
+    config = config or {}
+    device = {}
+
+    areas = config.get("areas") or []
+    if areas:
+        device["area"] = _keyed_list_to_device(areas, _AREA_KEY, _area_entry_to_device)
+
+    params_device = _kebab_fields(config.get("parameters") or {})
+    if params_device:
+        device["parameters"] = params_device
+
+    redist = config.get("redistribute") or []
+    if redist:
+        device["redistribute"] = _keyed_list_to_device(redist, _REDISTRIBUTE_KEY)
+
+    return device
+
+
+def get_running_config(vyos):
+    """VyOS's REST API collapses a single-child tag node to a plain
+    string (or a list for multiple) -- confirmed as a real failure
+    mode during vyos_ospf_interfaces's build (an unguarded response
+    iterated character-by-character). Normalizing through to_tag_dict
+    unconditionally means callers always receive a genuine dict.
+    """
+    return to_tag_dict(vyos.get_config(_BASE) or {})
+
+
+def _device_to_argspec(raw):
+    if not raw or not isinstance(raw, dict):
+        return {}
+    entry = {}
+
+    area_raw = raw.get("area")
+    if area_raw:
+        areas = _keyed_list_from_device(area_raw, _AREA_KEY, _area_entry_from_device)
+        if areas:
+            entry["areas"] = areas
+
+    params_raw = raw.get("parameters")
+    if params_raw:
+        entry["parameters"] = from_device(params_raw)
+
+    redist_raw = raw.get("redistribute")
+    if redist_raw:
+        entry["redistribute"] = _keyed_list_from_device(redist_raw, _REDISTRIBUTE_KEY)
+
+    return entry
+
+
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
 
     if state == "deleted":
-        if have:
-            cmds.append(("delete", _BASE))
-        return cmds
+        return [("delete", _BASE)] if raw_have else []
 
+    want = _want_to_device(config)
+    norm_have = _want_to_device(_device_to_argspec(raw_have))
+
+    commands = []
     if state == "replaced":
-        # Build what we would set from scratch and compare to have
-        would_set = build_commands(config, {}, "merged")
-        have_set = build_commands(have, {}, "merged")
-        if would_set == have_set:
-            return []
-        if have:
-            cmds.append(("delete", _BASE))
-        have = {}
+        commands += dict_op(want, norm_have, _BASE, op="purge")
+    commands += dict_op(want, norm_have, _BASE, op="set")
+    return commands
 
-    # parameters
-    want_params = (config or {}).get("parameters") or {}
-    have_params = have.get("parameters") or {}
-    if want_params.get("router_id") and want_params["router_id"] != have_params.get("router_id"):
-        cmds.append(("set", _BASE + ["parameters", "router-id", want_params["router_id"]]))
 
-    # redistribute
-    want_redist = {r["route_type"]: r for r in ((config or {}).get("redistribute") or [])}
-    have_redist = {r["route_type"]: r for r in (have.get("redistribute") or [])}
+_RANGE_OPTIONS = dict(
+    address=dict(type="str", required=True),
+    advertise=dict(type="bool"),
+    not_advertise=dict(type="bool"),
+)
 
-    for rt in set(have_redist) - set(want_redist):
-        if state == "merged":
-            pass  # merged doesn't remove
-    for rt, entry in want_redist.items():
-        if rt not in have_redist:
-            cmds.append(("set", _BASE + ["redistribute", rt]))
-        if entry.get("route_map"):
-            have_rm = have_redist.get(rt, {}).get("route_map")
-            if entry["route_map"] != have_rm:
-                cmds.append(("set", _BASE + ["redistribute", rt, "route-map", entry["route_map"]]))
+_AREA_OPTIONS = dict(
+    area_id=dict(type="str", required=True),
+    export_list=dict(type="str"),
+    import_list=dict(type="str"),
+    range=dict(type="list", elements="dict", options=_RANGE_OPTIONS),
+)
 
-    # areas
-    want_areas = {a["area_id"]: a for a in ((config or {}).get("areas") or [])}
-    have_areas = {a["area_id"]: a for a in (have.get("areas") or [])}
+_PARAMETERS_OPTIONS = dict(
+    router_id=dict(type="str"),
+)
 
-    for area_id, want_area in want_areas.items():
-        have_area = have_areas.get(area_id, {})
-        abase = _BASE + ["area", area_id]
+_REDISTRIBUTE_OPTIONS = dict(
+    route_type=dict(type="str", choices=["bgp", "connected", "kernel", "ripng", "static"]),
+    route_map=dict(type="str"),
+)
 
-        if want_area.get("export_list") and want_area["export_list"] != have_area.get(
-            "export_list",
-        ):
-            cmds.append(("set", abase + ["export-list", want_area["export_list"]]))
-        if want_area.get("import_list") and want_area["import_list"] != have_area.get(
-            "import_list",
-        ):
-            cmds.append(("set", abase + ["import-list", want_area["import_list"]]))
-
-        want_ranges = {r["address"]: r for r in (want_area.get("range") or [])}
-        have_ranges = {r["address"]: r for r in (have_area.get("range") or [])}
-
-        for addr in want_ranges:
-            if addr not in have_ranges:
-                cmds.append(("set", abase + ["range", addr]))
-                r = want_ranges[addr]
-                if r.get("not_advertise"):
-                    cmds.append(("set", abase + ["range", addr, "not-advertise"]))
-                elif r.get("advertise"):
-                    cmds.append(("set", abase + ["range", addr, "advertise"]))
-
-    return cmds
-
+_CONFIG_OPTIONS = dict(
+    areas=dict(type="list", elements="dict", options=_AREA_OPTIONS),
+    parameters=dict(type="dict", options=_PARAMETERS_OPTIONS),
+    redistribute=dict(type="list", elements="dict", options=_REDISTRIBUTE_OPTIONS),
+)
 
 ARGUMENT_SPEC = dict(
-    config=dict(
-        type="dict",
-        options=dict(
-            areas=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    area_id=dict(type="str", required=True),
-                    export_list=dict(type="str"),
-                    import_list=dict(type="str"),
-                    range=dict(
-                        type="list",
-                        elements="dict",
-                        options=dict(
-                            address=dict(type="str", required=True),
-                            advertise=dict(type="bool"),
-                            not_advertise=dict(type="bool"),
-                        ),
-                    ),
-                ),
-            ),
-            parameters=dict(
-                type="dict",
-                options=dict(
-                    router_id=dict(type="str"),
-                ),
-            ),
-            redistribute=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    route_type=dict(
-                        type="str",
-                        choices=["bgp", "connected", "kernel", "ripng", "static"],
-                    ),
-                    route_map=dict(type="str"),
-                ),
-            ),
-        ),
-    ),
+    config=dict(type="dict", options=_CONFIG_OPTIONS),
     state=dict(
         default="merged",
         choices=["merged", "replaced", "deleted", "gathered"],
@@ -331,23 +364,28 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
+    cast_by_spec(have, _CONFIG_OPTIONS)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(after_raw)
+        cast_by_spec(after, _CONFIG_OPTIONS)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,
