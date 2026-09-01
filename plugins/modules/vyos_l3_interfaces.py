@@ -14,7 +14,13 @@ short_description: Manage L3 interface configuration on VyOS devices via REST AP
 description:
   - Manages IPv4 and IPv6 address configuration on VyOS interfaces using the
     HTTPS REST API.
-  - Mirrors C(vyos.vyos.vyos_l3_interfaces) but uses the HTTP API instead of CLI.
+  - >-
+    L2 attributes (description, mtu, duplex, speed, vrf) and VIF
+    presence/L2 attributes are owned by M(vyos.rest.vyos_interfaces), not
+    this module -- confirmed by design: a VIF's device path is shared
+    between the two modules, and this module's own commands only ever
+    touch the C(address) leaf within it, never the VIF subtree as a whole
+    or any of vyos_interfaces' own fields.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -71,9 +77,6 @@ options:
               address:
                 description: IPv6 address in CIDR notation, C(dhcpv6), or C(auto-config).
                 type: str
-  running_config:
-    description: Used only with state C(parsed).
-    type: str
   state:
     description:
       - C(merged) - Add addresses without removing existing ones.
@@ -81,10 +84,8 @@ options:
       - C(overridden) - Replace addresses for all interfaces.
       - C(deleted) - Remove listed or all interface addresses.
       - C(gathered) - Read interface addresses from device without changes.
-      - C(rendered) - Return commands for provided config without connecting.
-      - C(parsed) - Parse running_config into structured data.
     type: str
-    choices: [merged, replaced, overridden, deleted, gathered, rendered, parsed]
+    choices: [merged, replaced, overridden, deleted, gathered]
     default: merged
 seealso:
   - module: vyos.vyos.vyos_l3_interfaces
@@ -142,14 +143,6 @@ gathered:
   description: Current L3 interface configuration as structured data.
   returned: when state is gathered
   type: list
-rendered:
-  description: Commands for the provided config (state=rendered).
-  returned: when state is rendered
-  type: list
-parsed:
-  description: Structured data parsed from running_config (state=parsed).
-  returned: when state is parsed
-  type: list
 saved:
   description: Whether the config was saved after changes.
   returned: when changes are applied
@@ -161,10 +154,16 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule, to_tag_dict
 
 
-_IFACE_TYPE = {
+_BASE = ["interfaces"]
+
+# Aligned with vyos_interfaces' own 11-type table -- confirmed
+# inconsistent in the original (missing ppp/wlan here specifically),
+# corrected for consistency between the two modules that share the
+# same interface namespace.
+_IFACE_TYPE_PREFIX = {
     "eth": "ethernet",
     "bond": "bonding",
     "lo": "loopback",
@@ -173,23 +172,42 @@ _IFACE_TYPE = {
     "vti": "vti",
     "dum": "dummy",
     "vtun": "openvpn",
+    "ppp": "pppoe",
+    "wlan": "wireless",
     "br": "bridge",
 }
 
 
-def _iface_type(name):
-    for prefix, itype in _IFACE_TYPE.items():
+def _guess_iface_type(name):
+    for prefix, itype in _IFACE_TYPE_PREFIX.items():
         if name.startswith(prefix):
             return itype
     return "ethernet"
 
 
-def _iface_base(name):
-    return ["interfaces", _iface_type(name), name]
+def _resolve_iface_type(name, raw_have):
+    """Prefer the real type from the device's own raw response over a
+    name-prefix guess -- only fall back to guessing for a brand-new
+    interface that doesn't exist on the device yet. Same fix as
+    vyos_interfaces' own confirmed bug: the original guessed
+    unconditionally, even for interfaces the device already knows the
+    real type of.
+    """
+    for itype, ifaces in (raw_have or {}).items():
+        if isinstance(ifaces, dict) and name in ifaces:
+            return itype
+    return _guess_iface_type(name)
+
+
+def _iface_base(name, raw_have):
+    return _BASE + [_resolve_iface_type(name, raw_have), name]
 
 
 def _addr_list(raw):
-    """Normalize address field — string or list → sorted list."""
+    """VyOS's address leaf collapses to a bare string for a single
+    value, or a list for multiple -- confirmed device behavior,
+    handled explicitly here since it's a plain multi-value leaf, not
+    a tag-node (to_tag_dict doesn't apply)."""
     if not raw:
         return []
     if isinstance(raw, str):
@@ -200,92 +218,107 @@ def _addr_list(raw):
 
 
 def _split_addresses(addresses):
-    """Split address list into ipv4 and ipv6 lists."""
     ipv4 = []
     ipv6 = []
     for addr in addresses:
-        if addr in ("dhcp", "dhcpv6"):
-            if addr == "dhcp":
-                ipv4.append(addr)
-            else:
-                ipv6.append(addr)
-        elif ":" in addr:
+        if addr == "dhcp":
+            ipv4.append(addr)
+        elif addr in ("dhcpv6", "auto-config") or ":" in addr:
             ipv6.append(addr)
         else:
             ipv4.append(addr)
     return sorted(ipv4), sorted(ipv6)
 
 
-def _parse_iface(name, idata):
-    """Parse raw API interface data into argspec format."""
-    idata = idata or {}
-    entry = {"name": name}
-
-    addrs = _addr_list(idata.get("address"))
-    if addrs:
-        ipv4, ipv6 = _split_addresses(addrs)
-        if ipv4:
-            entry["ipv4"] = [{"address": a} for a in ipv4]
-        if ipv6:
-            entry["ipv6"] = [{"address": a} for a in ipv6]
-
-    vif_data = idata.get("vif") or {}
-    if isinstance(vif_data, dict) and vif_data:
-        vifs = []
-        for vlan_id, vdata in sorted(vif_data.items(), key=lambda x: int(x[0])):
-            vdata = vdata or {}
-            vif = {"vlan_id": int(vlan_id)}
-            vaddrs = _addr_list(vdata.get("address"))
-            if vaddrs:
-                vipv4, vipv6 = _split_addresses(vaddrs)
-                if vipv4:
-                    vif["ipv4"] = [{"address": a} for a in vipv4]
-                if vipv6:
-                    vif["ipv6"] = [{"address": a} for a in vipv6]
-            vifs.append(vif)
-        if vifs:
-            entry["vifs"] = vifs
-
-    return entry
+def _parse_addr_entry(idata):
+    """Returns (ipv4_argspec_list, ipv6_argspec_list) for one address
+    leaf's raw value -- shared by both interface-level and vif-level
+    parsing."""
+    addrs = _addr_list((idata or {}).get("address"))
+    if not addrs:
+        return [], []
+    ipv4, ipv6 = _split_addresses(addrs)
+    return (
+        [{"address": a} for a in ipv4],
+        [{"address": a} for a in ipv6],
+    )
 
 
 def get_running_config(vyos):
-    raw = vyos.get_config(["interfaces"])
-    if not raw or not isinstance(raw, dict):
-        return []
+    """VyOS's REST API collapses a single-child tag node to a plain
+    string (or a list for multiple) -- confirmed as a real failure
+    mode during vyos_ospf_interfaces's build. Normalizing through
+    to_tag_dict unconditionally means callers always receive a
+    genuine dict.
+    """
+    return to_tag_dict(vyos.get_config(_BASE) or {})
 
+
+def _device_to_argspec(raw):
     result = []
-    for itype, ifaces in sorted(raw.items()):
+    for itype, ifaces in sorted((raw or {}).items()):
         if not isinstance(ifaces, dict):
             continue
-        for iname, idata in sorted(ifaces.items()):
-            entry = _parse_iface(iname, idata)
-            # only include if there's at least one address or vif
+        for name, idata in sorted(to_tag_dict(ifaces).items()):
+            idata = idata or {}
+            entry = {"name": name}
+
+            ipv4, ipv6 = _parse_addr_entry(idata)
+            if ipv4:
+                entry["ipv4"] = ipv4
+            if ipv6:
+                entry["ipv6"] = ipv6
+
+            vif_raw = idata.get("vif")
+            if vif_raw:
+                vifs = []
+                for vlan_id, vdata in sorted(to_tag_dict(vif_raw).items(), key=lambda x: int(x[0])):
+                    vipv4, vipv6 = _parse_addr_entry(vdata)
+                    if vipv4 or vipv6:
+                        vif = {"vlan_id": int(vlan_id)}
+                        if vipv4:
+                            vif["ipv4"] = vipv4
+                        if vipv6:
+                            vif["ipv6"] = vipv6
+                        vifs.append(vif)
+                if vifs:
+                    entry["vifs"] = vifs
+
             if entry.get("ipv4") or entry.get("ipv6") or entry.get("vifs"):
                 result.append(entry)
-
     return result
 
 
 def _normalize(config):
-    """Convert argspec list to dict keyed by interface name."""
+    """Argspec list -> dict keyed by interface name, with address
+    lists flattened to plain sorted string lists for set-diffing."""
     result = {}
     for entry in config or []:
-        name = entry["name"]
-        ipv4 = sorted([a["address"] for a in (entry.get("ipv4") or [])])
-        ipv6 = sorted([a["address"] for a in (entry.get("ipv6") or [])])
+        name = entry.get("name")
+        if not name:
+            continue
+        ipv4 = sorted(a["address"] for a in (entry.get("ipv4") or []) if a.get("address"))
+        ipv6 = sorted(a["address"] for a in (entry.get("ipv6") or []) if a.get("address"))
         vifs = {}
         for vif in entry.get("vifs") or []:
-            vid = vif["vlan_id"]
-            vipv4 = sorted([a["address"] for a in (vif.get("ipv4") or [])])
-            vipv6 = sorted([a["address"] for a in (vif.get("ipv6") or [])])
+            vid = vif.get("vlan_id")
+            if vid is None:
+                continue
+            vipv4 = sorted(a["address"] for a in (vif.get("ipv4") or []) if a.get("address"))
+            vipv6 = sorted(a["address"] for a in (vif.get("ipv6") or []) if a.get("address"))
             vifs[vid] = {"ipv4": vipv4, "ipv6": vipv6}
         result[name] = {"ipv4": ipv4, "ipv6": ipv6, "vifs": vifs}
     return result
 
 
 def _addr_cmds(base, want_addrs, have_addrs, state):
-    """Generate set/delete commands for address lists."""
+    """Address is a plain multi-value leaf, not a keyed/tag-node
+    section -- a set-diff is the correct, direct mechanism here
+    (dict_op's keyed-entry model doesn't fit a bare value list).
+    Confirmed scoped to exactly the "address" leaf under base,
+    never anything else -- base may be an interface or a vif, and
+    in neither case does this function ever touch a sibling leaf.
+    """
     cmds = []
     want_set = set(want_addrs)
     have_set = set(have_addrs)
@@ -300,15 +333,25 @@ def _addr_cmds(base, want_addrs, have_addrs, state):
     return cmds
 
 
-def _vif_cmds(iface_base, want_vifs, have_vifs, state):
-    """Generate commands for VIF subinterfaces."""
+def _vif_addr_cmds(iface_base, want_vifs, have_vifs, state):
+    """VIF address commands, explicitly scoped to only the address
+    leaf within each VIF -- never the VIF subtree as a whole.
+
+    Confirmed severe bug in the original: an omitted VIF under
+    replaced/overridden/deleted generated a whole-VIF delete
+    (`delete ... vif <id>`), which would also destroy the VIF's own
+    description/mtu/disable settings -- fields owned by
+    vyos_interfaces, not this module. The same class of bug just
+    confirmed and fixed in vyos_interfaces for interface-level
+    "address" leaking the other way. Here, an omitted VIF under any
+    state only ever has its own known addresses individually deleted;
+    the VIF's own presence/other fields are never touched.
+    """
     cmds = []
 
-    if state in ("replaced", "overridden"):
-        for vid in set(have_vifs) - set(want_vifs):
-            cmds.append(("delete", iface_base + ["vif", str(vid)]))
-
-    for vid, want_vif in want_vifs.items():
+    all_vids = set(have_vifs) | set(want_vifs)
+    for vid in all_vids:
+        want_vif = want_vifs.get(vid, {"ipv4": [], "ipv6": []})
         have_vif = have_vifs.get(vid, {"ipv4": [], "ipv6": []})
         vif_base = iface_base + ["vif", str(vid)]
         cmds += _addr_cmds(vif_base, want_vif["ipv4"], have_vif["ipv4"], state)
@@ -317,144 +360,119 @@ def _vif_cmds(iface_base, want_vifs, have_vifs, state):
     return cmds
 
 
-def build_commands(config, have_raw, state):
-    cmds = []
-    have_map = _normalize(have_raw)
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    have_list = _device_to_argspec(raw_have)
+    have_map = _normalize(have_list)
 
     if state == "deleted":
+        cmds = []
         if not config:
             for name, have in have_map.items():
-                base = _iface_base(name)
-                for addr in have["ipv4"] + have["ipv6"]:
-                    cmds.append(("delete", base + ["address", addr]))
-                for vid in have["vifs"]:
-                    cmds.append(("delete", base + ["vif", str(vid)]))
-        else:
-            want_map = _normalize(config)
-            for name, want in want_map.items():
-                have = have_map.get(name, {"ipv4": [], "ipv6": [], "vifs": {}})
-                base = _iface_base(name)
-                if not want["ipv4"] and not want["ipv6"] and not want["vifs"]:
-                    # delete all addresses for this interface
-                    for addr in have["ipv4"] + have["ipv6"]:
+                base = _iface_base(name, raw_have)
+                cmds += _addr_cmds(base, [], have["ipv4"], "deleted")
+                cmds += _addr_cmds(base, [], have["ipv6"], "deleted")
+                cmds += _vif_addr_cmds(base, {}, have["vifs"], "deleted")
+            return cmds
+        for entry in config or []:
+            name = entry.get("name")
+            if not name:
+                continue
+            have = have_map.get(name, {"ipv4": [], "ipv6": [], "vifs": {}})
+            base = _iface_base(name, raw_have)
+            named_addrs = entry.get("ipv4") or entry.get("ipv6") or entry.get("vifs")
+            if not named_addrs:
+                # No specific addresses/vifs named -- clear everything
+                # this module owns for the interface.
+                cmds += _addr_cmds(base, [], have["ipv4"], "deleted")
+                cmds += _addr_cmds(base, [], have["ipv6"], "deleted")
+                cmds += _vif_addr_cmds(base, {}, have["vifs"], "deleted")
+            else:
+                want = _normalize([entry])[name]
+                for addr in want["ipv4"] + want["ipv6"]:
+                    if addr in have["ipv4"] + have["ipv6"]:
                         cmds.append(("delete", base + ["address", addr]))
-                    for vid in have["vifs"]:
-                        cmds.append(("delete", base + ["vif", str(vid)]))
-                else:
-                    for addr in want["ipv4"] + want["ipv6"]:
-                        if addr in have["ipv4"] + have["ipv6"]:
-                            cmds.append(("delete", base + ["address", addr]))
-                    for vid in want["vifs"]:
-                        if vid in have["vifs"]:
-                            cmds.append(("delete", base + ["vif", str(vid)]))
+                for vid, want_vif in want["vifs"].items():
+                    have_vif = have["vifs"].get(vid, {"ipv4": [], "ipv6": []})
+                    vif_base = base + ["vif", str(vid)]
+                    for addr in want_vif["ipv4"] + want_vif["ipv6"]:
+                        if addr in have_vif["ipv4"] + have_vif["ipv6"]:
+                            cmds.append(("delete", vif_base + ["address", addr]))
         return cmds
 
     want_map = _normalize(config)
+    commands = []
 
     if state == "overridden":
         for name in set(have_map) - set(want_map):
             have = have_map[name]
-            base = _iface_base(name)
-            for addr in have["ipv4"] + have["ipv6"]:
-                cmds.append(("delete", base + ["address", addr]))
-            for vid in have["vifs"]:
-                cmds.append(("delete", base + ["vif", str(vid)]))
+            base = _iface_base(name, raw_have)
+            commands += _addr_cmds(base, [], have["ipv4"], "overridden")
+            commands += _addr_cmds(base, [], have["ipv6"], "overridden")
+            commands += _vif_addr_cmds(base, {}, have["vifs"], "overridden")
 
     for name, want in want_map.items():
         have = have_map.get(name, {"ipv4": [], "ipv6": [], "vifs": {}})
-        base = _iface_base(name)
-        cmds += _addr_cmds(base, want["ipv4"], have["ipv4"], state)
-        cmds += _addr_cmds(base, want["ipv6"], have["ipv6"], state)
-        cmds += _vif_cmds(base, want["vifs"], have["vifs"], state)
+        base = _iface_base(name, raw_have)
+        commands += _addr_cmds(base, want["ipv4"], have["ipv4"], state)
+        commands += _addr_cmds(base, want["ipv6"], have["ipv6"], state)
+        commands += _vif_addr_cmds(base, want["vifs"], have["vifs"], state)
 
-    return cmds
+    return commands
 
+
+_ADDR_OPTIONS = dict(address=dict(type="str"))
+
+_VIF_OPTIONS = dict(
+    vlan_id=dict(type="int", required=True),
+    ipv4=dict(type="list", elements="dict", options=_ADDR_OPTIONS),
+    ipv6=dict(type="list", elements="dict", options=_ADDR_OPTIONS),
+)
+
+_ENTRY_OPTIONS = dict(
+    name=dict(type="str", required=True),
+    ipv4=dict(type="list", elements="dict", options=_ADDR_OPTIONS),
+    ipv6=dict(type="list", elements="dict", options=_ADDR_OPTIONS),
+    vifs=dict(type="list", elements="dict", options=_VIF_OPTIONS),
+)
 
 ARGUMENT_SPEC = dict(
-    config=dict(
-        type="list",
-        elements="dict",
-        options=dict(
-            name=dict(type="str", required=True),
-            ipv4=dict(
-                type="list",
-                elements="dict",
-                options=dict(address=dict(type="str")),
-            ),
-            ipv6=dict(
-                type="list",
-                elements="dict",
-                options=dict(address=dict(type="str")),
-            ),
-            vifs=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    vlan_id=dict(type="int", required=True),
-                    ipv4=dict(
-                        type="list",
-                        elements="dict",
-                        options=dict(address=dict(type="str")),
-                    ),
-                    ipv6=dict(
-                        type="list",
-                        elements="dict",
-                        options=dict(address=dict(type="str")),
-                    ),
-                ),
-            ),
-        ),
-    ),
-    running_config=dict(type="str"),
+    config=dict(type="list", elements="dict", options=_ENTRY_OPTIONS),
     state=dict(
         type="str",
         default="merged",
-        choices=["merged", "replaced", "overridden", "deleted", "gathered", "rendered", "parsed"],
+        choices=["merged", "replaced", "overridden", "deleted", "gathered"],
     ),
 )
 
 
 def main():
-    module = AnsibleModule(
-        argument_spec=ARGUMENT_SPEC,
-        mutually_exclusive=[["config", "running_config"]],
-        required_if=[
-            ("state", "rendered", ["config"]),
-            ("state", "parsed", ["running_config"]),
-        ],
-        supports_check_mode=True,
-    )
+    module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
 
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    if state == "parsed":
-        # parsed is offline — just return empty for now
-        module.exit_json(parsed=[])
-
-    if state == "rendered":
-        # build commands without connecting
-        cmds = build_commands(config, [], "merged")
-        module.exit_json(rendered=cmds, commands=cmds)
-
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(after_raw)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,
