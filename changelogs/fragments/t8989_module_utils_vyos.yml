@@ -1,0 +1,3 @@
+---
+minor_changes:
+  - module_utils/vyos.py - Fix cast_by_spec to handle int-typed leaves returned as collapsed lists (including empty list -> None).
