@@ -1,0 +1,3 @@
+---
+bugfixes:
+  - vyos_hostname - Added method to VyOS helper; fixed bugs in the module and in UAT/SIT tests.

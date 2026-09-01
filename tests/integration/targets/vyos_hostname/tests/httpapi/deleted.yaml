@@ -1,0 +1,39 @@
+---
+- debug:
+    msg: START vyos_hostname deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete hostname configuration
+      register: result
+      vyos.rest.vyos_hostname: &id001
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather after delete
+      register: gathered
+      vyos.rest.vyos_hostname:
+        state: gathered
+
+    - name: Assert hostname no longer the populated test value
+      assert:
+        that:
+          - gathered.gathered.hostname != "ansible-test-host"
+
+    - name: Delete hostname configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_hostname: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
