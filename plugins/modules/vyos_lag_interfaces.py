@@ -141,7 +141,6 @@ response:
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
     VyOSModule,
-    _snake_to_kebab,
     autoclean,
     cast_by_spec,
     dict_op,
@@ -174,7 +173,7 @@ def _bond_entry_to_device(rest):
     underscore-to-kebab conversion regardless.
     """
     simple = autoclean({k: v for k, v in rest.items() if k not in ("members", "arp_monitor")})
-    device = {_snake_to_kebab(k): v for k, v in simple.items()}
+    device = {k.replace("_", "-"): v for k, v in simple.items()}
 
     members = rest.get("members") or []
     member_names = [m.get("member") for m in members if m.get("member")]
@@ -183,7 +182,7 @@ def _bond_entry_to_device(rest):
 
     arp = rest.get("arp_monitor") or {}
     arp_simple = autoclean({k: v for k, v in arp.items() if k != "target"})
-    arp_device = {_snake_to_kebab(k): v for k, v in arp_simple.items()}
+    arp_device = {k.replace("_", "-"): v for k, v in arp_simple.items()}
     targets = arp.get("target") or []
     if targets:
         arp_device["target"] = {t: {} for t in targets}
