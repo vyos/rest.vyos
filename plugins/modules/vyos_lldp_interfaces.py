@@ -198,7 +198,6 @@ def get_running_config(vyos):
     if not isinstance(raw, dict):
         return {}
     iface_data = raw.get("interface")
-    print("MARKER_REACHED_HERE_998877")
     return iface_data if isinstance(iface_data, dict) else {}
 
 
