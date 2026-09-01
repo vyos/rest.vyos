@@ -1,19 +1,15 @@
 {
-  "interface": {
-    "eth0": {
-      "location": {
-        "elin": "1234567890"
-      },
-      "mode": "disable"
-    },
-    "eth1": {
-      "location": {
-        "coordinate-based": {
-          "altitude": "2200",
-          "datum": "WGS84",
-          "latitude": "33.524449N",
-          "longitude": "22.267255E"
-        }
+  "eth0": {
+    "mode": "disable",
+    "location": { "elin": "1234567890" }
+  },
+  "eth1": {
+    "location": {
+      "coordinate-based": {
+        "latitude": "33.524449N",
+        "longitude": "22.267255E",
+        "altitude": "2200",
+        "datum": "WGS84"
       }
     }
   }

@@ -4,287 +4,170 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-import json
-import os
 import unittest
 
 from unittest.mock import MagicMock
 
 from ansible_collections.vyos.rest.plugins.modules.vyos_lldp_interfaces import (
+    ARGUMENT_SPEC,
+    _device_to_argspec,
+    _entry_from_device,
+    _entry_to_device,
     _iface_base,
-    _iface_cmds,
-    _normalize,
     build_commands,
+    cast_by_spec,
     get_running_config,
 )
 
+from .base import load_fixture
 
-def load_fixture(filename):
-    fixtures_dir = os.path.join(os.path.dirname(__file__), "..", "fixtures")
-    path = os.path.join(fixtures_dir, filename)
-    with open(path) as f:
-        return json.load(f)
+
+_BASE = ["service", "lldp", "interface"]
 
 
 class VyOSModuleTestCase(unittest.TestCase):
     def setUp(self):
         self.mock_vyos = MagicMock()
-        self.mock_vyos.get_config = MagicMock(return_value={})
-
-    def set_running_config(self, data):
-        self.mock_vyos.get_config.return_value = data
-
-
-class TestVyOSLldpInterfacesIfaceBase(unittest.TestCase):
-
-    def test_iface_base(self):
-        self.assertEqual(
-            _iface_base("eth0"),
-            ["service", "lldp", "interface", "eth0"],
-        )
-
-
-class TestVyOSLldpInterfacesGetRunningFixture(VyOSModuleTestCase):
-
-    def setUp(self):
-        super().setUp()
         self.fixture = load_fixture("lldp_interfaces_running.json")
+        self.mock_vyos.get_config = MagicMock(return_value={"interface": self.fixture})
 
-    def test_fixture_parses_eth0_mode(self):
-        self.set_running_config(self.fixture)
+    def gather(self):
+        have = _device_to_argspec(self.fixture)
+        for entry in have:
+            cast_by_spec(entry, ARGUMENT_SPEC["config"]["options"])
+        return have
+
+
+class TestGetRunningConfig(VyOSModuleTestCase):
+    def test_returns_interface_dict(self):
         result = get_running_config(self.mock_vyos)
-        eth0 = next((e for e in result if e["name"] == "eth0"), None)
-        self.assertIsNotNone(eth0)
+        self.assertIn("eth0", result)
+
+    def test_empty_config(self):
+        self.mock_vyos.get_config = MagicMock(return_value=None)
+        self.assertEqual(get_running_config(self.mock_vyos), {})
+
+    def test_non_dict_response_is_safe(self):
+        self.mock_vyos.get_config = MagicMock(return_value="eth0")
+        self.assertEqual(get_running_config(self.mock_vyos), {})
+
+
+class TestIfaceBase(unittest.TestCase):
+    def test_base_path(self):
+        self.assertEqual(_iface_base("eth0"), _BASE + ["eth0"])
+
+
+class TestEntryToDeviceFromDevice(unittest.TestCase):
+    def test_mode(self):
+        result = _entry_to_device({"mode": "disable"})
+        self.assertEqual(result, {"mode": "disable"})
+
+    def test_elin(self):
+        result = _entry_to_device({"location": {"elin": "1234567890"}})
+        self.assertEqual(result, {"location": {"elin": "1234567890"}})
+
+    def test_coordinate_based(self):
+        cb = {"latitude": "1N", "longitude": "1E", "altitude": 10}
+        result = _entry_to_device({"location": {"coordinate_based": cb}})
+        self.assertEqual(result, {"location": {"coordinate-based": cb}})
+
+    def test_from_device_defers_int_casting_to_cast_by_spec(self):
+        """_entry_from_device no longer manually casts altitude --
+        that's cast_by_spec's job, applied later by callers (matching
+        the established pattern elsewhere, e.g. vyos_ospfv2's
+        distance/redistribute fields). Confirmed end-to-end via
+        TestDeviceToArgspecFixture, which does go through cast_by_spec."""
+        cb = {"latitude": "1N", "longitude": "1E", "altitude": "10"}
+        entry = _entry_from_device({"location": {"coordinate-based": cb}})
+        self.assertEqual(entry["location"]["coordinate_based"]["altitude"], "10")
+
+    def test_empty(self):
+        self.assertEqual(_entry_to_device({}), {})
+        self.assertEqual(_entry_from_device({}), {})
+
+
+class TestDeviceToArgspecFixture(VyOSModuleTestCase):
+    def test_both_interfaces_present(self):
+        have = self.gather()
+        names = {e["name"] for e in have}
+        self.assertEqual(names, {"eth0", "eth1"})
+
+    def test_eth0_mode_and_elin_parsed(self):
+        have = self.gather()
+        eth0 = next(e for e in have if e["name"] == "eth0")
         self.assertEqual(eth0["mode"], "disable")
-
-    def test_fixture_parses_elin(self):
-        self.set_running_config(self.fixture)
-        result = get_running_config(self.mock_vyos)
-        eth0 = next(e for e in result if e["name"] == "eth0")
         self.assertEqual(eth0["location"]["elin"], "1234567890")
 
-    def test_fixture_parses_coordinate_based(self):
-        self.set_running_config(self.fixture)
-        result = get_running_config(self.mock_vyos)
-        eth1 = next((e for e in result if e["name"] == "eth1"), None)
-        self.assertIsNotNone(eth1)
-        cb = eth1["location"]["coordinate_based"]
-        self.assertEqual(cb["latitude"], "33.524449N")
-        self.assertEqual(cb["longitude"], "22.267255E")
-        self.assertEqual(cb["altitude"], 2200)
-        self.assertEqual(cb["datum"], "WGS84")
+    def test_eth1_coordinate_based_parsed(self):
+        have = self.gather()
+        eth1 = next(e for e in have if e["name"] == "eth1")
+        coord = eth1["location"]["coordinate_based"]
+        self.assertEqual(coord["latitude"], "33.524449N")
+        self.assertEqual(coord["altitude"], 2200)
 
 
-class TestVyOSLldpInterfacesGetRunning(VyOSModuleTestCase):
+class TestBuildCommands(VyOSModuleTestCase):
+    def test_merged_idempotent_against_own_fixture(self):
+        have = self.gather()
+        self.assertEqual(build_commands(have, self.fixture, "merged"), [])
 
-    def test_empty_returns_empty_list(self):
-        self.set_running_config({})
-        result = get_running_config(self.mock_vyos)
-        self.assertEqual(result, [])
+    def test_replaced_idempotent_against_own_fixture(self):
+        have = self.gather()
+        self.assertEqual(build_commands(have, self.fixture, "replaced"), [])
 
-    def test_no_interface_returns_empty(self):
-        self.set_running_config({"snmp": "enable"})
-        result = get_running_config(self.mock_vyos)
-        self.assertEqual(result, [])
-
-    def test_parses_mode(self):
-        self.set_running_config(
-            {
-                "interface": {"eth0": {"mode": "rx-tx"}},
-            },
-        )
-        result = get_running_config(self.mock_vyos)
-        self.assertEqual(result[0]["mode"], "rx-tx")
-
-    def test_parses_elin(self):
-        self.set_running_config(
-            {
-                "interface": {"eth0": {"location": {"elin": "9876543210"}}},
-            },
-        )
-        result = get_running_config(self.mock_vyos)
-        self.assertEqual(result[0]["location"]["elin"], "9876543210")
-
-    def test_parses_coordinate_based(self):
-        self.set_running_config(
-            {
-                "interface": {
-                    "eth0": {
-                        "location": {
-                            "coordinate-based": {
-                                "latitude": "33.524449N",
-                                "longitude": "22.267255E",
-                                "altitude": "2200",
-                                "datum": "WGS84",
-                            },
-                        },
-                    },
-                },
-            },
-        )
-        result = get_running_config(self.mock_vyos)
-        cb = result[0]["location"]["coordinate_based"]
-        self.assertEqual(cb["latitude"], "33.524449N")
-        self.assertEqual(cb["altitude"], 2200)
-
-    def test_no_mode_not_in_entry(self):
-        self.set_running_config(
-            {
-                "interface": {"eth0": {"location": {"elin": "1234567890"}}},
-            },
-        )
-        result = get_running_config(self.mock_vyos)
-        self.assertNotIn("mode", result[0])
-
-
-class TestVyOSLldpInterfacesNormalize(unittest.TestCase):
-
-    def test_normalize_mode(self):
+    def test_clear_omitted_location_entirely_via_replaced(self):
+        """Confirmed bug in the original: elin/latitude/longitude/
+        altitude/datum had no clear-on-omit logic at all, unlike mode
+        (a genuine inconsistency). dict_op's purge handles this
+        uniformly -- when location is entirely absent from want, the
+        whole node is deleted (not descended into)."""
+        raw_have = {"eth0": {"mode": "disable", "location": {"elin": "1234567890"}}}
         config = [{"name": "eth0", "mode": "disable"}]
-        result = _normalize(config)
-        self.assertEqual(result["eth0"]["mode"], "disable")
+        cmds = build_commands(config, raw_have, "replaced")
+        self.assertIn(("delete", _BASE + ["eth0", "location"]), cmds)
 
-    def test_normalize_elin(self):
-        config = [{"name": "eth0", "location": {"elin": "1234567890"}}]
-        result = _normalize(config)
-        self.assertEqual(result["eth0"]["elin"], "1234567890")
-
-    def test_normalize_coordinate_based(self):
-        config = [
-            {
-                "name": "eth0",
+    def test_clear_specific_field_when_location_partially_present(self):
+        raw_have = {
+            "eth0": {
                 "location": {
-                    "coordinate_based": {
-                        "latitude": "33.524449N",
-                        "longitude": "22.267255E",
-                        "altitude": 2200,
-                        "datum": "WGS84",
-                    },
+                    "elin": "123",
+                    "coordinate-based": {"latitude": "1N", "longitude": "1E"},
                 },
             },
-        ]
-        result = _normalize(config)
-        self.assertEqual(result["eth0"]["latitude"], "33.524449N")
-        self.assertEqual(result["eth0"]["altitude"], 2200)
+        }
+        coord = {"latitude": "1N", "longitude": "1E"}
+        config = [{"name": "eth0", "location": {"coordinate_based": coord}}]
+        cmds = build_commands(config, raw_have, "replaced")
+        self.assertIn(("delete", _BASE + ["eth0", "location", "elin"]), cmds)
+        self.assertNotIn(("delete", _BASE + ["eth0", "location"]), cmds)
 
-    def test_normalize_empty(self):
-        result = _normalize([])
-        self.assertEqual(result, {})
-
-
-class TestVyOSLldpInterfacesIfaceCmds(unittest.TestCase):
-
-    def test_set_mode(self):
-        want = {"mode": "disable"}
-        cmds = _iface_cmds("eth0", want, {})
-        self.assertIn(
-            ("set", ["service", "lldp", "interface", "eth0", "mode", "disable"]),
-            cmds,
-        )
-
-    def test_set_elin(self):
-        want = {"elin": "1234567890"}
-        cmds = _iface_cmds("eth0", want, {})
-        self.assertIn(
-            ("set", ["service", "lldp", "interface", "eth0", "location", "elin", "1234567890"]),
-            cmds,
-        )
-
-    def test_set_latitude(self):
-        want = {"latitude": "33.524449N", "longitude": "22.267255E"}
-        cmds = _iface_cmds("eth0", want, {})
-        self.assertIn(
-            (
-                "set",
-                [
-                    "service",
-                    "lldp",
-                    "interface",
-                    "eth0",
-                    "location",
-                    "coordinate-based",
-                    "latitude",
-                    "33.524449N",
-                ],
-            ),
-            cmds,
-        )
-
-    def test_idempotent_mode(self):
-        want = {"mode": "disable"}
-        have = {"mode": "disable"}
-        cmds = _iface_cmds("eth0", want, have)
-        self.assertEqual(cmds, [])
-
-    def test_idempotent_elin(self):
-        want = {"elin": "1234567890"}
-        have = {"elin": "1234567890"}
-        cmds = _iface_cmds("eth0", want, have)
-        self.assertEqual(cmds, [])
-
-    def test_delete_mode_when_none(self):
-        want = {}
-        have = {"mode": "disable"}
-        cmds = _iface_cmds("eth0", want, have)
-        self.assertIn(
-            ("delete", ["service", "lldp", "interface", "eth0", "mode"]),
-            cmds,
-        )
-
-
-class TestVyOSLldpInterfacesBuildCommands(unittest.TestCase):
-
-    def _have_eth0(self):
-        return [
-            {
-                "name": "eth0",
-                "mode": "disable",
-                "location": {"elin": "1234567890"},
-            },
-        ]
-
-    def test_merged_adds_interface(self):
+    def test_replaced_does_not_touch_unrelated_interfaces(self):
+        raw_have = {"eth0": {"mode": "disable"}, "eth1": {"mode": "rx"}}
         config = [{"name": "eth0", "mode": "disable"}]
-        cmds = build_commands(config, [], "merged")
-        self.assertIn(
-            ("set", ["service", "lldp", "interface", "eth0", "mode", "disable"]),
-            cmds,
-        )
-
-    def test_merged_idempotent(self):
-        cmds = build_commands(self._have_eth0(), self._have_eth0(), "merged")
+        cmds = build_commands(config, raw_have, "replaced")
         self.assertEqual(cmds, [])
 
-    def test_deleted_no_config_removes_all(self):
-        cmds = build_commands([], self._have_eth0(), "deleted")
-        self.assertIn(
-            ("delete", ["service", "lldp", "interface", "eth0"]),
-            cmds,
-        )
+    def test_deleted_all(self):
+        cmds = build_commands([], {"eth0": {}}, "deleted")
+        self.assertEqual(cmds, [("delete", _BASE + ["eth0"])])
 
-    def test_deleted_with_config_removes_named(self):
-        config = [{"name": "eth0"}]
-        cmds = build_commands(config, self._have_eth0(), "deleted")
-        self.assertIn(
-            ("delete", ["service", "lldp", "interface", "eth0"]),
-            cmds,
-        )
+    def test_deleted_named(self):
+        cmds = build_commands([{"name": "eth0"}], {"eth0": {}}, "deleted")
+        self.assertEqual(cmds, [("delete", _BASE + ["eth0"])])
 
-    def test_deleted_idempotent_when_empty(self):
-        cmds = build_commands([], [], "deleted")
+    def test_deleted_named_nonexistent_is_noop(self):
+        cmds = build_commands([{"name": "eth99"}], {"eth0": {}}, "deleted")
         self.assertEqual(cmds, [])
 
-    def test_replaced_idempotent(self):
-        cmds = build_commands(self._have_eth0(), self._have_eth0(), "replaced")
-        self.assertEqual(cmds, [])
+    def test_overridden_removes_omitted_interface(self):
+        raw_have = {"eth0": {}, "eth1": {"mode": "rx"}}
+        cmds = build_commands([{"name": "eth0"}], raw_have, "overridden")
+        self.assertIn(("delete", _BASE + ["eth1"]), cmds)
 
-    def test_overridden_removes_unlisted(self):
-        config = [{"name": "eth1", "mode": "rx-tx"}]
-        cmds = build_commands(config, self._have_eth0(), "overridden")
-        self.assertIn(
-            ("delete", ["service", "lldp", "interface", "eth0"]),
-            cmds,
-        )
+    def test_merged_new_interface(self):
+        config = [{"name": "eth2", "mode": "tx"}]
+        cmds = build_commands(config, {}, "merged")
+        self.assertIn(("set", _BASE + ["eth2", "mode", "tx"]), cmds)
 
 
 if __name__ == "__main__":

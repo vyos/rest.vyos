@@ -31,7 +31,7 @@ options:
       mode:
         description:
           - LLDP administrative mode for this interface.
-          - C(rx-tx) sends and receives LLDP frames (default).
+          - C(rx-tx) sends and receives LLDP frames (device default).
           - C(disable) disables LLDP on this interface.
           - C(rx) receives only.
           - C(tx) transmits only.
@@ -63,9 +63,6 @@ options:
                 description: Coordinate datum type.
                 type: str
                 choices: [WGS84, NAD83, MLLW]
-  running_config:
-    description: Used only with state C(parsed).
-    type: str
   state:
     description:
       - C(merged) - Merge config with existing LLDP interface settings.
@@ -73,10 +70,8 @@ options:
       - C(overridden) - Replace config for all LLDP interfaces.
       - C(deleted) - Remove listed or all LLDP interface config.
       - C(gathered) - Read LLDP interface config from device without changes.
-      - C(rendered) - Return commands for provided config without connecting.
-      - C(parsed) - Parse running_config into structured data.
     type: str
-    choices: [merged, replaced, overridden, deleted, gathered, rendered, parsed]
+    choices: [merged, replaced, overridden, deleted, gathered]
     default: merged
 notes:
   - Targets VyOS 1.5+ exclusively. The C(mode) parameter replaces the C(enable)
@@ -129,14 +124,6 @@ gathered:
   description: Current LLDP interface configuration as structured data.
   returned: when state is gathered
   type: list
-rendered:
-  description: Commands for provided config (state=rendered).
-  returned: when state is rendered
-  type: list
-parsed:
-  description: Structured data parsed from running_config (state=parsed).
-  returned: when state is parsed
-  type: list
 saved:
   description: Whether the config was saved after changes.
   returned: when changes are applied
@@ -148,7 +135,14 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    scope_to_spec,
+)
 
 
 _BASE = ["service", "lldp", "interface"]
@@ -158,201 +152,161 @@ def _iface_base(name):
     return _BASE + [name]
 
 
+def _to_device_recursive(d):
+    """autoclean, then recursively kebab-convert every key at every
+    level. Needed because dict_op requires have's keys to already be
+    genuine device kebab-case; autoclean deliberately doesn't convert
+    keys itself (by design, since it's meant to be paired with dict_op
+    doing the conversion when comparing against a raw device have --
+    but want_device here needs to already match the shape have_device
+    is built in). Safe to recurse arbitrarily deep here since every
+    level (location, coordinate_based) is plain scalar fields, no
+    opaque tag-node values or presence-only nested structures like
+    vyos_lag_interfaces' member/arp-monitor.target.
+    """
+    cleaned = autoclean(d)
+    if not isinstance(cleaned, dict):
+        return cleaned
+    return {k.replace("_", "-"): _to_device_recursive(v) for k, v in cleaned.items()}
+
+
+def _entry_to_device(rest):
+    """Confirmed device path (service lldp interface <name>) is
+    exclusively owned by this module -- no sibling module shares it,
+    unlike interfaces/l3_interfaces/lag_interfaces' shared
+    "interfaces <type> <name>" tree. scope_to_spec is still used here
+    for consistency and defense against any field this module's own
+    argspec doesn't declare.
+    """
+    scoped = scope_to_spec(rest, _ENTRY_OPTIONS, exclude=("name",))
+    return _to_device_recursive(scoped)
+
+
+def _entry_from_device(data):
+    """from_device already recurses into nested dicts and converts
+    keys at every level -- no hand-rolling needed for a structure
+    this simple (plain scalar fields throughout, no keyed-list/tag-
+    node complexity). scope_to_spec still applied for the same
+    defensive reason as the to_device direction.
+    """
+    scoped = scope_to_spec(data, _ENTRY_OPTIONS, exclude=("name",))
+    return from_device(scoped)
+
+
 def get_running_config(vyos):
-    raw = vyos.get_config(["service", "lldp"])
-    if not raw or not isinstance(raw, dict):
-        return []
+    raw = vyos.get_config(["service", "lldp"]) or {}
+    if not isinstance(raw, dict):
+        return {}
+    iface_data = raw.get("interface")
+    return iface_data if isinstance(iface_data, dict) else {}
 
-    iface_data = raw.get("interface") or {}
-    if not isinstance(iface_data, dict):
-        return []
 
+def _device_to_argspec(raw):
     result = []
-    for name, data in sorted(iface_data.items()):
-        data = data or {}
+    for name, data in sorted((raw or {}).items()):
         entry = {"name": name}
-
-        if data.get("mode"):
-            entry["mode"] = data["mode"]
-
-        loc_data = data.get("location") or {}
-        if isinstance(loc_data, dict) and loc_data:
-            loc = {}
-            if "elin" in loc_data:
-                loc["elin"] = loc_data["elin"]
-            cb = loc_data.get("coordinate-based") or {}
-            if isinstance(cb, dict) and cb:
-                coord = {}
-                if "latitude" in cb:
-                    coord["latitude"] = cb["latitude"]
-                if "longitude" in cb:
-                    coord["longitude"] = cb["longitude"]
-                if "altitude" in cb:
-                    coord["altitude"] = int(cb["altitude"])
-                if "datum" in cb:
-                    coord["datum"] = cb["datum"]
-                if coord:
-                    loc["coordinate_based"] = coord
-            if loc:
-                entry["location"] = loc
-
+        entry.update(_entry_from_device(data or {}))
         result.append(entry)
-
     return result
 
 
-def _normalize(config):
-    result = {}
-    for entry in config or []:
-        name = entry["name"]
-        loc = entry.get("location") or {}
-        cb = loc.get("coordinate_based") or {}
-        result[name] = {
-            "mode": entry.get("mode"),
-            "elin": loc.get("elin"),
-            "latitude": cb.get("latitude"),
-            "longitude": cb.get("longitude"),
-            "altitude": cb.get("altitude"),
-            "datum": cb.get("datum"),
-        }
-    return result
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
+    config = config or []
 
-
-def _iface_cmds(name, want, have):
-    cmds = []
-    base = _iface_base(name)
-    have = have or {}
-
-    if want.get("mode") and want["mode"] != have.get("mode"):
-        cmds.append(("set", base + ["mode", want["mode"]]))
-    elif not want.get("mode") and have.get("mode"):
-        cmds.append(("delete", base + ["mode"]))
-
-    loc_base = base + ["location"]
-    if want.get("elin") and want["elin"] != have.get("elin"):
-        cmds.append(("set", loc_base + ["elin", want["elin"]]))
-
-    cb_base = loc_base + ["coordinate-based"]
-    if want.get("latitude") and want["latitude"] != have.get("latitude"):
-        cmds.append(("set", cb_base + ["latitude", want["latitude"]]))
-    if want.get("longitude") and want["longitude"] != have.get("longitude"):
-        cmds.append(("set", cb_base + ["longitude", want["longitude"]]))
-    if want.get("altitude") is not None and want["altitude"] != have.get("altitude"):
-        cmds.append(("set", cb_base + ["altitude", str(want["altitude"])]))
-    if want.get("datum") and want["datum"] != have.get("datum"):
-        cmds.append(("set", cb_base + ["datum", want["datum"]]))
-
-    return cmds
-
-
-def build_commands(config, have_raw, state):
-    cmds = []
-    have_map = _normalize(have_raw)
+    have_list = _device_to_argspec(raw_have)
+    have_by_name = {e["name"]: e for e in have_list}
+    want_by_name = {e["name"]: e for e in config if e.get("name")}
 
     if state == "deleted":
+        cmds = []
         if not config:
-            for name in have_map:
+            for name in have_by_name:
                 cmds.append(("delete", _iface_base(name)))
-        else:
-            want_map = _normalize(config)
-            for name in want_map:
-                if name in have_map:
-                    cmds.append(("delete", _iface_base(name)))
+            return cmds
+        for entry in config:
+            name = entry.get("name")
+            if name and name in have_by_name:
+                cmds.append(("delete", _iface_base(name)))
         return cmds
 
-    want_map = _normalize(config)
-
+    commands = []
     if state == "overridden":
-        for name in set(have_map) - set(want_map):
-            cmds.append(("delete", _iface_base(name)))
+        for name in set(have_by_name) - set(want_by_name):
+            commands.append(("delete", _iface_base(name)))
 
-    for name, want in want_map.items():
-        have = have_map.get(name, {})
+    for name, want_entry in want_by_name.items():
+        have_entry = have_by_name.get(name, {})
+        want_device = _entry_to_device({k: v for k, v in want_entry.items() if k != "name"})
+        have_device = _entry_to_device({k: v for k, v in have_entry.items() if k != "name"})
+        base = _iface_base(name)
 
-        if state == "replaced" and name in have_map:
-            test_cmds = _iface_cmds(name, want, have)
-            if not test_cmds:
-                continue
-            cmds.append(("delete", _iface_base(name)))
-            have = {}
+        if state in ("replaced", "overridden"):
+            commands += dict_op(want_device, have_device, base, op="purge")
+        commands += dict_op(want_device, have_device, base, op="set")
 
-        cmds += _iface_cmds(name, want, have)
+    return commands
 
-    return cmds
 
+_COORD_OPTIONS = dict(
+    latitude=dict(type="str", required=True),
+    longitude=dict(type="str", required=True),
+    altitude=dict(type="int"),
+    datum=dict(type="str", choices=["WGS84", "NAD83", "MLLW"]),
+)
+
+_LOCATION_OPTIONS = dict(
+    elin=dict(type="str"),
+    coordinate_based=dict(type="dict", options=_COORD_OPTIONS),
+)
+
+_ENTRY_OPTIONS = dict(
+    name=dict(type="str", required=True),
+    mode=dict(type="str", choices=["disable", "rx-tx", "rx", "tx"]),
+    location=dict(type="dict", options=_LOCATION_OPTIONS),
+)
 
 ARGUMENT_SPEC = dict(
-    config=dict(
-        type="list",
-        elements="dict",
-        options=dict(
-            name=dict(type="str", required=True),
-            mode=dict(type="str", choices=["disable", "rx-tx", "rx", "tx"]),
-            location=dict(
-                type="dict",
-                options=dict(
-                    elin=dict(type="str"),
-                    coordinate_based=dict(
-                        type="dict",
-                        options=dict(
-                            latitude=dict(type="str", required=True),
-                            longitude=dict(type="str", required=True),
-                            altitude=dict(type="int"),
-                            datum=dict(type="str", choices=["WGS84", "NAD83", "MLLW"]),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    ),
-    running_config=dict(type="str"),
+    config=dict(type="list", elements="dict", options=_ENTRY_OPTIONS),
     state=dict(
         type="str",
         default="merged",
-        choices=["merged", "replaced", "overridden", "deleted", "gathered", "rendered", "parsed"],
+        choices=["merged", "replaced", "overridden", "deleted", "gathered"],
     ),
 )
 
 
 def main():
-    module = AnsibleModule(
-        argument_spec=ARGUMENT_SPEC,
-        mutually_exclusive=[["config", "running_config"]],
-        required_if=[
-            ("state", "rendered", ["config"]),
-            ("state", "parsed", ["running_config"]),
-        ],
-        supports_check_mode=True,
-    )
+    module = AnsibleModule(ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
 
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    if state == "parsed":
-        module.exit_json(parsed=[])
-
-    if state == "rendered":
-        cmds = build_commands(config, [], "merged")
-        module.exit_json(rendered=cmds, commands=cmds)
-
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
+    for entry in have:
+        cast_by_spec(entry, _ENTRY_OPTIONS)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(after_raw)
+        for entry in after:
+            cast_by_spec(entry, _ENTRY_OPTIONS)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,
