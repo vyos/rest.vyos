@@ -259,6 +259,61 @@ class TestBuildCommands(VyOSModuleTestCase):
         expected = ("delete", _BASE + ["route", "192.0.2.0/24", "next-hop", "10.0.0.1", "distance"])
         self.assertIn(expected, cmds)
 
+    def test_merged_explicit_enabled_true_clears_stale_disable(self):
+        """Confirmed real gap from review: dict_op(op="set") only ever
+        walks want's own keys, so it can never reach a "disable" leaf
+        that's simply absent from want -- under "merged" (which never
+        runs a purge pass at all) there was no way to clear a
+        previously disabled next-hop. Fixed via an explicit check
+        against the original argspec-shape config for enabled: true,
+        scoped to merged specifically since replaced/overridden
+        already handle this correctly through their existing purge
+        pass."""
+        raw_have = {"route": {"192.0.2.0/24": {"next-hop": {"10.0.0.1": {"disable": {}}}}}}
+        config = [
+            {
+                "afi": "ipv4",
+                "routes": [
+                    {
+                        "dest": "192.0.2.0/24",
+                        "next_hops": [
+                            {"forward_router_address": "10.0.0.1", "enabled": True},
+                        ],
+                    },
+                ],
+            },
+        ]
+        cmds = build_commands(config, raw_have, "merged")
+        expected = ("delete", _BASE + ["route", "192.0.2.0/24", "next-hop", "10.0.0.1", "disable"])
+        self.assertIn(expected, cmds)
+
+    def test_merged_omitted_enabled_leaves_existing_disable_alone(self):
+        """enabled deliberately has no default (fixed alongside the
+        above): omitting it entirely means "no opinion", so an
+        unrelated merged update must not silently re-enable an
+        existing disabled next-hop."""
+        raw_have = {"route": {"192.0.2.0/24": {"next-hop": {"10.0.0.1": {"disable": {}}}}}}
+        config = [
+            {
+                "afi": "ipv4",
+                "routes": [
+                    {
+                        "dest": "192.0.2.0/24",
+                        "next_hops": [
+                            {"forward_router_address": "10.0.0.1", "admin_distance": 5},
+                        ],
+                    },
+                ],
+            },
+        ]
+        cmds = build_commands(config, raw_have, "merged")
+        expected = (
+            "set",
+            _BASE + ["route", "192.0.2.0/24", "next-hop", "10.0.0.1", "distance", "5"],
+        )
+        self.assertIn(expected, cmds)
+        self.assertFalse(any("disable" in str(c) for c in cmds))
+
     def test_replaced_scoped_to_named_route_only(self):
         raw_have = {
             "route": {
@@ -305,6 +360,40 @@ class TestBuildCommands(VyOSModuleTestCase):
         ]
         cmds = build_commands(config, raw_have, "overridden")
         self.assertIn(("delete", _BASE + ["route", "203.0.113.0/24"]), cmds)
+
+    def test_overridden_never_touches_unmodeled_only_route(self):
+        """Confirmed real bug: a route with only unmodeled content
+        (e.g. VyOS's "reject" leaf, not modeled by this module at
+        all) round-trips through _device_to_argspec as an empty
+        {dest: {}} entry, making it indistinguishable from a
+        genuinely-empty, safely-deletable route to dict_op's
+        overridden purge pass -- contradicting the module's own
+        documented scope guarantee ("unmodeled attributes on
+        unmodeled routes are not touched"). Distinct from a
+        genuinely-empty route (no content at all) and a fully-modeled
+        but omitted route, both of which must still be correctly
+        purged -- confirmed together in one scenario."""
+        raw_have = {
+            "route": {
+                "192.0.2.0/24": {"reject": {}},
+                "198.51.100.0/24": {},
+                "203.0.113.0/24": {"blackhole": {}},
+                "10.0.0.0/24": {"blackhole": {}},
+            },
+        }
+        config = [
+            {
+                "afi": "ipv4",
+                "routes": [
+                    {"dest": "10.0.0.0/24", "blackhole_config": {}},
+                ],
+            },
+        ]
+        cmds = build_commands(config, raw_have, "overridden")
+        self.assertFalse(any("192.0.2.0/24" in str(c) for c in cmds))
+        self.assertIn(("delete", _BASE + ["route", "198.51.100.0/24"]), cmds)
+        self.assertIn(("delete", _BASE + ["route", "203.0.113.0/24"]), cmds)
+        self.assertFalse(any("10.0.0.0/24" in str(c) and c[0] == "delete" for c in cmds))
 
     def test_deleted_named_route(self):
         cmds = build_commands(

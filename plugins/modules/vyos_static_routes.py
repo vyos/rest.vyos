@@ -65,9 +65,17 @@ options:
                 description: Administrative distance for this next-hop (1-255).
                 type: int
               enabled:
-                description: Whether this next-hop is enabled.
+                description:
+                  - Whether this next-hop is enabled.
+                  - >-
+                    Deliberately has no default: leaving it unset means
+                    "no opinion" and an existing device-side disabled
+                    state is left alone under C(merged). Explicitly
+                    setting C(true) actively clears a previously
+                    disabled next-hop, which C(merged) could otherwise
+                    never do (only C(replaced)/C(overridden) run a
+                    purge pass capable of noticing an omitted value).
                 type: bool
-                default: true
               interface:
                 description: Outgoing interface name.
                 type: str
@@ -75,7 +83,9 @@ options:
     description:
       - C(merged) - Add routes without removing existing ones.
       - C(replaced) - Replace each named route (by afi + dest) exactly as specified.
-      - C(overridden) - Replace the entire static route table.
+      - C(overridden) - Replace the module-known parts of the static route
+        table (see module scope note above; unmodeled attributes on
+        unmodeled routes are not touched).
       - C(deleted) - Remove listed or all static routes.
       - C(gathered) - Read static routes from device without changes.
     type: str
@@ -316,6 +326,82 @@ def _device_to_argspec(raw):
     return result
 
 
+def _clear_stale_disable_commands(config, norm_have):
+    """dict_op(op="set") only ever adds/updates keys present in want --
+    it structurally cannot reach a "disable" leaf that's simply absent
+    from want, so under "merged" (which never runs a purge pass at
+    all) there was no way for the generic engine to clear a previously
+    disabled next-hop, confirmed as a real gap. This checks the
+    original argspec-shape config directly (not the device-shape
+    want, where explicit True and unset/None are indistinguishable by
+    construction) for an explicit enabled: true against a next-hop
+    that's currently disabled on the device, and emits an explicit
+    delete for its "disable" leaf when the two disagree.
+
+    Not needed for replaced/overridden: their purge pass already
+    clears an omitted "disable" correctly regardless of why it's
+    omitted (purge compares the full want/have shape, not just this
+    one leaf), so calling this there would only be harmless, redundant
+    work -- it's scoped to merged specifically to avoid that.
+    """
+    cmds = []
+    for entry in config or []:
+        route_key = _ROUTE_KEY.get(entry.get("afi"))
+        if not route_key:
+            continue
+        for route in entry.get("routes") or []:
+            dest = route.get("dest")
+            if not dest:
+                continue
+            have_nhs = ((norm_have.get(route_key) or {}).get(dest) or {}).get("next-hop") or {}
+            for nh in route.get("next_hops") or []:
+                addr = nh.get("forward_router_address")
+                if addr and nh.get("enabled") is True and "disable" in (have_nhs.get(addr) or {}):
+                    cmds.append(("delete", _BASE + [route_key, dest, "next-hop", addr, "disable"]))
+    return cmds
+
+
+_MODULE_KNOWN_ROUTE_KEYS = {"blackhole", "next-hop"}
+
+
+def _route_has_unmodeled_content(raw_route_data):
+    """True if this route's raw device data has any key beyond what
+    this module models (blackhole, next-hop). Confirmed real bug
+    otherwise: such a route round-trips through _device_to_argspec as
+    an empty {dest: {}} entry, making it indistinguishable -- to
+    dict_op's overridden purge pass -- from a genuinely empty,
+    safely-deletable route, when it actually carries real, unmodeled
+    device configuration (VyOS's "reject" leaf, a top-level per-route
+    "interface", route tags/descriptions, ECMP weighting, VRF
+    leaking, BFD monitoring) that must be left alone. Checked
+    generically against any key beyond what's modeled, rather than an
+    explicit denylist, since the device schema could grow fields this
+    module was never updated to recognize.
+    """
+    if not isinstance(raw_route_data, dict):
+        return False
+    return bool(set(raw_route_data) - _MODULE_KNOWN_ROUTE_KEYS)
+
+
+def _purge_scoped_have(raw_have, norm_have):
+    """norm_have with any dest removed whose raw device data has
+    unmodeled content, so dict_op's overridden purge pass never sees
+    it as a delete candidate at all -- confirmed necessary since
+    norm_have is reconstructed via _device_to_argspec, which silently
+    drops unmodeled fields, making such a route appear identical to a
+    genuinely empty one at the point dict_op compares want vs have.
+    """
+    result = {}
+    for route_key, routes in (norm_have or {}).items():
+        raw_routes = (raw_have or {}).get(route_key) or {}
+        result[route_key] = {
+            dest: data
+            for dest, data in routes.items()
+            if not _route_has_unmodeled_content(raw_routes.get(dest))
+        }
+    return result
+
+
 def build_commands(config, raw_have, state):
     raw_have = raw_have or {}
     config = config or []
@@ -345,7 +431,7 @@ def build_commands(config, raw_have, state):
 
     commands = []
     if state == "overridden":
-        commands += dict_op(want, norm_have, _BASE, op="purge")
+        commands += dict_op(want, _purge_scoped_have(raw_have, norm_have), _BASE, op="purge")
     elif state == "replaced":
         # Scoped per individual route (afi + dest), matching every
         # other module's "replaced only touches what's named" semantic
@@ -375,6 +461,8 @@ def build_commands(config, raw_have, state):
                     _BASE + [route_key, dest],
                     op="purge",
                 )
+    elif state == "merged":
+        commands += _clear_stale_disable_commands(config, norm_have)
     commands += dict_op(want, norm_have, _BASE, op="set")
     return commands
 
@@ -382,7 +470,7 @@ def build_commands(config, raw_have, state):
 _NEXT_HOP_OPTIONS = dict(
     forward_router_address=dict(type="str", required=True),
     admin_distance=dict(type="int"),
-    enabled=dict(type="bool", default=True),
+    enabled=dict(type="bool"),
     interface=dict(type="str"),
 )
 
@@ -441,6 +529,15 @@ def main():
     commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
+        # Matches the established convention across the rest of the
+        # collection (vyos_nat, vyos_ha, vyos_snmp_server,
+        # vyos_ntp_global all confirmed to do the same): omit "after"
+        # entirely in check mode, rather than reporting have as if it
+        # were the post-change state. Confirmed real bug otherwise --
+        # this isn't merely "undefined", it actively misreports the
+        # wrong state as meaningful (e.g. an explicit enabled: true
+        # would still show the next-hop as disabled in "after",
+        # despite emitting a delete for its disable leaf).
         module.exit_json(changed=bool(commands), commands=commands, before=have)
 
     if commands:
