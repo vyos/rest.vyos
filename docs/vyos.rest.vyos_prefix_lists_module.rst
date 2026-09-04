@@ -1,11 +1,11 @@
-.. _vyos.rest.vyos_static_routes_module:
+.. _vyos.rest.vyos_prefix_lists_module:
 
 
-****************************
-vyos.rest.vyos_static_routes
-****************************
+***************************
+vyos.rest.vyos_prefix_lists
+***************************
 
-**Manage static routes on VyOS devices via REST API.**
+**Manage prefix-list configuration on VyOS devices using REST API**
 
 
 Version added: 1.0.0
@@ -17,8 +17,8 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- Manages IPv4 and IPv6 static routes on VyOS devices using the HTTPS REST API.
-- Covers blackhole routes (distance) and next-hop routes (distance, disable, outgoing interface). VyOS's static-route schema is considerably larger than this -- reject routes (an ICMP-unreachable counterpart to blackhole), a top-level per-route interface (a route resolved via an outgoing interface with no next-hop address at all), route tags, route descriptions, ECMP segment weighting, VRF leaking, and BFD monitoring on next-hops are not modeled here. That is a real, documented limitation, not an oversight.
+- Manages IPv4 and IPv6 prefix lists on VyOS via the REST API.
+- Uses REST API (``connection=httpapi``) instead of CLI.
 
 
 
@@ -47,7 +47,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>List of static route configurations grouped by address family.</div>
+                        <div>List of prefix-list configurations grouped by address family.</div>
                 </td>
             </tr>
                                 <tr>
@@ -68,14 +68,14 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Address family indicator.</div>
+                        <div>Address family identifier.</div>
                 </td>
             </tr>
             <tr>
                     <td class="elbow-placeholder"></td>
                 <td colspan="3">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>routes</b>
+                    <b>prefix_lists</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">list</span>
@@ -85,7 +85,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>List of static route entries.</div>
+                        <div>Named prefix lists.</div>
                 </td>
             </tr>
                                 <tr>
@@ -93,53 +93,16 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>blackhole_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Blackhole route configuration (silently discard matching packets).</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>distance</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">integer</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Administrative distance (1-255).</div>
-                </td>
-            </tr>
-
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>dest</b>
+                    <b>description</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>Destination prefix in CIDR notation.</div>
+                        <div>Prefix list description.</div>
                 </td>
             </tr>
             <tr>
@@ -147,7 +110,7 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>next_hops</b>
+                    <b>entries</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">list</span>
@@ -157,7 +120,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>List of next-hop addresses.</div>
+                        <div>Prefix list rules.</div>
                 </td>
             </tr>
                                 <tr>
@@ -166,46 +129,20 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>admin_distance</b>
+                    <b>action</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">integer</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Administrative distance for this next-hop (1-255).</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>enabled</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">boolean</span>
+                        <span style="color: purple">string</span>
                     </div>
                 </td>
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li>no</li>
-<<<<<<< HEAD
-                                    <li>yes</li>
-=======
-                                    <li><div style="color: blue"><b>yes</b>&nbsp;&larr;</div></li>
->>>>>>> cedca79 (T8989: new auth methods)
+                                    <li>permit</li>
+                                    <li>deny</li>
                         </ul>
                 </td>
                 <td>
-                        <div>Whether this next-hop is enabled.</div>
-<<<<<<< HEAD
-                        <div>Deliberately has no default: leaving it unset means &quot;no opinion&quot; and an existing device-side disabled state is left alone under <code>merged</code>. Explicitly setting <code>true</code> actively clears a previously disabled next-hop, which <code>merged</code> could otherwise never do (only <code>replaced</code>/<code>overridden</code> run a purge pass capable of noticing an omitted value).</div>
-=======
->>>>>>> cedca79 (T8989: new auth methods)
+                        <div>Permit or deny.</div>
                 </td>
             </tr>
             <tr>
@@ -214,7 +151,98 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>forward_router_address</b>
+                    <b>description</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Rule description.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>ge</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Minimum prefix length.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>le</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Maximum prefix length.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>prefix</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Network prefix to match.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>sequence</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                         / <span style="color: red">required</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Rule sequence number.</div>
+                </td>
+            </tr>
+
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>name</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
@@ -224,28 +252,9 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Next-hop IP address.</div>
+                        <div>Prefix list name.</div>
                 </td>
             </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>interface</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Outgoing interface name.</div>
-                </td>
-            </tr>
-
 
 
             <tr>
@@ -267,29 +276,25 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div><code>merged</code> - Add routes without removing existing ones.</div>
-                        <div><code>replaced</code> - Replace each named route (by afi + dest) exactly as specified.</div>
-<<<<<<< HEAD
-                        <div><code>overridden</code> - Replace the module-known parts of the static route table (see module scope note above; unmodeled attributes on unmodeled routes are not touched).</div>
-=======
-                        <div><code>overridden</code> - Replace the entire static route table.</div>
->>>>>>> cedca79 (T8989: new auth methods)
-                        <div><code>deleted</code> - Remove listed or all static routes.</div>
-                        <div><code>gathered</code> - Read static routes from device without changes.</div>
+                        <div>Desired state of the prefix-list configuration.</div>
+                        <div><code>merged</code> adds or updates entries without removing existing ones.</div>
+                        <div><code>replaced</code> replaces each named prefix list mentioned in config.</div>
+                        <div><code>overridden</code> replaces all prefix lists for the given AFIs.</div>
+                        <div><code>deleted</code> removes prefix lists. Without config removes all.</div>
+                        <div><code>gathered</code> returns current configuration as structured data.</div>
                 </td>
             </tr>
     </table>
     <br/>
 
 
+Notes
+-----
 
-See Also
---------
+.. note::
+   - Requires ``ansible_connection=httpapi`` with the VyOS httpapi plugin.
+   - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
 
-.. seealso::
-
-   :ref:`vyos.vyos.vyos_static_routes_module`
-      The official documentation on the **vyos.vyos.vyos_static_routes** module.
 
 
 Examples
@@ -297,30 +302,38 @@ Examples
 
 .. code-block:: yaml
 
-    - name: Merge IPv4 and IPv6 static routes
-      vyos.rest.vyos_static_routes:
+    - name: Merge prefix list configuration
+      vyos.rest.vyos_prefix_lists:
         config:
           - afi: ipv4
-            routes:
-              - dest: 192.0.2.0/24
-                next_hops:
-                  - forward_router_address: 10.0.0.1
-              - dest: 203.0.113.0/24
-                blackhole_config:
-                  distance: 200
+            prefix_lists:
+              - name: AnsibleIPv4PrefixList
+                description: PL configured by ansible
+                entries:
+                  - sequence: 2
+                    action: permit
+                    prefix: 92.168.10.0/26
+                    le: 32
+                  - sequence: 3
+                    action: deny
+                    prefix: 72.168.2.0/24
+                    ge: 26
           - afi: ipv6
-            routes:
-              - dest: 2001:db8::/32
-                next_hops:
-                  - forward_router_address: 2001:db8::1
+            prefix_lists:
+              - name: AllowIPv6Prefix
+                entries:
+                  - sequence: 5
+                    action: permit
+                    prefix: 2001:db8:8000::/35
+                    le: 37
         state: merged
 
-    - name: Delete all static routes
-      vyos.rest.vyos_static_routes:
+    - name: Delete all prefix lists
+      vyos.rest.vyos_prefix_lists:
         state: deleted
 
-    - name: Gather current static routes
-      vyos.rest.vyos_static_routes:
+    - name: Gather current prefix list configuration
+      vyos.rest.vyos_prefix_lists:
         state: gathered
 
 
@@ -348,7 +361,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changed</td>
                 <td>
-                            <div>Static route configuration after this module ran.</div>
+                            <div>Prefix list configuration after this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -363,7 +376,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-                            <div>Static route configuration before this module ran.</div>
+                            <div>Prefix list configuration before this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -393,7 +406,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when state is gathered</td>
                 <td>
-                            <div>Current static route configuration as structured data.</div>
+                            <div>Current prefix list configuration as structured data.</div>
                     <br/>
                 </td>
             </tr>

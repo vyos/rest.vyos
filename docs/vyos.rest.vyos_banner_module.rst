@@ -1,11 +1,11 @@
-.. _vyos.rest.vyos_hostname_module:
+.. _vyos.rest.vyos_banner_module:
 
 
-***********************
-vyos.rest.vyos_hostname
-***********************
+*********************
+vyos.rest.vyos_banner
+*********************
 
-**Manage the system hostname on a VyOS device via the REST API.**
+**Manage multiline banners on VyOS devices via REST API.**
 
 
 Version added: 1.0.0
@@ -17,25 +17,12 @@ Version added: 1.0.0
 
 Synopsis
 --------
-<<<<<<< HEAD
-- Manages the ``system host-name`` configuration on a VyOS device using the HTTPS REST API.
+- Manages pre-login and post-login banners on VyOS devices using the HTTPS REST API.
+- Works with ``ansible_connection=ansible.netcommon.httpapi`` (recommended) or with direct ``hostname``/``api_key`` task parameters.
+- VyOS stores banner newlines as literal ``\n`` in its config; this module handles that conversion automatically.
 
 
 
-=======
-- Manages the ``set system host-name`` configuration on a VyOS device using the HTTPS REST API.
-- Mirrors the behaviour of ``vyos.vyos.vyos_hostname`` but uses the HTTP API instead of SSH/network_cli.
-- The states ``replaced``, ``overridden`` behave identically to ``merged`` for this single-value resource.
-
-
-
-Requirements
-------------
-The below requirements are needed on the host that executes this module.
-
-- VyOS 1.3+
-
->>>>>>> cedca79 (T8989: new auth methods)
 
 Parameters
 ----------
@@ -51,8 +38,6 @@ Parameters
             <tr>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-<<<<<<< HEAD
-=======
                     <b>api_key</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -62,13 +47,12 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>API key configured on the device.</div>
+                        <div>REST API key (not needed when ansible_httpapi_api_key is set).</div>
                 </td>
             </tr>
             <tr>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
->>>>>>> cedca79 (T8989: new auth methods)
                     <b>config</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -78,32 +62,51 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Hostname configuration.</div>
+                        <div>Banner configuration.</div>
                 </td>
             </tr>
                                 <tr>
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>hostname</b>
+                    <b>banner</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li>pre-login</li>
+                                    <li>post-login</li>
+                        </ul>
+                </td>
+                <td>
+                        <div>Which banner to configure.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>text</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>System hostname (max 63 characters, no underscores).</div>
+                        <div>The banner text. Required when <em>state=merged</em> or <em>state=replaced</em>.</div>
+                        <div>Use a YAML block scalar (<code>|</code>) for multi-line banners.</div>
+                        <div>Real newline characters are converted to the <code>\n</code> escape sequence that VyOS stores internally; this is transparent to the user.</div>
                 </td>
             </tr>
 
             <tr>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-<<<<<<< HEAD
-=======
                     <b>hostname</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -113,7 +116,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>IP address or FQDN of the VyOS device (not needed with httpapi inventory).</div>
+                        <div>Device IP or FQDN (not needed with httpapi inventory).</div>
                 </td>
             </tr>
             <tr>
@@ -129,29 +132,12 @@ Parameters
                         <b>Default:</b><br/><div style="color: blue">443</div>
                 </td>
                 <td>
-                        <div>HTTPS port for the REST API.</div>
+                        <div>HTTPS port (local mode only).</div>
                 </td>
             </tr>
             <tr>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>running_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Used only with state <code>parsed</code>.</div>
-                        <div>The value should be the output of <b>show configuration commands | grep host-name</b> from the device.</div>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
->>>>>>> cedca79 (T8989: new auth methods)
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -162,29 +148,16 @@ Parameters
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li><div style="color: blue"><b>merged</b>&nbsp;&larr;</div></li>
                                     <li>replaced</li>
-                                    <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
-<<<<<<< HEAD
-=======
-                                    <li>rendered</li>
-                                    <li>parsed</li>
->>>>>>> cedca79 (T8989: new auth methods)
                         </ul>
                 </td>
                 <td>
-                        <div><code>merged</code> - Ensure the hostname is set to the value in <em>config</em>.</div>
-<<<<<<< HEAD
-                        <div><code>replaced</code> and <code>overridden</code> behave identically to <code>merged</code> for this single-value resource -- there is nothing else to distinctly replace or override when there is only one field.</div>
-                        <div><code>deleted</code> - Remove the configured hostname.</div>
-                        <div><code>gathered</code> - Read the current hostname from the device without making changes.</div>
-=======
-                        <div><code>replaced</code> - Identical to <code>merged</code> for this single-value resource.</div>
-                        <div><code>overridden</code> - Identical to <code>merged</code> for this single-value resource.</div>
-                        <div><code>deleted</code> - Remove the configured hostname (resets to default).</div>
-                        <div><code>gathered</code> - Read the current hostname from the device and return it in <em>gathered</em> without making changes.</div>
-                        <div><code>rendered</code> - Return the CLI commands for the given config without connecting to the device.</div>
-                        <div><code>parsed</code> - Parse the <code>running_config</code> string and return structured data without connecting to the device.</div>
+                        <div>Desired state of the banner configuration.</div>
+                        <div><code>merged</code> - set the banner if it differs from the current value.</div>
+                        <div><code>replaced</code> - replace the banner text unconditionally.</div>
+                        <div><code>deleted</code> - remove the banner. If <code>config.banner</code> is omitted, both pre-login and post-login banners are removed.</div>
+                        <div><code>gathered</code> - return the current banner in <em>gathered</em> without making any changes. If <code>config.banner</code> is omitted, all banners are returned.</div>
                 </td>
             </tr>
             <tr>
@@ -219,8 +192,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Validate the device&#x27;s TLS certificate.</div>
->>>>>>> cedca79 (T8989: new auth methods)
+                        <div>Validate the device TLS certificate.</div>
                 </td>
             </tr>
     </table>
@@ -233,8 +205,8 @@ See Also
 
 .. seealso::
 
-   :ref:`vyos.vyos.vyos_hostname_module`
-      The official documentation on the **vyos.vyos.vyos_hostname** module.
+   :ref:`vyos.vyos.vyos_banner_module`
+      The official documentation on the **vyos.vyos.vyos_banner** module.
 
 
 Examples
@@ -242,47 +214,48 @@ Examples
 
 .. code-block:: yaml
 
-    - name: Set hostname
-      vyos.rest.vyos_hostname:
+    - name: Set pre-login banner (merged — only changes if different)
+      vyos.rest.vyos_banner:
         config:
-          hostname: vyos-core-01
+          banner: pre-login
+          text: |
+            Junk pre-login banner
+            over multiple lines
         state: merged
 
-<<<<<<< HEAD
-    - name: Gather current hostname
-      vyos.rest.vyos_hostname:
-        state: gathered
-=======
-    - name: Replace hostname
-      vyos.rest.vyos_hostname:
+    - name: Replace post-login banner unconditionally
+      vyos.rest.vyos_banner:
         config:
-          hostname: vyos-core-02
+          banner: post-login
+          text: "Welcome. Authorised access only."
         state: replaced
 
-    - name: Gather current hostname
-      vyos.rest.vyos_hostname:
-        state: gathered
-      register: result
->>>>>>> cedca79 (T8989: new auth methods)
-
-    - name: Delete hostname configuration
-      vyos.rest.vyos_hostname:
+    - name: Remove pre-login banner only
+      vyos.rest.vyos_banner:
+        config:
+          banner: pre-login
         state: deleted
 
-<<<<<<< HEAD
-=======
-    - name: Render commands without connecting
-      vyos.rest.vyos_hostname:
+    - name: Remove all banners
+      vyos.rest.vyos_banner:
+        state: deleted
+
+    - name: Read current pre-login banner without changing it
+      vyos.rest.vyos_banner:
         config:
-          hostname: vyos-core-01
-        state: rendered
+          banner: pre-login
+        state: gathered
+      register: result
 
-    - name: Parse running config
-      vyos.rest.vyos_hostname:
-        running_config: "set system host-name 'vyos'"
-        state: parsed
+    - name: Read all banners
+      vyos.rest.vyos_banner:
+        state: gathered
+      register: result
 
->>>>>>> cedca79 (T8989: new auth methods)
+    - name: Print gathered banner
+      ansible.builtin.debug:
+        msg: "Current banner: {{ result.gathered.text }}"
+
 
 
 Return Values
@@ -308,7 +281,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changed</td>
                 <td>
-                            <div>Configuration on the device after the module ran.</div>
+                            <div>Banner configuration after the module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -323,8 +296,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-                            <div>Configuration on the device before the module ran.</div>
+                            <div>Banner configuration before the module ran.</div>
                     <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">{&#x27;banner&#x27;: &#x27;pre-login&#x27;, &#x27;text&#x27;: &#x27;Old banner text\nline two\n&#x27;}</div>
                 </td>
             </tr>
             <tr>
@@ -338,11 +313,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-<<<<<<< HEAD
-                            <div>List of API command tuples sent to the device.</div>
-=======
-                            <div>REST API commands dispatched.</div>
->>>>>>> cedca79 (T8989: new auth methods)
+                            <div>Configuration commands issued.</div>
                     <br/>
                 </td>
             </tr>
@@ -357,60 +328,10 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when state is gathered</td>
                 <td>
-                            <div>Hostname read from the device (state=gathered only).</div>
+                            <div>Current banner configuration read from the device (state=gathered).</div>
                     <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-<<<<<<< HEAD
-                    <b>response</b>
-=======
-                    <b>parsed</b>
->>>>>>> cedca79 (T8989: new auth methods)
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">dictionary</span>
-                    </div>
-                </td>
-<<<<<<< HEAD
-                <td>when changes are applied</td>
-                <td>
-                            <div>Raw API response.</div>
-=======
-                <td>when state is parsed</td>
-                <td>
-                            <div>Structured data parsed from running_config (state=parsed only).</div>
->>>>>>> cedca79 (T8989: new auth methods)
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-<<<<<<< HEAD
-                    <b>saved</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">boolean</span>
-                    </div>
-                </td>
-                <td>when changes are applied</td>
-                <td>
-                            <div>Whether the config was saved after changes.</div>
-=======
-                    <b>rendered</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is rendered</td>
-                <td>
-                            <div>CLI commands for the provided config (state=rendered only).</div>
->>>>>>> cedca79 (T8989: new auth methods)
-                    <br/>
+                        <div style="font-size: smaller"><b>Sample:</b></div>
+                        <div style="font-size: smaller; color: blue; word-wrap: break-word; word-break: break-all;">{&#x27;banner&#x27;: &#x27;pre-login&#x27;, &#x27;text&#x27;: &#x27;Current banner\nline two\n&#x27;}</div>
                 </td>
             </tr>
     </table>

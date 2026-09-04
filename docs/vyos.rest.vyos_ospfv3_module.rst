@@ -1,11 +1,11 @@
-.. _vyos.rest.vyos_static_routes_module:
+.. _vyos.rest.vyos_ospfv3_module:
 
 
-****************************
-vyos.rest.vyos_static_routes
-****************************
+*********************
+vyos.rest.vyos_ospfv3
+*********************
 
-**Manage static routes on VyOS devices via REST API.**
+**Manage OSPFv3 configuration on VyOS devices using REST API**
 
 
 Version added: 1.0.0
@@ -17,8 +17,8 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- Manages IPv4 and IPv6 static routes on VyOS devices using the HTTPS REST API.
-- Covers blackhole routes (distance) and next-hop routes (distance, disable, outgoing interface). VyOS's static-route schema is considerably larger than this -- reject routes (an ICMP-unreachable counterpart to blackhole), a top-level per-route interface (a route resolved via an outgoing interface with no next-hop address at all), route tags, route descriptions, ECMP segment weighting, VRF leaking, and BFD monitoring on next-hops are not modeled here. That is a real, documented limitation, not an oversight.
+- Manages OSPFv3 configuration on VyOS devices via the REST API.
+- Uses REST API (``connection=httpapi``) instead of CLI.
 
 
 
@@ -40,114 +40,20 @@ Parameters
                     <b>config</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">list</span>
-                         / <span style="color: purple">elements=dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>List of static route configurations grouped by address family.</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="3">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>afi</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
-                    </div>
-                </td>
-                <td>
-                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li>ipv4</li>
-                                    <li>ipv6</li>
-                        </ul>
-                </td>
-                <td>
-                        <div>Address family indicator.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="3">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>routes</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">list</span>
-                         / <span style="color: purple">elements=dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>List of static route entries.</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>blackhole_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
                         <span style="color: purple">dictionary</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>Blackhole route configuration (silently discard matching packets).</div>
+                        <div>OSPFv3 configuration.</div>
                 </td>
             </tr>
                                 <tr>
                     <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
+                <td colspan="3">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>distance</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">integer</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Administrative distance (1-255).</div>
-                </td>
-            </tr>
-
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>dest</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Destination prefix in CIDR notation.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>next_hops</b>
+                    <b>areas</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">list</span>
@@ -157,7 +63,77 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>List of next-hop addresses.</div>
+                        <div>OSPFv3 areas.</div>
+                </td>
+            </tr>
+                                <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>area_id</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                         / <span style="color: red">required</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Area identity.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>export_list</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Name of export-list.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>import_list</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Name of import-list.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>range</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">list</span>
+                         / <span style="color: purple">elements=dictionary</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Summarize routes matching prefix.</div>
                 </td>
             </tr>
                                 <tr>
@@ -166,16 +142,17 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>admin_distance</b>
+                    <b>address</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">integer</span>
+                        <span style="color: purple">string</span>
+                         / <span style="color: red">required</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>Administrative distance for this next-hop (1-255).</div>
+                        <div>IPv6 prefix.</div>
                 </td>
             </tr>
             <tr>
@@ -184,7 +161,7 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>enabled</b>
+                    <b>advertise</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">boolean</span>
@@ -193,19 +170,11 @@ Parameters
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li>no</li>
-<<<<<<< HEAD
                                     <li>yes</li>
-=======
-                                    <li><div style="color: blue"><b>yes</b>&nbsp;&larr;</div></li>
->>>>>>> cedca79 (T8989: new auth methods)
                         </ul>
                 </td>
                 <td>
-                        <div>Whether this next-hop is enabled.</div>
-<<<<<<< HEAD
-                        <div>Deliberately has no default: leaving it unset means &quot;no opinion&quot; and an existing device-side disabled state is left alone under <code>merged</code>. Explicitly setting <code>true</code> actively clears a previously disabled next-hop, which <code>merged</code> could otherwise never do (only <code>replaced</code>/<code>overridden</code> run a purge pass capable of noticing an omitted value).</div>
-=======
->>>>>>> cedca79 (T8989: new auth methods)
+                        <div>Advertise this range.</div>
                 </td>
             </tr>
             <tr>
@@ -214,38 +183,116 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>forward_router_address</b>
+                    <b>not_advertise</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
+                        <span style="color: purple">boolean</span>
                     </div>
                 </td>
                 <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li>no</li>
+                                    <li>yes</li>
+                        </ul>
                 </td>
                 <td>
-                        <div>Next-hop IP address.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>interface</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Outgoing interface name.</div>
+                        <div>Do not advertise this range.</div>
                 </td>
             </tr>
 
+
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="3">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>parameters</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">dictionary</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>OSPFv3 global parameters.</div>
+                </td>
+            </tr>
+                                <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>router_id</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Router ID (IPv4 address format).</div>
+                </td>
+            </tr>
+
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="3">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>redistribute</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">list</span>
+                         / <span style="color: purple">elements=dictionary</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Redistribute routes from another protocol.</div>
+                </td>
+            </tr>
+                                <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>route_map</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Route map to apply.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="2">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>route_type</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li>bgp</li>
+                                    <li>connected</li>
+                                    <li>kernel</li>
+                                    <li>ripng</li>
+                                    <li>static</li>
+                        </ul>
+                </td>
+                <td>
+                        <div>Protocol to redistribute.</div>
+                </td>
+            </tr>
 
 
             <tr>
@@ -261,35 +308,29 @@ Parameters
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li><div style="color: blue"><b>merged</b>&nbsp;&larr;</div></li>
                                     <li>replaced</li>
-                                    <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
                         </ul>
                 </td>
                 <td>
-                        <div><code>merged</code> - Add routes without removing existing ones.</div>
-                        <div><code>replaced</code> - Replace each named route (by afi + dest) exactly as specified.</div>
-<<<<<<< HEAD
-                        <div><code>overridden</code> - Replace the module-known parts of the static route table (see module scope note above; unmodeled attributes on unmodeled routes are not touched).</div>
-=======
-                        <div><code>overridden</code> - Replace the entire static route table.</div>
->>>>>>> cedca79 (T8989: new auth methods)
-                        <div><code>deleted</code> - Remove listed or all static routes.</div>
-                        <div><code>gathered</code> - Read static routes from device without changes.</div>
+                        <div>Desired state of the OSPFv3 configuration.</div>
+                        <div><code>merged</code> adds or updates without removing existing config.</div>
+                        <div><code>replaced</code> replaces the entire OSPFv3 configuration.</div>
+                        <div><code>deleted</code> removes OSPFv3 configuration.</div>
+                        <div><code>gathered</code> returns current configuration as structured data.</div>
                 </td>
             </tr>
     </table>
     <br/>
 
 
+Notes
+-----
 
-See Also
---------
+.. note::
+   - Requires ``ansible_connection=httpapi`` with the VyOS httpapi plugin.
+   - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
 
-.. seealso::
-
-   :ref:`vyos.vyos.vyos_static_routes_module`
-      The official documentation on the **vyos.vyos.vyos_static_routes** module.
 
 
 Examples
@@ -297,30 +338,28 @@ Examples
 
 .. code-block:: yaml
 
-    - name: Merge IPv4 and IPv6 static routes
-      vyos.rest.vyos_static_routes:
+    - name: Merge OSPFv3 configuration
+      vyos.rest.vyos_ospfv3:
         config:
-          - afi: ipv4
-            routes:
-              - dest: 192.0.2.0/24
-                next_hops:
-                  - forward_router_address: 10.0.0.1
-              - dest: 203.0.113.0/24
-                blackhole_config:
-                  distance: 200
-          - afi: ipv6
-            routes:
-              - dest: 2001:db8::/32
-                next_hops:
-                  - forward_router_address: 2001:db8::1
+          parameters:
+            router_id: 192.0.2.10
+          redistribute:
+            - route_type: bgp
+          areas:
+            - area_id: "2"
+              export_list: export1
+              import_list: import1
+              range:
+                - address: "2001:db10::/32"
+                - address: "2001:db20::/32"
         state: merged
 
-    - name: Delete all static routes
-      vyos.rest.vyos_static_routes:
+    - name: Delete all OSPFv3 configuration
+      vyos.rest.vyos_ospfv3:
         state: deleted
 
-    - name: Gather current static routes
-      vyos.rest.vyos_static_routes:
+    - name: Gather current OSPFv3 configuration
+      vyos.rest.vyos_ospfv3:
         state: gathered
 
 
@@ -343,12 +382,12 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                     <b>after</b>
                     <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
                     <div style="font-size: small">
-                      <span style="color: purple">list</span>
+                      <span style="color: purple">dictionary</span>
                     </div>
                 </td>
                 <td>when changed</td>
                 <td>
-                            <div>Static route configuration after this module ran.</div>
+                            <div>OSPFv3 configuration after this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -358,12 +397,12 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                     <b>before</b>
                     <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
                     <div style="font-size: small">
-                      <span style="color: purple">list</span>
+                      <span style="color: purple">dictionary</span>
                     </div>
                 </td>
                 <td>always</td>
                 <td>
-                            <div>Static route configuration before this module ran.</div>
+                            <div>OSPFv3 configuration before this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -388,12 +427,12 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                     <b>gathered</b>
                     <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
                     <div style="font-size: small">
-                      <span style="color: purple">list</span>
+                      <span style="color: purple">dictionary</span>
                     </div>
                 </td>
                 <td>when state is gathered</td>
                 <td>
-                            <div>Current static route configuration as structured data.</div>
+                            <div>Current OSPFv3 configuration as structured data.</div>
                     <br/>
                 </td>
             </tr>

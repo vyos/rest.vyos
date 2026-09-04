@@ -1,11 +1,11 @@
-.. _vyos.rest.vyos_static_routes_module:
+.. _vyos.rest.vyos_interfaces_module:
 
 
-****************************
-vyos.rest.vyos_static_routes
-****************************
+*************************
+vyos.rest.vyos_interfaces
+*************************
 
-**Manage static routes on VyOS devices via REST API.**
+**Manage interface configuration on VyOS devices via REST API.**
 
 
 Version added: 1.0.0
@@ -17,8 +17,8 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- Manages IPv4 and IPv6 static routes on VyOS devices using the HTTPS REST API.
-- Covers blackhole routes (distance) and next-hop routes (distance, disable, outgoing interface). VyOS's static-route schema is considerably larger than this -- reject routes (an ICMP-unreachable counterpart to blackhole), a top-level per-route interface (a route resolved via an outgoing interface with no next-hop address at all), route tags, route descriptions, ECMP segment weighting, VRF leaking, and BFD monitoring on next-hops are not modeled here. That is a real, documented limitation, not an oversight.
+- Manages L2 interface configuration (description, MTU, speed, duplex, enabled) on VyOS devices using the HTTPS REST API.
+- IP address configuration is handled by :ref:`vyos.rest.vyos_l3_interfaces <vyos.rest.vyos_l3_interfaces_module>`.
 
 
 
@@ -30,12 +30,12 @@ Parameters
 
     <table  border=0 cellpadding=0 class="documentation-table">
         <tr>
-            <th colspan="4">Parameter</th>
+            <th colspan="2">Parameter</th>
             <th>Choices/<font color="blue">Defaults</font></th>
             <th width="100%">Comments</th>
         </tr>
             <tr>
-                <td colspan="4">
+                <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>config</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
@@ -47,140 +47,47 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>List of static route configurations grouped by address family.</div>
+                        <div>List of interface configurations.</div>
                 </td>
             </tr>
                                 <tr>
                     <td class="elbow-placeholder"></td>
-                <td colspan="3">
+                <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>afi</b>
+                    <b>description</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Interface description.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>duplex</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
                     </div>
                 </td>
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li>ipv4</li>
-                                    <li>ipv6</li>
+                                    <li>auto</li>
+                                    <li>full</li>
+                                    <li>half</li>
                         </ul>
                 </td>
                 <td>
-                        <div>Address family indicator.</div>
+                        <div>Interface duplex setting.</div>
                 </td>
             </tr>
             <tr>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="3">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>routes</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">list</span>
-                         / <span style="color: purple">elements=dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>List of static route entries.</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>blackhole_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Blackhole route configuration (silently discard matching packets).</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>distance</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">integer</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Administrative distance (1-255).</div>
-                </td>
-            </tr>
-
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>dest</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                         / <span style="color: red">required</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Destination prefix in CIDR notation.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>next_hops</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">list</span>
-                         / <span style="color: purple">elements=dictionary</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>List of next-hop addresses.</div>
-                </td>
-            </tr>
-                                <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>admin_distance</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">integer</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Administrative distance for this next-hop (1-255).</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
@@ -193,28 +100,34 @@ Parameters
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li>no</li>
-<<<<<<< HEAD
-                                    <li>yes</li>
-=======
                                     <li><div style="color: blue"><b>yes</b>&nbsp;&larr;</div></li>
->>>>>>> cedca79 (T8989: new auth methods)
                         </ul>
                 </td>
                 <td>
-                        <div>Whether this next-hop is enabled.</div>
-<<<<<<< HEAD
-                        <div>Deliberately has no default: leaving it unset means &quot;no opinion&quot; and an existing device-side disabled state is left alone under <code>merged</code>. Explicitly setting <code>true</code> actively clears a previously disabled next-hop, which <code>merged</code> could otherwise never do (only <code>replaced</code>/<code>overridden</code> run a purge pass capable of noticing an omitted value).</div>
-=======
->>>>>>> cedca79 (T8989: new auth methods)
+                        <div>Whether the interface is enabled. False sets the disable flag.</div>
                 </td>
             </tr>
             <tr>
                     <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>mtu</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Interface MTU.</div>
+                </td>
+            </tr>
+            <tr>
                     <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>forward_router_address</b>
+                    <b>name</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
@@ -224,32 +137,36 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Next-hop IP address.</div>
+                        <div>Full interface name (e.g. eth0, bond0, lo).</div>
                 </td>
             </tr>
             <tr>
                     <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>interface</b>
+                    <b>speed</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
                         <span style="color: purple">string</span>
                     </div>
                 </td>
                 <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li>auto</li>
+                                    <li>10</li>
+                                    <li>100</li>
+                                    <li>1000</li>
+                                    <li>2500</li>
+                                    <li>10000</li>
+                        </ul>
                 </td>
                 <td>
-                        <div>Outgoing interface name.</div>
+                        <div>Interface speed setting.</div>
                 </td>
             </tr>
 
-
-
             <tr>
-                <td colspan="4">
+                <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
@@ -267,15 +184,11 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div><code>merged</code> - Add routes without removing existing ones.</div>
-                        <div><code>replaced</code> - Replace each named route (by afi + dest) exactly as specified.</div>
-<<<<<<< HEAD
-                        <div><code>overridden</code> - Replace the module-known parts of the static route table (see module scope note above; unmodeled attributes on unmodeled routes are not touched).</div>
-=======
-                        <div><code>overridden</code> - Replace the entire static route table.</div>
->>>>>>> cedca79 (T8989: new auth methods)
-                        <div><code>deleted</code> - Remove listed or all static routes.</div>
-                        <div><code>gathered</code> - Read static routes from device without changes.</div>
+                        <div><code>merged</code> - Merge config with existing interface settings.</div>
+                        <div><code>replaced</code> - Replace config for listed interfaces.</div>
+                        <div><code>overridden</code> - Replace config for all interfaces.</div>
+                        <div><code>deleted</code> - Remove listed interface config or all interface config.</div>
+                        <div><code>gathered</code> - Read interface config from device without changes.</div>
                 </td>
             </tr>
     </table>
@@ -288,8 +201,10 @@ See Also
 
 .. seealso::
 
-   :ref:`vyos.vyos.vyos_static_routes_module`
-      The official documentation on the **vyos.vyos.vyos_static_routes** module.
+   :ref:`vyos.vyos.vyos_interfaces_module`
+      The official documentation on the **vyos.vyos.vyos_interfaces** module.
+   :ref:`vyos.rest.vyos_l3_interfaces_module`
+      The official documentation on the **vyos.rest.vyos_l3_interfaces** module.
 
 
 Examples
@@ -297,30 +212,30 @@ Examples
 
 .. code-block:: yaml
 
-    - name: Merge IPv4 and IPv6 static routes
-      vyos.rest.vyos_static_routes:
+    - name: Merge interface configuration
+      vyos.rest.vyos_interfaces:
         config:
-          - afi: ipv4
-            routes:
-              - dest: 192.0.2.0/24
-                next_hops:
-                  - forward_router_address: 10.0.0.1
-              - dest: 203.0.113.0/24
-                blackhole_config:
-                  distance: 200
-          - afi: ipv6
-            routes:
-              - dest: 2001:db8::/32
-                next_hops:
-                  - forward_router_address: 2001:db8::1
+          - name: eth0
+            description: Management interface
+            mtu: 1500
+            enabled: true
         state: merged
 
-    - name: Delete all static routes
-      vyos.rest.vyos_static_routes:
+    - name: Disable an interface
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth1
+            enabled: false
+        state: merged
+
+    - name: Delete interface description
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth0
         state: deleted
 
-    - name: Gather current static routes
-      vyos.rest.vyos_static_routes:
+    - name: Gather current interface configuration
+      vyos.rest.vyos_interfaces:
         state: gathered
 
 
@@ -348,7 +263,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when changed</td>
                 <td>
-                            <div>Static route configuration after this module ran.</div>
+                            <div>Interface configuration after this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -363,7 +278,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>always</td>
                 <td>
-                            <div>Static route configuration before this module ran.</div>
+                            <div>Interface configuration before this module ran.</div>
                     <br/>
                 </td>
             </tr>
@@ -393,7 +308,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>when state is gathered</td>
                 <td>
-                            <div>Current static route configuration as structured data.</div>
+                            <div>Current interface configuration as structured data.</div>
                     <br/>
                 </td>
             </tr>
