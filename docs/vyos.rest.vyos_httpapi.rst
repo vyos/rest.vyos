@@ -57,12 +57,175 @@ Parameters
                         <div>Set <code>ansible_httpapi_api_key</code> in inventory or the <code>VYOS_API_KEY</code> environment variable.</div>
                 </td>
             </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>auth_method</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li><div style="color: blue"><b>key</b>&nbsp;&larr;</div></li>
+                                    <li>header</li>
+                                    <li>bearer</li>
+                                    <li>mtls</li>
+                                    <li>oidc</li>
+                        </ul>
+                </td>
+                    <td>
+                                <div>var: ansible_httpapi_vyos_auth_method</div>
+                                <div>var: ansible_vyos_auth_method</div>
+                    </td>
+                <td>
+                        <div>Authentication method to use.</div>
+                        <div><code>key</code> sends the API key as a form field (default, backward-compatible).</div>
+                        <div><code>header</code> sends the API key as an <code>X-API-Key</code> header.</div>
+                        <div><code>bearer</code> exchanges the API key for a short-lived JWT via <code>POST /token</code> and sends it as an Authorization Bearer header for subsequent requests.</div>
+                        <div><code>mtls</code> uses mutual TLS client certificate authentication. No API key is sent. Requires <code>ansible_httpapi_client_cert</code> and <code>ansible_httpapi_client_key</code> to be set at the connection level.</div>
+                        <div><code>oidc</code> fetches a Bearer token from an external identity provider using the OAuth2 client credentials grant and sends it as an Authorization Bearer header. Requires <code>ansible_vyos_oidc_token_url</code>, <code>ansible_vyos_oidc_client_id</code>, and <code>ansible_vyos_oidc_client_secret</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_client_id</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                                <div>var: ansible_vyos_oidc_client_id</div>
+                    </td>
+                <td>
+                        <div>OAuth2 client ID for the client credentials grant.</div>
+                        <div>Required when <code>auth_method=oidc</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_client_secret</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                                <div>var: ansible_vyos_oidc_client_secret</div>
+                    </td>
+                <td>
+                        <div>OAuth2 client secret for the client credentials grant.</div>
+                        <div>Required when <code>auth_method=oidc</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_token_url</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                                <div>var: ansible_vyos_oidc_token_url</div>
+                    </td>
+                <td>
+                        <div>Full URL of the OAuth2/OIDC token endpoint.</div>
+                        <div>Required when <code>auth_method=oidc</code>.</div>
+                </td>
+            </tr>
     </table>
     <br/>
 
 
+Notes
+-----
+
+.. note::
+   - Bearer tokens are cached in memory for the duration of the connection and refreshed automatically 30 seconds before expiry.
+   - Token expiry is controlled on the device via ``set service https api rest authentication expiration <seconds>``.
+   - For mTLS, set ``ansible_httpapi_client_cert`` and ``ansible_httpapi_client_key`` at the connection level. The netcommon httpapi connection plugin handles the TLS handshake automatically.
+   - OIDC tokens are cached and refreshed using the ``expires_in`` value returned by the identity provider.
 
 
+
+Examples
+--------
+
+.. code-block:: yaml
+
+    # inventory.yml - form-field API key (default, backward-compatible)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+
+    # inventory.yml - X-API-Key header
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+          ansible_vyos_auth_method: header
+
+    # inventory.yml - Bearer token (JWT)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+          ansible_vyos_auth_method: bearer
+
+    # inventory.yml - mTLS client certificate
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_vyos_auth_method: mtls
+          ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
+          ansible_httpapi_client_key: /etc/ansible/certs/client.key
+
+    # inventory.yml - OIDC (Keycloak client credentials)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_vyos_auth_method: oidc
+          ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
+          ansible_vyos_oidc_client_id: vyos-api
+          ansible_vyos_oidc_client_secret: mysecret
 
 
 
