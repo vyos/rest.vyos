@@ -142,7 +142,6 @@ Parameters
                     </td>
                 <td>
                         <div>Full URL of the OAuth2/OIDC token endpoint.</div>
-                        <div>E.g. <code>https://keycloak.example.com/realms/vyos/protocol/openid-connect/token</code>.</div>
                         <div>Required when <code>auth_method=oidc</code>.</div>
                 </td>
             </tr>
@@ -161,6 +160,72 @@ Notes
 
 
 
+Examples
+--------
+
+.. code-block:: yaml
+
+    # inventory.yml - form-field API key (default, backward-compatible)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+
+    # inventory.yml - X-API-Key header
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+          ansible_vyos_auth_method: header
+
+    # inventory.yml - Bearer token (JWT)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_httpapi_api_key: mysecretkey
+          ansible_vyos_auth_method: bearer
+
+    # inventory.yml - mTLS client certificate
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_vyos_auth_method: mtls
+          ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
+          ansible_httpapi_client_key: /etc/ansible/certs/client.key
+
+    # inventory.yml - OIDC (Keycloak client credentials)
+    all:
+      hosts:
+        vyos01:
+          ansible_host: 192.168.1.1
+          ansible_connection: ansible.netcommon.httpapi
+          ansible_network_os: vyos.rest.vyos
+          ansible_httpapi_use_ssl: true
+          ansible_httpapi_validate_certs: false
+          ansible_vyos_auth_method: oidc
+          ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
+          ansible_vyos_oidc_client_id: vyos-api
+          ansible_vyos_oidc_client_secret: mysecret
 
 
 

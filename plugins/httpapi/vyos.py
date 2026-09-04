@@ -62,7 +62,6 @@ options:
     type: str
     description:
       - Full URL of the OAuth2/OIDC token endpoint.
-      - E.g. C(https://keycloak.example.com/realms/vyos/protocol/openid-connect/token).
       - Required when C(auth_method=oidc).
     vars:
       - name: ansible_vyos_oidc_token_url
@@ -90,68 +89,70 @@ notes:
     the TLS handshake automatically.
   - OIDC tokens are cached and refreshed using the C(expires_in) value
     returned by the identity provider.
-examples: |
-  # inventory.yml — form-field API key (default, backward-compatible)
-  all:
-    hosts:
-      vyos01:
-        ansible_host: 192.168.1.1
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: vyos.rest.vyos
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: false
-        ansible_httpapi_api_key: mysecretkey
+"""
 
-  # inventory.yml — X-API-Key header
-  all:
-    hosts:
-      vyos01:
-        ansible_host: 192.168.1.1
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: vyos.rest.vyos
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: false
-        ansible_httpapi_api_key: mysecretkey
-        ansible_vyos_auth_method: header
+EXAMPLES = r"""
+# inventory.yml - form-field API key (default, backward-compatible)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
 
-  # inventory.yml — Bearer token (JWT)
-  all:
-    hosts:
-      vyos01:
-        ansible_host: 192.168.1.1
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: vyos.rest.vyos
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: false
-        ansible_httpapi_api_key: mysecretkey
-        ansible_vyos_auth_method: bearer
+# inventory.yml - X-API-Key header
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
+      ansible_vyos_auth_method: header
 
-  # inventory.yml — mTLS client certificate
-  all:
-    hosts:
-      vyos01:
-        ansible_host: 192.168.1.1
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: vyos.rest.vyos
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: false
-        ansible_vyos_auth_method: mtls
-        ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
-        ansible_httpapi_client_key: /etc/ansible/certs/client.key
+# inventory.yml - Bearer token (JWT)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
+      ansible_vyos_auth_method: bearer
 
-  # inventory.yml — OIDC (Keycloak client credentials)
-  all:
-    hosts:
-      vyos01:
-        ansible_host: 192.168.1.1
-        ansible_connection: ansible.netcommon.httpapi
-        ansible_network_os: vyos.rest.vyos
-        ansible_httpapi_use_ssl: true
-        ansible_httpapi_validate_certs: false
-        ansible_vyos_auth_method: oidc
-        ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
-        ansible_vyos_oidc_client_id: vyos-api
-        ansible_vyos_oidc_client_secret: mysecret
+# inventory.yml - mTLS client certificate
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_vyos_auth_method: mtls
+      ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
+      ansible_httpapi_client_key: /etc/ansible/certs/client.key
+
+# inventory.yml - OIDC (Keycloak client credentials)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_vyos_auth_method: oidc
+      ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
+      ansible_vyos_oidc_client_id: vyos-api
+      ansible_vyos_oidc_client_secret: mysecret
 """
 
 import json
@@ -161,13 +162,13 @@ import traceback
 
 try:
     from urllib.parse import urlencode
-    from urllib.request import Request, urlopen
 except ImportError:
     from urllib import urlencode
 
 from ansible.errors import AnsibleConnectionFailure
 from ansible.module_utils._text import to_text
 from ansible.module_utils.connection import ConnectionError
+from ansible.module_utils.urls import open_url
 from ansible.plugins.httpapi import HttpApiBase
 
 
@@ -204,7 +205,7 @@ class HttpApi(HttpApiBase):
         return exc
 
     def _get_api_key(self):
-        """Read the API key — option, env var, or fail clearly."""
+        """Read the API key - option, env var, or fail clearly."""
         try:
             key = self.get_option("api_key")
         except Exception:
@@ -292,13 +293,14 @@ class HttpApi(HttpApiBase):
         ).encode("utf-8")
 
         try:
-            req = Request(
+            resp = open_url(
                 token_url,
                 data=body,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+                timeout=10,
             )
-            with urlopen(req, timeout=10) as resp:
-                raw = resp.read().decode("utf-8")
+            raw = resp.read().decode("utf-8")
         except Exception as exc:
             raise ConnectionError(
                 "OIDC token fetch failed from {0}: {1}".format(token_url, exc),
@@ -375,7 +377,7 @@ class HttpApi(HttpApiBase):
                 )
 
             elif auth_method == "mtls":
-                # No API key sent — authentication is via client certificate
+                # No API key sent - authentication is via client certificate
                 # configured at the connection level via ansible_httpapi_client_cert
                 # and ansible_httpapi_client_key.
                 form_data = urlencode({"data": body})
@@ -447,7 +449,7 @@ class HttpApi(HttpApiBase):
             )
 
     def get_info(self):
-        """GET /info — the one unauthenticated endpoint."""
+        """GET /info - the one unauthenticated endpoint."""
         try:
             response, response_data = self.connection.send(
                 "/info",
