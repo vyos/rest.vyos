@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Unit tests for plugins/httpapi/vyos.py
 
-Tests cover all three auth methods (key, header, bearer) and token
+Tests cover all five auth methods (key, header, bearer, mtls, oidc) and token
 caching behaviour. The Ansible connection layer is mocked so no
 real device is needed.
 """
@@ -29,72 +29,70 @@ def _make_response(payload, status=200):
     return resp, BytesIO(json.dumps(payload).encode())
 
 
-class TestHttpApiInit(unittest.TestCase):
-    def _plugin(self, auth_method="key", api_key="testkey"):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "api_key": api_key,
-            "auth_method": auth_method,
-        }.get(opt)
-        return plugin
+def _make_plugin(auth_method="key", api_key="testkey", **extra):
+    """Create a plugin instance with mocked connection and options."""
+    conn = MagicMock()
+    plugin = HttpApi(conn)
+    options = {"api_key": api_key, "auth_method": auth_method}
+    options.update(extra)
 
+    def _get_option(opt):
+        return options.get(opt)
+
+    plugin.get_option = _get_option
+    return plugin
+
+
+class TestHttpApiInit(unittest.TestCase):
     def test_bearer_token_initially_none(self):
-        plugin = self._plugin()
+        plugin = _make_plugin()
         self.assertIsNone(plugin._bearer_token)
         self.assertEqual(plugin._bearer_token_expiry, 0)
 
-    def test_logout_clears_token(self):
-        plugin = self._plugin()
+    def test_oidc_token_initially_none(self):
+        plugin = _make_plugin()
+        self.assertIsNone(plugin._oidc_token)
+        self.assertEqual(plugin._oidc_token_expiry, 0)
+
+    def test_logout_clears_all_tokens(self):
+        plugin = _make_plugin()
         plugin._bearer_token = "sometoken"
         plugin._bearer_token_expiry = 9999999999
+        plugin._oidc_token = "oidctoken"
+        plugin._oidc_token_expiry = 9999999999
         plugin.logout()
         self.assertIsNone(plugin._bearer_token)
         self.assertEqual(plugin._bearer_token_expiry, 0)
+        self.assertIsNone(plugin._oidc_token)
+        self.assertEqual(plugin._oidc_token_expiry, 0)
 
 
 class TestGetApiKey(unittest.TestCase):
-    def _plugin(self, key=None, env_key=None):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: key if opt == "api_key" else "key"
-        if env_key is not None:
-            import os
-
-            os.environ["VYOS_API_KEY"] = env_key
-        return plugin
-
     def tearDown(self):
         import os
 
         os.environ.pop("VYOS_API_KEY", None)
 
     def test_returns_option_key(self):
-        plugin = self._plugin(key="mykey")
+        plugin = _make_plugin(api_key="mykey")
         self.assertEqual(plugin._get_api_key(), "mykey")
 
     def test_falls_back_to_env_var(self):
-        plugin = self._plugin(key=None, env_key="envkey")
+        import os
+
+        os.environ["VYOS_API_KEY"] = "envkey"
+        plugin = _make_plugin(api_key=None)
         self.assertEqual(plugin._get_api_key(), "envkey")
 
     def test_raises_when_no_key(self):
-        plugin = self._plugin(key=None)
+        plugin = _make_plugin(api_key=None)
         with self.assertRaises(ConnectionError):
             plugin._get_api_key()
 
 
 class TestSendRequestKeyMethod(unittest.TestCase):
-    def _plugin(self, auth_method="key", api_key="testkey"):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "api_key": api_key,
-            "auth_method": auth_method,
-        }.get(opt)
-        return plugin
-
     def test_key_method_sends_form_field(self):
-        plugin = self._plugin(auth_method="key")
+        plugin = _make_plugin(auth_method="key", api_key="testkey")
         plugin.connection.send.return_value = _make_response(
             {"success": True, "data": {"host-name": "vyos"}, "error": None},
         )
@@ -105,7 +103,7 @@ class TestSendRequestKeyMethod(unittest.TestCase):
         self.assertNotIn("X-API-Key", call_kwargs[1].get("headers", {}))
 
     def test_key_method_raises_on_success_false(self):
-        plugin = self._plugin(auth_method="key")
+        plugin = _make_plugin(auth_method="key")
         plugin.connection.send.return_value = _make_response(
             {"success": False, "error": "Invalid key", "data": None},
         )
@@ -115,27 +113,17 @@ class TestSendRequestKeyMethod(unittest.TestCase):
 
 
 class TestSendRequestHeaderMethod(unittest.TestCase):
-    def _plugin(self, api_key="testkey"):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "api_key": api_key,
-            "auth_method": "header",
-        }.get(opt)
-        return plugin
-
     def test_header_method_sends_x_api_key_header(self):
-        plugin = self._plugin()
+        plugin = _make_plugin(auth_method="header", api_key="testkey")
         plugin.connection.send.return_value = _make_response(
             {"success": True, "data": {}, "error": None},
         )
         plugin.send_request("/retrieve", op="showConfig", path=[])
         call_kwargs = plugin.connection.send.call_args[1]
         self.assertEqual(call_kwargs["headers"]["X-API-Key"], "testkey")
-        self.assertNotIn("key=", call_kwargs["data"])
 
     def test_header_method_no_key_in_body(self):
-        plugin = self._plugin()
+        plugin = _make_plugin(auth_method="header", api_key="testkey")
         plugin.connection.send.return_value = _make_response(
             {"success": True, "data": {}, "error": None},
         )
@@ -145,15 +133,6 @@ class TestSendRequestHeaderMethod(unittest.TestCase):
 
 
 class TestSendRequestBearerMethod(unittest.TestCase):
-    def _plugin(self, api_key="testkey"):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "api_key": api_key,
-            "auth_method": "bearer",
-        }.get(opt)
-        return plugin
-
     def _token_response(self, token="jwt123", expires_in=3600):
         return _make_response(
             {
@@ -169,17 +148,15 @@ class TestSendRequestBearerMethod(unittest.TestCase):
         )
 
     def test_bearer_fetches_token_then_sends_auth_header(self):
-        plugin = self._plugin()
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
         plugin.connection.send.side_effect = [
             self._token_response(),
             self._retrieve_response(),
         ]
         result = plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertTrue(result["success"])
-        # First call should be to /token
         first_call = plugin.connection.send.call_args_list[0]
         self.assertEqual(first_call[0][0], "/token")
-        # Second call should have Authorization header
         second_call = plugin.connection.send.call_args_list[1]
         self.assertEqual(
             second_call[1]["headers"]["Authorization"],
@@ -187,7 +164,7 @@ class TestSendRequestBearerMethod(unittest.TestCase):
         )
 
     def test_bearer_caches_token(self):
-        plugin = self._plugin()
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
         plugin.connection.send.side_effect = [
             self._token_response(),
             self._retrieve_response(),
@@ -195,13 +172,11 @@ class TestSendRequestBearerMethod(unittest.TestCase):
         ]
         plugin.send_request("/retrieve", op="showConfig", path=[])
         plugin.send_request("/retrieve", op="showConfig", path=[])
-        # /token should only be called once
         token_calls = [c for c in plugin.connection.send.call_args_list if c[0][0] == "/token"]
         self.assertEqual(len(token_calls), 1)
 
     def test_bearer_refreshes_expired_token(self):
-        plugin = self._plugin()
-        # Set an already-expired token
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
         plugin._bearer_token = "oldtoken"
         plugin._bearer_token_expiry = time.time() - 100
         plugin.connection.send.side_effect = [
@@ -214,7 +189,7 @@ class TestSendRequestBearerMethod(unittest.TestCase):
         self.assertEqual(plugin._bearer_token, "newtoken")
 
     def test_bearer_raises_on_token_failure(self):
-        plugin = self._plugin()
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
         plugin.connection.send.return_value = _make_response(
             {"success": False, "error": "Invalid key", "data": None},
         )
@@ -223,46 +198,11 @@ class TestSendRequestBearerMethod(unittest.TestCase):
         self.assertIn("Invalid key", str(ctx.exception))
 
 
-class TestHandleHttpError(unittest.TestCase):
-    def test_401_raises_connection_failure(self):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        exc = MagicMock()
-        exc.code = 401
-        with self.assertRaises(AnsibleConnectionFailure):
-            plugin.handle_httperror(exc)
-
-    def test_other_errors_returned(self):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        exc = MagicMock()
-        exc.code = 500
-        result = plugin.handle_httperror(exc)
-        self.assertEqual(result, exc)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestSendRequestMtlsMethod(unittest.TestCase):
-    def _plugin(self):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "auth_method": "mtls",
-        }.get(opt)
-        return plugin
-
     def test_mtls_sends_no_api_key(self):
-        plugin = self._plugin()
-        plugin.connection.send.return_value = (
-            MagicMock(status=200),
-            BytesIO(
-                json.dumps(
-                    {"success": True, "data": {}, "error": None},
-                ).encode(),
-            ),
+        plugin = _make_plugin(auth_method="mtls", api_key=None)
+        plugin.connection.send.return_value = _make_response(
+            {"success": True, "data": {}, "error": None},
         )
         plugin.send_request("/retrieve", op="showConfig", path=[])
         call_kwargs = plugin.connection.send.call_args[1]
@@ -271,14 +211,9 @@ class TestSendRequestMtlsMethod(unittest.TestCase):
         self.assertNotIn("Authorization", call_kwargs.get("headers", {}))
 
     def test_mtls_sends_no_authorization_header(self):
-        plugin = self._plugin()
-        plugin.connection.send.return_value = (
-            MagicMock(status=200),
-            BytesIO(
-                json.dumps(
-                    {"success": True, "data": {}, "error": None},
-                ).encode(),
-            ),
+        plugin = _make_plugin(auth_method="mtls", api_key=None)
+        plugin.connection.send.return_value = _make_response(
+            {"success": True, "data": {}, "error": None},
         )
         plugin.send_request("/retrieve", op="showConfig", path=[])
         headers = plugin.connection.send.call_args[1].get("headers", {})
@@ -292,15 +227,13 @@ class TestSendRequestOidcMethod(unittest.TestCase):
         client_id="vyos-api",
         client_secret="secret",
     ):
-        conn = MagicMock()
-        plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
-            "auth_method": "oidc",
-            "oidc_token_url": token_url,
-            "oidc_client_id": client_id,
-            "oidc_client_secret": client_secret,
-        }.get(opt)
-        return plugin
+        return _make_plugin(
+            auth_method="oidc",
+            api_key=None,
+            oidc_token_url=token_url,
+            oidc_client_id=client_id,
+            oidc_client_secret=client_secret,
+        )
 
     def _idp_response(self, token="oidctoken123", expires_in=3600):
         return json.dumps(
@@ -312,25 +245,20 @@ class TestSendRequestOidcMethod(unittest.TestCase):
         ).encode()
 
     def _retrieve_response(self):
-        return (
-            MagicMock(status=200),
-            BytesIO(
-                json.dumps(
-                    {"success": True, "data": {"host-name": "vyos"}, "error": None},
-                ).encode(),
-            ),
+        return _make_response(
+            {"success": True, "data": {"host-name": "vyos"}, "error": None},
         )
 
     def test_oidc_fetches_token_from_idp(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = self._idp_response()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = self._idp_response()
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ):
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
-
         call_kwargs = plugin.connection.send.call_args[1]
         self.assertEqual(
             call_kwargs["headers"]["Authorization"],
@@ -339,27 +267,28 @@ class TestSendRequestOidcMethod(unittest.TestCase):
 
     def test_oidc_caches_token(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = self._idp_response()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = self._idp_response()
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ) as mock_open_url:
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
-            # urlopen should only be called once
-            self.assertEqual(mock_urlopen.call_count, 1)
+            self.assertEqual(mock_open_url.call_count, 1)
 
     def test_oidc_refreshes_expired_token(self):
         plugin = self._plugin()
         plugin._oidc_token = "oldtoken"
         plugin._oidc_token_expiry = time.time() - 100
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = self._idp_response(token="newtoken")
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = self._idp_response(token="newtoken")
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ):
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertEqual(plugin._oidc_token, "newtoken")
@@ -372,19 +301,42 @@ class TestSendRequestOidcMethod(unittest.TestCase):
 
     def test_oidc_raises_when_idp_unreachable(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = Exception("Connection refused")
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            side_effect=Exception("Connection refused"),
+        ):
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("OIDC token fetch failed", str(ctx.exception))
 
     def test_oidc_raises_when_access_token_missing(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = json.dumps({"error": "invalid_client"}).encode()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({"error": "invalid_client"}).encode()
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ):
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("access_token", str(ctx.exception))
+
+
+class TestHandleHttpError(unittest.TestCase):
+    def test_401_raises_connection_failure(self):
+        plugin = _make_plugin()
+        exc = MagicMock()
+        exc.code = 401
+        with self.assertRaises(AnsibleConnectionFailure):
+            plugin.handle_httperror(exc)
+
+    def test_other_errors_returned(self):
+        plugin = _make_plugin()
+        exc = MagicMock()
+        exc.code = 500
+        result = plugin.handle_httperror(exc)
+        self.assertEqual(result, exc)
+
+
+if __name__ == "__main__":
+    unittest.main()
