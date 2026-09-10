@@ -131,7 +131,7 @@ class TestBgpToDevice(unittest.TestCase):
             _RAW_HAVE,
             "merged",
         )
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(
             [
                 "vrf",
@@ -214,7 +214,7 @@ class TestOspfBuildCommands(unittest.TestCase):
             _RAW_HAVE,
             "merged",
         )
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(
             ["vrf", "name", "vrf1", "protocols", "ospf", "area", "0", "network", "192.168.0.0/24"],
             paths,
@@ -232,7 +232,7 @@ class TestOspfBuildCommands(unittest.TestCase):
             _RAW_HAVE,
             "merged",
         )
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(
             ["vrf", "name", "vrf1", "protocols", "ospf", "area", "1", "network", "10.1.0.0/24"],
             paths,
@@ -291,7 +291,7 @@ class TestStaticBuildCommands(unittest.TestCase):
             _RAW_HAVE,
             "merged",
         )
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(
             [
                 "vrf",
@@ -336,7 +336,7 @@ class TestBuildCommands(unittest.TestCase):
     def test_merged_new_vrf(self):
         config = {"instances": [{"name": "vrf3", "table_id": 200, "vni": 2000}]}
         cmds = build_commands(config, _RAW_HAVE, "merged")
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(["vrf", "name", "vrf3", "table", "200"], paths)
         self.assertIn(["vrf", "name", "vrf3", "vni", "2000"], paths)
 
@@ -363,13 +363,13 @@ class TestBuildCommands(unittest.TestCase):
     def test_overridden_removes_extra_vrf(self):
         config = {"instances": [{"name": "vrf1", "table_id": 101}]}
         cmds = build_commands(config, _RAW_HAVE, "overridden")
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertIn(["vrf", "name", "vrf2"], paths)
 
     def test_merged_does_not_delete_unreferenced_vrf(self):
         config = {"instances": [{"name": "vrf1", "table_id": 101}]}
         cmds = build_commands(config, _RAW_HAVE, "merged")
-        paths = [p for _, p in cmds]
+        paths = [c[1] for c in cmds]
         self.assertNotIn(["vrf", "name", "vrf2"], paths)
 
 

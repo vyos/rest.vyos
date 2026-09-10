@@ -383,7 +383,7 @@ def _spec_to_device(value, options_spec):
                 result[device_key] = converted
         elif sub_type == "list" and sub_options:
             key_field = _derive_key_field(sub_options)
-            entry_to, _ = _ENTRY_OVERRIDES.get(arg_key, (None, None))
+            entry_to, entry_from_unused = _ENTRY_OVERRIDES.get(arg_key, (None, None))
             entry_transform = entry_to or (
                 lambda rest, spec=sub_options: _spec_to_device(rest, spec)
             )
@@ -417,7 +417,7 @@ def _device_to_spec(raw, options_spec):
                 result[arg_key] = converted
         elif sub_type == "list" and sub_options:
             key_field = _derive_key_field(sub_options)
-            _, entry_from = _ENTRY_OVERRIDES.get(arg_key, (None, None))
+            entry_to_unused, entry_from = _ENTRY_OVERRIDES.get(arg_key, (None, None))
             entry_transform = entry_from or (lambda d, spec=sub_options: _device_to_spec(d, spec))
             entries = _keyed_list_from_device(raw_val, key_field, entry_transform)
             if entries:
