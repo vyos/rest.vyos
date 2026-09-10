@@ -7,14 +7,10 @@ __metaclass__ = type
 import unittest
 
 from ansible_collections.vyos.rest.plugins.modules.vyos_vrf import (
-    _bgp_build_commands,
-    _bgp_from_device,
     _device_to_argspec,
-    _ospf_build_commands,
-    _ospf_from_device,
+    _proto_from_device,
+    _proto_to_device,
     _protocols_from_device,
-    _static_build_commands,
-    _static_from_device,
     build_commands,
 )
 
@@ -27,9 +23,8 @@ from .base import load_fixture
 
 _RAW_HAVE = load_fixture("vrf_running.json")
 
-
 # ---------------------------------------------------------------------------
-# _device_to_argspec
+# _device_to_argspec — top-level VRF properties
 # ---------------------------------------------------------------------------
 
 
@@ -56,17 +51,24 @@ class TestDeviceToArgspec(unittest.TestCase):
         self.assertIn("ipv4", afis)
         self.assertTrue(afis["ipv4"]["disable_forwarding"])
         self.assertTrue(afis["ipv4"]["nht_no_resolve_via_default"])
+        self.assertIn("ipv6", afis)
+        self.assertTrue(afis["ipv6"]["disable_forwarding"])
+        self.assertTrue(afis["ipv6"]["nht_no_resolve_via_default"])
+
+    def test_empty_input(self):
+        self.assertEqual(_device_to_argspec({}), {})
+        self.assertEqual(_device_to_argspec(None), {})
 
 
 # ---------------------------------------------------------------------------
-# _bgp_from_device
+# _proto_from_device — BGP
 # ---------------------------------------------------------------------------
 
 
 class TestBgpFromDevice(unittest.TestCase):
     def setUp(self):
         self.raw = _RAW_HAVE["name"]["vrf1"]["protocols"]["bgp"]
-        self.result = _bgp_from_device(self.raw)
+        self.result = _proto_from_device(self.raw, "bgp")
 
     def test_system_as(self):
         self.assertEqual(self.result["system_as"], 65001)
@@ -79,38 +81,56 @@ class TestBgpFromDevice(unittest.TestCase):
         self.assertEqual(n["description"], "peer1")
 
     def test_empty_input(self):
-        self.assertEqual(_bgp_from_device({}), {})
-        self.assertEqual(_bgp_from_device(None), {})
+        self.assertEqual(_proto_from_device({}, "bgp"), {})
+        self.assertEqual(_proto_from_device(None, "bgp"), {})
 
 
 # ---------------------------------------------------------------------------
-# _bgp_build_commands
+# _proto_to_device + build_commands — BGP
 # ---------------------------------------------------------------------------
 
 
-class TestBgpBuildCommands(unittest.TestCase):
-    def _have(self):
-        return _RAW_HAVE["name"]["vrf1"]["protocols"]["bgp"]
+class TestBgpToDevice(unittest.TestCase):
+    def test_system_as_to_device(self):
+        result = _proto_to_device({"system_as": 65001}, "bgp")
+        self.assertIn("system-as", result)
+        self.assertEqual(result["system-as"], 65001)
+
+    def test_neighbor_to_device(self):
+        result = _proto_to_device(
+            {
+                "system_as": 65001,
+                "neighbor": [{"address": "10.0.0.1", "remote_as": 65002}],
+            },
+            "bgp",
+        )
+        self.assertIn("neighbor", result)
+        self.assertIn("10.0.0.1", result["neighbor"])
+        self.assertEqual(result["neighbor"]["10.0.0.1"]["remote-as"], 65002)
 
     def test_idempotent(self):
-        want = {
-            "system_as": 65001,
-            "neighbor": [
-                {"address": "10.0.0.1", "remote_as": 65002, "description": "peer1"},
-            ],
-        }
-        cmds = _bgp_build_commands("vrf1", want, self._have(), "merged")
-        self.assertEqual(cmds, [])
+        want = _proto_from_device(_RAW_HAVE["name"]["vrf1"]["protocols"]["bgp"], "bgp")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"bgp": want}}]},
+            _RAW_HAVE,
+            "merged",
+        )
+        bgp_cmds = [c for c in cmds if "bgp" in str(c)]
+        self.assertEqual(bgp_cmds, [])
 
     def test_add_neighbor(self):
-        want = {
+        want_bgp = {
             "system_as": 65001,
             "neighbor": [
                 {"address": "10.0.0.1", "remote_as": 65002, "description": "peer1"},
                 {"address": "10.0.0.2", "remote_as": 65003},
             ],
         }
-        cmds = _bgp_build_commands("vrf1", want, self._have(), "merged")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"bgp": want_bgp}}]},
+            _RAW_HAVE,
+            "merged",
+        )
         paths = [p for _, p in cmds]
         self.assertIn(
             [
@@ -126,21 +146,32 @@ class TestBgpBuildCommands(unittest.TestCase):
             ],
             paths,
         )
-
-    def test_no_commands_on_empty_want(self):
-        cmds = _bgp_build_commands("vrf1", {}, {}, "merged")
-        self.assertEqual(cmds, [])
+        # existing neighbor should not be re-set
+        self.assertNotIn(
+            [
+                "vrf",
+                "name",
+                "vrf1",
+                "protocols",
+                "bgp",
+                "neighbor",
+                "10.0.0.1",
+                "remote-as",
+                "65002",
+            ],
+            paths,
+        )
 
 
 # ---------------------------------------------------------------------------
-# _ospf_from_device
+# _proto_from_device — OSPFv2
 # ---------------------------------------------------------------------------
 
 
 class TestOspfFromDevice(unittest.TestCase):
     def setUp(self):
         self.raw = _RAW_HAVE["name"]["vrf1"]["protocols"]["ospf"]
-        self.result = _ospf_from_device(self.raw)
+        self.result = _proto_from_device(self.raw, "ospf")
 
     def test_areas(self):
         self.assertEqual(len(self.result["areas"]), 1)
@@ -153,33 +184,36 @@ class TestOspfFromDevice(unittest.TestCase):
         self.assertEqual(self.result["parameters"]["router_id"], "10.0.0.1")
 
     def test_empty_input(self):
-        self.assertEqual(_ospf_from_device({}), {})
+        self.assertEqual(_proto_from_device({}, "ospf"), {})
 
 
 # ---------------------------------------------------------------------------
-# _ospf_build_commands
+# build_commands — OSPFv2
 # ---------------------------------------------------------------------------
 
 
 class TestOspfBuildCommands(unittest.TestCase):
-    def _have(self):
-        return _RAW_HAVE["name"]["vrf1"]["protocols"]["ospf"]
-
     def test_idempotent(self):
-        want = {
-            "areas": [{"area_id": "0", "networks": ["10.0.0.0/24", "172.16.0.0/24"]}],
-            "parameters": {"router_id": "10.0.0.1"},
-        }
-        cmds = _ospf_build_commands("vrf1", want, self._have(), "merged")
-        self.assertEqual(cmds, [])
+        want = _proto_from_device(_RAW_HAVE["name"]["vrf1"]["protocols"]["ospf"], "ospf")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"ospf": want}}]},
+            _RAW_HAVE,
+            "merged",
+        )
+        ospf_cmds = [c for c in cmds if "ospf" in str(c)]
+        self.assertEqual(ospf_cmds, [])
 
     def test_add_network(self):
-        want = {
+        want_ospf = {
             "areas": [
                 {"area_id": "0", "networks": ["10.0.0.0/24", "172.16.0.0/24", "192.168.0.0/24"]},
             ],
         }
-        cmds = _ospf_build_commands("vrf1", want, self._have(), "merged")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"ospf": want_ospf}}]},
+            _RAW_HAVE,
+            "merged",
+        )
         paths = [p for _, p in cmds]
         self.assertIn(
             ["vrf", "name", "vrf1", "protocols", "ospf", "area", "0", "network", "192.168.0.0/24"],
@@ -187,13 +221,17 @@ class TestOspfBuildCommands(unittest.TestCase):
         )
 
     def test_add_area(self):
-        want = {
+        want_ospf = {
             "areas": [
                 {"area_id": "0", "networks": ["10.0.0.0/24", "172.16.0.0/24"]},
                 {"area_id": "1", "networks": ["10.1.0.0/24"]},
             ],
         }
-        cmds = _ospf_build_commands("vrf1", want, self._have(), "merged")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"ospf": want_ospf}}]},
+            _RAW_HAVE,
+            "merged",
+        )
         paths = [p for _, p in cmds]
         self.assertIn(
             ["vrf", "name", "vrf1", "protocols", "ospf", "area", "1", "network", "10.1.0.0/24"],
@@ -202,14 +240,14 @@ class TestOspfBuildCommands(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# _static_from_device
+# _proto_from_device — static routes
 # ---------------------------------------------------------------------------
 
 
 class TestStaticFromDevice(unittest.TestCase):
     def setUp(self):
         self.raw = _RAW_HAVE["name"]["vrf1"]["protocols"]["static"]
-        self.result = _static_from_device(self.raw)
+        self.result = _proto_from_device(self.raw, "static")
 
     def test_routes(self):
         self.assertEqual(len(self.result["routes"]), 1)
@@ -218,33 +256,41 @@ class TestStaticFromDevice(unittest.TestCase):
         self.assertIn("10.0.0.254", route["next_hops"])
 
     def test_empty_input(self):
-        self.assertEqual(_static_from_device({}), {})
+        self.assertEqual(_proto_from_device({}, "static"), {})
 
 
 # ---------------------------------------------------------------------------
-# _static_build_commands
+# build_commands — static routes
 # ---------------------------------------------------------------------------
 
 
 class TestStaticBuildCommands(unittest.TestCase):
-    def _have(self):
-        return _RAW_HAVE["name"]["vrf1"]["protocols"]["static"]
-
     def test_idempotent(self):
-        want = {
-            "routes": [{"dest": "192.168.10.0/24", "next_hops": ["10.0.0.254"]}],
-        }
-        cmds = _static_build_commands("vrf1", want, self._have(), "merged")
-        self.assertEqual(cmds, [])
+        want = _proto_from_device(_RAW_HAVE["name"]["vrf1"]["protocols"]["static"], "static")
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"static": want}}]},
+            _RAW_HAVE,
+            "merged",
+        )
+        static_cmds = [c for c in cmds if "static" in str(c)]
+        self.assertEqual(static_cmds, [])
 
     def test_add_route(self):
-        want = {
+        want_static = {
             "routes": [
                 {"dest": "192.168.10.0/24", "next_hops": ["10.0.0.254"]},
                 {"dest": "192.168.20.0/24", "next_hops": ["10.0.0.254"]},
             ],
         }
-        cmds = _static_build_commands("vrf1", want, self._have(), "merged")
+        cmds = build_commands(
+            {
+                "instances": [
+                    {"name": "vrf1", "table_id": 101, "protocols": {"static": want_static}},
+                ],
+            },
+            _RAW_HAVE,
+            "merged",
+        )
         paths = [p for _, p in cmds]
         self.assertIn(
             [
@@ -282,7 +328,7 @@ class TestProtocolsFromDevice(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# build_commands
+# build_commands — top-level VRF operations
 # ---------------------------------------------------------------------------
 
 
@@ -308,7 +354,6 @@ class TestBuildCommands(unittest.TestCase):
         config = {"instances": [{"name": "vrf1"}]}
         cmds = build_commands(config, _RAW_HAVE, "deleted")
         self.assertIn(("delete", ["vrf", "name", "vrf1"]), cmds)
-        # vrf2 should not be deleted
         self.assertNotIn(("delete", ["vrf", "name", "vrf2"]), cmds)
 
     def test_deleted_all(self):
@@ -321,55 +366,11 @@ class TestBuildCommands(unittest.TestCase):
         paths = [p for _, p in cmds]
         self.assertIn(["vrf", "name", "vrf2"], paths)
 
-    def test_merged_bgp_in_vrf(self):
-        config = {
-            "instances": [
-                {
-                    "name": "vrf1",
-                    "table_id": 101,
-                    "protocols": {
-                        "bgp": {
-                            "system_as": 65001,
-                            "neighbor": [
-                                {"address": "10.0.0.1", "remote_as": 65002, "description": "peer1"},
-                                {"address": "10.0.0.2", "remote_as": 65003},
-                            ],
-                        },
-                    },
-                },
-            ],
-        }
+    def test_merged_does_not_delete_unreferenced_vrf(self):
+        config = {"instances": [{"name": "vrf1", "table_id": 101}]}
         cmds = build_commands(config, _RAW_HAVE, "merged")
         paths = [p for _, p in cmds]
-        self.assertIn(
-            [
-                "vrf",
-                "name",
-                "vrf1",
-                "protocols",
-                "bgp",
-                "neighbor",
-                "10.0.0.2",
-                "remote-as",
-                "65003",
-            ],
-            paths,
-        )
-        # existing neighbor should not be re-set
-        self.assertNotIn(
-            [
-                "vrf",
-                "name",
-                "vrf1",
-                "protocols",
-                "bgp",
-                "neighbor",
-                "10.0.0.1",
-                "remote-as",
-                "65002",
-            ],
-            paths,
-        )
+        self.assertNotIn(["vrf", "name", "vrf2"], paths)
 
 
 if __name__ == "__main__":
