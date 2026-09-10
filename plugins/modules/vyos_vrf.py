@@ -842,25 +842,36 @@ ARGUMENT_SPEC = dict(
     ),
 )
 
-# Initialize spec references after ARGUMENT_SPEC is defined
-_TOP_OPTIONS = ARGUMENT_SPEC["config"]["options"]
-_INSTANCE_OPTIONS = _TOP_OPTIONS["instances"]["options"]
-_PROTO_OPTIONS = _INSTANCE_OPTIONS["protocols"]["options"]
 
-# Add neighbor entry override now that ARGUMENT_SPEC is defined.
-# Uses _spec_to_device recursion so remote_as -> remote-as rename is applied.
-_NEIGHBOR_OPTS = _PROTO_OPTIONS["bgp"]["options"]["neighbor"]["options"]
+def _init_specs():
+    """Initialize module-level spec references and entry overrides.
+    Called once at import time via _init_specs(). Avoids module-level
+    subscript expressions that confuse ansible-doc's AST walker.
+    """
+    top = ARGUMENT_SPEC["config"]["options"]
+    instance_opts = top["instances"]["options"]
+    proto_opts = instance_opts["protocols"]["options"]
+    neighbor_opts = proto_opts["bgp"]["options"]["neighbor"]["options"]
+
+    global _TOP_OPTIONS, _INSTANCE_OPTIONS, _PROTO_OPTIONS
+
+    _TOP_OPTIONS = top
+    _INSTANCE_OPTIONS = instance_opts
+    _PROTO_OPTIONS = proto_opts
+
+    def _neighbor_entry_to_device(rest):
+        return _spec_to_device(rest, neighbor_opts)
+
+    def _neighbor_entry_from_device(d):
+        return _device_to_spec(d, neighbor_opts)
+
+    _ENTRY_OVERRIDES["neighbor"] = (_neighbor_entry_to_device, _neighbor_entry_from_device)
 
 
-def _neighbor_entry_to_device(rest):
-    return _spec_to_device(rest, _NEIGHBOR_OPTS)
-
-
-def _neighbor_entry_from_device(d):
-    return _device_to_spec(d, _NEIGHBOR_OPTS)
-
-
-_ENTRY_OVERRIDES["neighbor"] = (_neighbor_entry_to_device, _neighbor_entry_from_device)
+_TOP_OPTIONS = {}
+_INSTANCE_OPTIONS = {}
+_PROTO_OPTIONS = {}
+_init_specs()
 
 
 # ---------------------------------------------------------------------------
