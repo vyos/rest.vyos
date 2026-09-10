@@ -261,6 +261,7 @@ _DEVICE_RENAMES = {
     "next_hops": "next-hop",
     "areas": "area",
     "routes": "route",
+    "bind_to_all": "bind-to-all",
 }
 
 
