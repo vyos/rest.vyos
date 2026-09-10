@@ -849,11 +849,18 @@ _PROTO_OPTIONS = _INSTANCE_OPTIONS["protocols"]["options"]
 
 # Add neighbor entry override now that ARGUMENT_SPEC is defined.
 # Uses _spec_to_device recursion so remote_as -> remote-as rename is applied.
-_NEIGHBOR_OPTIONS = _PROTO_OPTIONS["bgp"]["options"]["neighbor"]["options"]
-_ENTRY_OVERRIDES["neighbor"] = (
-    lambda rest: _spec_to_device(rest, _NEIGHBOR_OPTIONS),
-    lambda d: _device_to_spec(d, _NEIGHBOR_OPTIONS),
-)
+_NEIGHBOR_OPTS = _PROTO_OPTIONS["bgp"]["options"]["neighbor"]["options"]
+
+
+def _neighbor_entry_to_device(rest):
+    return _spec_to_device(rest, _NEIGHBOR_OPTS)
+
+
+def _neighbor_entry_from_device(d):
+    return _device_to_spec(d, _NEIGHBOR_OPTS)
+
+
+_ENTRY_OVERRIDES["neighbor"] = (_neighbor_entry_to_device, _neighbor_entry_from_device)
 
 
 # ---------------------------------------------------------------------------
