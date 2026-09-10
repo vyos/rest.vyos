@@ -106,6 +106,7 @@ Name | Description
 [vyos.rest.vyos_system](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_system_module.rst)|Manage system settings on VyOS devices using REST API
 [vyos.rest.vyos_user](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_user_module.rst)|Manage user accounts on VyOS devices using REST API
 [vyos.rest.vyos_vlan](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_vlan_module.rst)|Manage VLAN (vif) configuration on VyOS devices using REST API
+[vyos.rest.vyos_vrf](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_vrf_module.rst)|Manage VRF configuration on VyOS devices using REST API
 
 <!--end collection content-->
 
