@@ -1,0 +1,50 @@
+---
+- debug:
+    msg: START vyos_vrf deleted integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Delete specific VRF
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather and verify vrf1 deleted
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.instances | length == 1
+          - result.gathered.instances[0].name == "vrf2"
+
+    - name: Delete all VRF configuration
+      register: result
+      vyos.rest.vyos_vrf:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Delete all VRF (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vrf:
+        state: deleted
+
+    - assert:
+        that:
+          - result.changed == false
+
+  always:
+    - include_tasks: _remove_config.yaml
