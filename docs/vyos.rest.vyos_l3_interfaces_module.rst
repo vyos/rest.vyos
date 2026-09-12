@@ -18,7 +18,7 @@ Version added: 1.0.0
 Synopsis
 --------
 - Manages IPv4 and IPv6 address configuration on VyOS interfaces using the HTTPS REST API.
-- Mirrors ``vyos.vyos.vyos_l3_interfaces`` but uses the HTTP API instead of CLI.
+- L2 attributes (description, mtu, duplex, speed, vrf) and VIF presence/L2 attributes are owned by :ref:`vyos.rest.vyos_interfaces <vyos.rest.vyos_interfaces_module>`, not this module -- confirmed by design: a VIF's device path is shared between the two modules, and this module's own commands only ever touch the ``address`` leaf within it, never the VIF subtree as a whole or any of vyos_interfaces' own fields.
 
 
 
@@ -251,21 +251,6 @@ Parameters
             <tr>
                 <td colspan="4">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>running_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Used only with state <code>parsed</code>.</div>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="4">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -279,8 +264,6 @@ Parameters
                                     <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
-                                    <li>rendered</li>
-                                    <li>parsed</li>
                         </ul>
                 </td>
                 <td>
@@ -289,8 +272,6 @@ Parameters
                         <div><code>overridden</code> - Replace addresses for all interfaces.</div>
                         <div><code>deleted</code> - Remove listed or all interface addresses.</div>
                         <div><code>gathered</code> - Read interface addresses from device without changes.</div>
-                        <div><code>rendered</code> - Return commands for provided config without connecting.</div>
-                        <div><code>parsed</code> - Parse running_config into structured data.</div>
                 </td>
             </tr>
     </table>
@@ -417,36 +398,6 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 <td>when state is gathered</td>
                 <td>
                             <div>Current L3 interface configuration as structured data.</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>parsed</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is parsed</td>
-                <td>
-                            <div>Structured data parsed from running_config (state=parsed).</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>rendered</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is rendered</td>
-                <td>
-                            <div>Commands for the provided config (state=rendered).</div>
                     <br/>
                 </td>
             </tr>
