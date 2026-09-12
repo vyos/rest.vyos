@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from __future__ import absolute_import, division, print_function
 
 
@@ -13,7 +14,25 @@ short_description: Manage OSPFv2 configuration on VyOS devices using REST API
 description:
   - Manages OSPFv2 configuration on VyOS devices via the REST API.
   - Uses REST API (C(connection=httpapi)) instead of CLI.
-  - 'In VyOS 1.5+, passive interfaces use per-interface config rather than passive-interface.'
+  - >-
+    Scope matches the current vyos.vyos.vyos_ospfv2 (CLI collection) module:
+    areas (including virtual_link), auto_cost, default_information,
+    default_metric, distance, log_adjacency_changes, max_metric, mpls_te,
+    neighbor, parameters, passive_interface, passive_interface_exclude,
+    redistribute, timers. VyOS's OSPF schema is considerably larger than
+    even this -- access-list, aggregation, capability, graceful-restart,
+    ldp-sync, maximum-paths, per-interface tuning (bandwidth/hello-
+    multiplier/network-type/authentication/intervals beyond passive),
+    segment-routing, and summary-address are not modeled here, matching
+    real gaps in the CLI module's own scope, not oversights.
+  - >-
+    A standalone top-level C(route_map) field exists in the CLI module's
+    argspec but does not correspond to any real device path -- confirmed
+    against a live VyOS 1.5.0 device's C(set protocols ospf) completions,
+    which list no C(route-map) entry at that level (only nested under
+    C(default-information originate) and per-protocol under
+    C(redistribute), both of which are modeled here). Deliberately
+    omitted rather than built against a confirmed non-functional field.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -103,6 +122,45 @@ options:
             description: Shortcut mode.
             type: str
             choices: [default, disable, enable]
+          virtual_link:
+            description: Virtual link.
+            type: list
+            elements: dict
+            suboptions:
+              address:
+                description: Virtual link address (router ID of the remote ABR).
+                type: str
+                required: true
+              authentication:
+                description: Virtual link authentication.
+                type: dict
+                suboptions:
+                  md5:
+                    description: MD5 key id based authentication.
+                    type: list
+                    elements: dict
+                    suboptions:
+                      key_id:
+                        description: MD5 key id (1-255).
+                        type: int
+                      md5_key:
+                        description: MD5 key (16 characters or less).
+                        type: str
+                  plaintext_password:
+                    description: Plain text password (8 characters or less).
+                    type: str
+              dead_interval:
+                description: Interval after which a neighbor is declared dead.
+                type: int
+              hello_interval:
+                description: Interval between hello packets.
+                type: int
+              retransmit_interval:
+                description: Interval between retransmitting lost link state advertisements.
+                type: int
+              transmit_delay:
+                description: Link state transmit delay.
+                type: int
       auto_cost:
         description: Auto-cost reference bandwidth.
         type: dict
@@ -157,6 +215,33 @@ options:
         description: Log adjacency changes.
         type: str
         choices: [detail]
+      max_metric:
+        description: OSPFv2 maximum/infinite-distance metric.
+        type: dict
+        suboptions:
+          router_lsa:
+            description: Advertise own Router-LSA with infinite distance (stub router).
+            type: dict
+            suboptions:
+              administrative:
+                description: Administratively apply, for an indefinite period.
+                type: bool
+              on_shutdown:
+                description: Time (seconds) to advertise self as stub-router before shutdown.
+                type: int
+              on_startup:
+                description: Time (seconds) to advertise self as stub-router on startup.
+                type: int
+      mpls_te:
+        description: MPLS Traffic Engineering parameters.
+        type: dict
+        suboptions:
+          enabled:
+            description: Enable MPLS-TE functionality.
+            type: bool
+          router_address:
+            description: Stable IP address of the advertising router.
+            type: str
       neighbor:
         description: OSPF neighbors.
         type: list
@@ -190,9 +275,16 @@ options:
             description: Router ID.
             type: str
       passive_interface:
-        description: >
-          Passive interfaces (VyOS 1.5+: configured via
-          C(protocols ospf interface <name> passive)).
+        description: >-
+          Interfaces to suppress routing updates on, via per-interface
+          configuration (C(protocols ospf interface <name> passive)).
+        type: list
+        elements: str
+      passive_interface_exclude:
+        description: >-
+          Interfaces to explicitly exclude from passive mode (via
+          C(protocols ospf interface <name> passive disable)) -- e.g.
+          when passive is otherwise applied broadly.
         type: list
         elements: str
       redistribute:
@@ -213,6 +305,34 @@ options:
           route_map:
             description: Route map.
             type: str
+      timers:
+        description: Routing timers.
+        type: dict
+        suboptions:
+          refresh:
+            description: Refresh parameters.
+            type: dict
+            suboptions:
+              timers:
+                description: Refresh timer (seconds).
+                type: int
+          throttle:
+            description: Throttling adaptive timers.
+            type: dict
+            suboptions:
+              spf:
+                description: SPF timers.
+                type: dict
+                suboptions:
+                  delay:
+                    description: Delay (ms) from first change received to SPF calculation.
+                    type: int
+                  initial_holdtime:
+                    description: Initial hold time (ms) between consecutive SPF calculations.
+                    type: int
+                  max_holdtime:
+                    description: Maximum hold time (ms).
+                    type: int
   state:
     description:
       - Desired state.
@@ -226,8 +346,8 @@ options:
 notes:
   - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
   - C(ansible_network_os) must be set to C(vyos.rest.vyos).
-  - VyOS 1.5+ uses per-interface passive configuration rather than
-    the global C(passive-interface) command used in VyOS 1.4.
+seealso:
+  - module: vyos.vyos.vyos_ospfv2
 """
 
 EXAMPLES = r"""
@@ -245,10 +365,6 @@ EXAMPLES = r"""
             normal: true
           network:
             - address: 192.0.2.0/24
-        - area_id: "3"
-          area_type:
-            nssa:
-              set: true
         - area_id: "4"
           area_type:
             stub:
@@ -261,6 +377,16 @@ EXAMPLES = r"""
           metric: 10
       passive_interface:
         - eth1
+      max_metric:
+        router_lsa:
+          administrative: true
+      mpls_te:
+        enabled: true
+        router_address: 192.0.11.11
+      timers:
+        throttle:
+          spf:
+            delay: 200
     state: merged
 
 - name: Delete all OSPFv2 configuration
@@ -300,611 +426,605 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    to_tag_dict,
+)
 
 
 _BASE = ["protocols", "ospf"]
 
 
-def _parse_areas(raw_areas):
-    if not raw_areas or not isinstance(raw_areas, dict):
-        return []
-    areas = []
-    for area_id, data in sorted(raw_areas.items()):
-        area = {"area_id": area_id}
-        data = data or {}
-
-        # area-type
-        at = data.get("area-type", {})
-        if at:
-            area_type = {}
-            if "normal" in at:
-                area_type["normal"] = True
-            if "nssa" in at:
-                nssa_data = at["nssa"] or {}
-                nssa = {"set": True}
-                if "default-cost" in nssa_data:
-                    nssa["default_cost"] = int(nssa_data["default-cost"])
-                if "no-summary" in nssa_data:
-                    nssa["no_summary"] = True
-                if "translate" in nssa_data:
-                    nssa["translate"] = nssa_data["translate"]
-                area_type["nssa"] = nssa
-            if "stub" in at:
-                stub_data = at["stub"] or {}
-                stub = {"set": True}
-                if "default-cost" in stub_data:
-                    stub["default_cost"] = int(stub_data["default-cost"])
-                if "no-summary" in stub_data:
-                    stub["no_summary"] = True
-                area_type["stub"] = stub
-            if area_type:
-                area["area_type"] = area_type
-
-        if "authentication" in data:
-            area["authentication"] = data["authentication"]
-
-        if "shortcut" in data:
-            area["shortcut"] = data["shortcut"]
-
-        # network
-        net = data.get("network")
-        if net:
-            if isinstance(net, str):
-                area["network"] = [{"address": net}]
-            elif isinstance(net, dict):
-                area["network"] = [{"address": a} for a in sorted(net.keys())]
-            elif isinstance(net, list):
-                area["network"] = [{"address": a} for a in sorted(net)]
-
-        # range
-        rng = data.get("range", {})
-        if rng and isinstance(rng, dict):
-            ranges = []
-            for addr, rdata in sorted(rng.items()):
-                r = {"address": addr}
-                rdata = rdata or {}
-                if "cost" in rdata:
-                    r["cost"] = int(rdata["cost"])
-                if "not-advertise" in rdata:
-                    r["not_advertise"] = True
-                if "substitute" in rdata:
-                    r["substitute"] = rdata["substitute"]
-                ranges.append(r)
-            if ranges:
-                area["range"] = ranges
-
-        areas.append(area)
-    return areas
+def _derive_key_field(options_spec):
+    """The field identifying each entry in a named-list section is
+    never inferable from a generic walk alone -- but it doesn't need
+    to be hand-declared either: every named-list section in this
+    argspec already marks exactly one suboption required=True.
+    """
+    required = [k for k, spec in options_spec.items() if spec.get("required")]
+    if len(required) != 1:
+        raise ValueError(
+            "expected exactly one required suboption to serve as the key field, "
+            "found: {0}".format(required),
+        )
+    return required[0]
 
 
-def _parse_redistribute(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for rt, data in sorted(raw.items()):
-        entry = {"route_type": rt}
-        data = data or {}
-        if "metric" in data:
-            entry["metric"] = int(data["metric"])
-        if "metric-type" in data:
-            entry["metric_type"] = int(data["metric-type"])
-        if "route-map" in data:
-            entry["route_map"] = data["route-map"]
-        result.append(entry)
-    return result
-
-
-def _parse_neighbor(raw):
-    if not raw or not isinstance(raw, dict):
-        return []
-    result = []
-    for nb_id, data in sorted(raw.items()):
-        entry = {"neighbor_id": nb_id}
-        data = data or {}
-        if "poll-interval" in data:
-            entry["poll_interval"] = int(data["poll-interval"])
-        if "priority" in data:
-            entry["priority"] = int(data["priority"])
-        result.append(entry)
-    return result
-
-
-def _parse_parameters(raw):
-    if not raw or not isinstance(raw, dict):
-        return {}
+def _keyed_list_to_device(items, key_field, entry_transform=None):
+    entry_transform = entry_transform or _kebab_fields
     result = {}
-    if "router-id" in raw:
-        result["router_id"] = raw["router-id"]
-    if "abr-type" in raw:
-        result["abr_type"] = raw["abr-type"]
-    if "opaque-lsa" in raw:
-        result["opaque_lsa"] = True
-    if "rfc1583-compatibility" in raw:
-        result["rfc1583_compatibility"] = True
+    for item in items or []:
+        if not item.get(key_field):
+            continue
+        rest = {k: v for k, v in item.items() if k != key_field}
+        result[str(item[key_field])] = entry_transform(rest)
     return result
 
 
-def _parse_default_information(raw):
-    if not raw or not isinstance(raw, dict):
+def _keyed_list_from_device(raw, key_field, entry_transform=None, key_cast=None):
+    entry_transform = entry_transform or from_device
+    key_cast = key_cast or (lambda k: k)
+    return [
+        {key_field: key_cast(key), **entry_transform(data or {})}
+        for key, data in sorted(to_tag_dict(raw).items())
+    ]
+
+
+# ---------------------------------------------------------------------------
+# area_type -- confirmed against vyos-1x: normal (presence), nssa (a node
+# with default-cost/no-summary/translate -- presence of the node itself
+# is the "set" flag, matching the argspec's own "set" boolean rather
+# than a separate device leaf), stub (default-cost/no-summary,
+# same presence pattern). Genuine structural exception: the argspec's
+# nssa/stub "set" key doesn't exist as a device leaf at all -- the
+# *node's presence* IS the set flag, so "set" must be stripped out
+# before the walk and re-derived on the way back.
+# ---------------------------------------------------------------------------
+
+
+def _area_type_to_device(area_type):
+    if not area_type:
         return {}
-    orig = raw.get("originate", {}) or {}
-    result = {}
-    if "always" in orig:
-        result["always"] = True
-    if "metric" in orig:
-        result["metric"] = int(orig["metric"])
-    if "metric-type" in orig:
-        result["metric_type"] = int(orig["metric-type"])
-    if "route-map" in orig:
-        result["route_map"] = orig["route-map"]
-    if result:
-        return {"originate": result}
+    device = {}
+    if area_type.get("normal"):
+        device["normal"] = {}
+    nssa = area_type.get("nssa")
+    if nssa:
+        nssa_device = _kebab_fields({k: v for k, v in nssa.items() if k != "set"})
+        device["nssa"] = nssa_device
+    stub = area_type.get("stub")
+    if stub:
+        stub_device = _kebab_fields({k: v for k, v in stub.items() if k != "set"})
+        device["stub"] = stub_device
+    return device
+
+
+def _area_type_from_device(data):
+    if not data:
+        return None
+    entry = {}
+    if "normal" in data:
+        entry["normal"] = True
+    if "nssa" in data:
+        nssa = from_device(data["nssa"] or {})
+        nssa["set"] = True
+        entry["nssa"] = nssa
+    if "stub" in data:
+        stub = from_device(data["stub"] or {})
+        stub["set"] = True
+        entry["stub"] = stub
+    return entry or None
+
+
+# ---------------------------------------------------------------------------
+# virtual_link -- confirmed against vyos-1x: keyed by address, with an
+# "authentication" node (md5 tag-node keyed by key-id, or a bare
+# plaintext-password leaf), plus dead-interval/hello-interval/
+# retransmit-interval/transmit-delay as plain leaves.
+# ---------------------------------------------------------------------------
+
+
+def _vlink_auth_to_device(auth):
+    if not auth:
+        return {}
+    device = {}
+    md5_list = auth.get("md5") or []
+    if md5_list:
+        device["md5"] = {
+            str(entry["key_id"]): {"md5-key": entry["md5_key"]}
+            for entry in md5_list
+            if entry.get("key_id") is not None
+        }
+    if auth.get("plaintext_password"):
+        device["plaintext-password"] = auth["plaintext_password"]
+    return device
+
+
+def _vlink_auth_from_device(data):
+    if not data:
+        return None
+    entry = {}
+    md5_raw = data.get("md5")
+    if md5_raw:
+        entry["md5"] = [
+            {"key_id": int(key_id), "md5_key": (kdata or {}).get("md5-key")}
+            for key_id, kdata in sorted(to_tag_dict(md5_raw).items())
+        ]
+    if data.get("plaintext-password"):
+        entry["plaintext_password"] = data["plaintext-password"]
+    return entry or None
+
+
+def _vlink_entry_to_device(rest):
+    exclude = {"authentication"}
+    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
+    if rest.get("authentication"):
+        auth_device = _vlink_auth_to_device(rest["authentication"])
+        if auth_device:
+            device["authentication"] = auth_device
+    return device
+
+
+def _vlink_entry_from_device(data):
+    exclude = {"authentication"}
+    entry = from_device({k: v for k, v in data.items() if k not in exclude})
+    auth = _vlink_auth_from_device(data.get("authentication"))
+    if auth:
+        entry["authentication"] = auth
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# area -- orchestrates area_type, network, range, virtual_link, and the
+# plain leaves (authentication, shortcut).
+# ---------------------------------------------------------------------------
+
+_NETWORK_KEY = "address"
+_RANGE_KEY = "address"
+_VLINK_KEY = "address"
+
+
+def _area_entry_to_device(rest):
+    exclude = {"area_type", "network", "range", "virtual_link"}
+    device = autoclean({k: v for k, v in rest.items() if k not in exclude})
+
+    at = _area_type_to_device(rest.get("area_type"))
+    if at:
+        device["area-type"] = at
+
+    networks = rest.get("network") or []
+    if networks:
+        device["network"] = {n["address"]: {} for n in networks if n.get("address")}
+
+    ranges = rest.get("range") or []
+    if ranges:
+        device["range"] = _keyed_list_to_device(ranges, _RANGE_KEY)
+
+    vlinks = rest.get("virtual_link") or []
+    if vlinks:
+        device["virtual-link"] = _keyed_list_to_device(vlinks, _VLINK_KEY, _vlink_entry_to_device)
+
+    return device
+
+
+def _area_entry_from_device(data):
+    exclude = {"area-type", "network", "range", "virtual-link"}
+    entry = from_device({k: v for k, v in data.items() if k not in exclude})
+
+    at = _area_type_from_device(data.get("area-type"))
+    if at:
+        entry["area_type"] = at
+
+    net_raw = data.get("network")
+    if net_raw:
+        entry["network"] = [{"address": addr} for addr in sorted(to_tag_dict(net_raw))]
+
+    range_raw = data.get("range")
+    if range_raw:
+        entry["range"] = _keyed_list_from_device(range_raw, _RANGE_KEY)
+
+    vlink_raw = data.get("virtual-link")
+    if vlink_raw:
+        entry["virtual_link"] = _keyed_list_from_device(
+            vlink_raw,
+            _VLINK_KEY,
+            _vlink_entry_from_device,
+        )
+
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# distance -- confirmed genuine structural exception: argspec's "global"
+# is a reserved-adjacent-but-legal dict key (fine as a string key, no
+# Python keyword issue since it's inside dict(**{...}), unlike "as"
+# elsewhere in this collection), device path is distance.global (a
+# leaf) and distance.ospf.{external,inter-area,intra-area}.
+# ---------------------------------------------------------------------------
+
+
+def _distance_to_device(dist):
+    if not dist:
+        return {}
+    device = {}
+    if dist.get("global") is not None:
+        device["global"] = dist["global"]
+    ospf = dist.get("ospf")
+    if ospf:
+        ospf_device = _kebab_fields(ospf)
+        if ospf_device:
+            device["ospf"] = ospf_device
+    return device
+
+
+def _distance_from_device(data):
+    if not data:
+        return None
+    entry = {}
+    if "global" in data:
+        entry["global"] = int(data["global"])
+    if data.get("ospf"):
+        entry["ospf"] = from_device(data["ospf"])
+    return entry or None
+
+
+# ---------------------------------------------------------------------------
+# timers -- confirmed genuine structural exception: argspec groups
+# "refresh" and "throttle" both under one "timers" parent, but the
+# device has them as two SEPARATE top-level nodes ("refresh" and
+# "timers.throttle") -- not a nested nesting-insertion like most
+# exceptions in this collection, but a nesting *removal*/regrouping.
+# Handled at the top level in build_commands/get_running_config rather
+# than as a single self-contained entry-transform, since it spans two
+# different top-level device keys.
+# ---------------------------------------------------------------------------
+
+
+def _timers_to_device_refresh(timers):
+    """Returns the device's top-level "refresh" node contents."""
+    refresh = (timers or {}).get("refresh") or {}
+    if refresh.get("timers") is not None:
+        return {"timers": refresh["timers"]}
     return {}
 
 
-def _parse_distance(raw):
-    if not raw or not isinstance(raw, dict):
-        return {}
-    result = {}
-    if "global" in raw:
-        result["global"] = int(raw["global"])
-    ospf = raw.get("ospf", {}) or {}
-    if ospf:
-        od = {}
-        if "external" in ospf:
-            od["external"] = int(ospf["external"])
-        if "inter-area" in ospf:
-            od["inter_area"] = int(ospf["inter-area"])
-        if "intra-area" in ospf:
-            od["intra_area"] = int(ospf["intra-area"])
-        if od:
-            result["ospf"] = od
-    return result
+def _timers_to_device_throttle(timers):
+    """Returns the device's top-level "timers" node contents (just the
+    throttle.spf subtree, matching confirmed scope)."""
+    throttle = (timers or {}).get("throttle") or {}
+    spf = throttle.get("spf") or {}
+    spf_device = _kebab_fields(spf)
+    if spf_device:
+        return {"throttle": {"spf": spf_device}}
+    return {}
+
+
+def _timers_from_device(refresh_raw, timers_raw):
+    entry = {}
+    if refresh_raw and refresh_raw.get("timers") is not None:
+        entry["refresh"] = {"timers": int(refresh_raw["timers"])}
+    throttle_raw = (timers_raw or {}).get("throttle") or {}
+    spf_raw = throttle_raw.get("spf")
+    if spf_raw:
+        entry["throttle"] = {"spf": from_device(spf_raw)}
+    return entry or None
+
+
+# ---------------------------------------------------------------------------
+# passive_interface / passive_interface_exclude -- confirmed against
+# vyos-1x: both map onto the SAME per-interface "interface <name>
+# passive" node -- presence alone means passive-enabled,
+# "passive.disable" (a generic-disable-node) means explicitly
+# excluded. These share one device subtree, so both are handled
+# together rather than as two independent list diffs.
+# ---------------------------------------------------------------------------
+
+
+def _passive_to_device(passive_list, exclude_list):
+    device = {}
+    for iface in passive_list or []:
+        device[iface] = {"passive": {}}
+    for iface in exclude_list or []:
+        device[iface] = {"passive": {"disable": {}}}
+    return device
+
+
+def _passive_from_device(iface_raw):
+    passive = []
+    excluded = []
+    for name, data in sorted((iface_raw or {}).items()):
+        data = data or {}
+        passive_node = data.get("passive")
+        if passive_node is None:
+            continue
+        if isinstance(passive_node, dict) and "disable" in passive_node:
+            excluded.append(name)
+        else:
+            passive.append(name)
+    return passive, excluded
+
+
+# ---------------------------------------------------------------------------
+# redistribute -- fully generic once keyed by route_type; metric/
+# metric-type/route-map are all plain leaves.
+# ---------------------------------------------------------------------------
+
+_REDISTRIBUTE_KEY = "route_type"
+_NEIGHBOR_KEY = "neighbor_id"
+
+
+def _want_to_device(config):
+    config = config or {}
+    device = {}
+
+    areas = config.get("areas") or []
+    if areas:
+        device["area"] = _keyed_list_to_device(areas, "area_id", _area_entry_to_device)
+
+    ac = config.get("auto_cost") or {}
+    if ac.get("reference_bandwidth") is not None:
+        device["auto-cost"] = {"reference-bandwidth": ac["reference_bandwidth"]}
+
+    di = (config.get("default_information") or {}).get("originate") or {}
+    di_device = _kebab_fields(di)
+    if di_device:
+        device["default-information"] = {"originate": di_device}
+
+    if config.get("default_metric") is not None:
+        device["default-metric"] = config["default_metric"]
+
+    dist_device = _distance_to_device(config.get("distance"))
+    if dist_device:
+        device["distance"] = dist_device
+
+    if config.get("log_adjacency_changes"):
+        device["log-adjacency-changes"] = {config["log_adjacency_changes"]: {}}
+
+    mm = (config.get("max_metric") or {}).get("router_lsa") or {}
+    mm_device = _kebab_fields(mm)
+    if mm_device:
+        device["max-metric"] = {"router-lsa": mm_device}
+
+    mpls = config.get("mpls_te") or {}
+    mpls_device = {}
+    if mpls.get("enabled"):
+        mpls_device["enable"] = {}
+    if mpls.get("router_address"):
+        mpls_device["router-address"] = mpls["router_address"]
+    if mpls_device:
+        device["mpls-te"] = mpls_device
+
+    neighbors = config.get("neighbor") or []
+    if neighbors:
+        device["neighbor"] = _keyed_list_to_device(neighbors, _NEIGHBOR_KEY)
+
+    params_device = _kebab_fields(config.get("parameters") or {})
+    if params_device:
+        device["parameters"] = params_device
+
+    iface_device = _passive_to_device(
+        config.get("passive_interface"),
+        config.get("passive_interface_exclude"),
+    )
+    if iface_device:
+        device["interface"] = iface_device
+
+    redist = config.get("redistribute") or []
+    if redist:
+        device["redistribute"] = _keyed_list_to_device(redist, _REDISTRIBUTE_KEY)
+
+    refresh_device = _timers_to_device_refresh(config.get("timers"))
+    if refresh_device:
+        device["refresh"] = refresh_device
+    throttle_device = _timers_to_device_throttle(config.get("timers"))
+    if throttle_device:
+        device.setdefault("timers", {}).update(throttle_device)
+
+    return device
 
 
 def get_running_config(vyos):
-    raw = vyos.get_config(_BASE)
-    if not raw or not isinstance(raw, dict):
+    return vyos.get_config(_BASE) or {}
+
+
+def _device_to_argspec(raw):
+    if not raw:
         return {}
-    result = {}
+    entry = {}
 
-    areas = _parse_areas(raw.get("area"))
-    if areas:
-        result["areas"] = areas
+    area_raw = raw.get("area")
+    if area_raw:
+        entry["areas"] = _keyed_list_from_device(area_raw, "area_id", _area_entry_from_device)
 
-    ac = raw.get("auto-cost", {})
-    if ac and "reference-bandwidth" in ac:
-        result["auto_cost"] = {"reference_bandwidth": int(ac["reference-bandwidth"])}
+    ac = raw.get("auto-cost") or {}
+    if ac.get("reference-bandwidth") is not None:
+        entry["auto_cost"] = {"reference_bandwidth": int(ac["reference-bandwidth"])}
 
-    di = _parse_default_information(raw.get("default-information", {}))
-    if di:
-        result["default_information"] = di
+    di_raw = (raw.get("default-information") or {}).get("originate")
+    if di_raw:
+        entry["default_information"] = {"originate": from_device(di_raw)}
 
     if "default-metric" in raw:
-        result["default_metric"] = int(raw["default-metric"])
+        entry["default_metric"] = int(raw["default-metric"])
 
-    dist = _parse_distance(raw.get("distance", {}))
+    dist = _distance_from_device(raw.get("distance"))
     if dist:
-        result["distance"] = dist
+        entry["distance"] = dist
 
-    lac = raw.get("log-adjacency-changes", {})
+    lac = raw.get("log-adjacency-changes")
     if lac:
-        if isinstance(lac, dict) and "detail" in lac:
-            result["log_adjacency_changes"] = "detail"
-        elif lac == "detail":
-            result["log_adjacency_changes"] = "detail"
+        lac_dict = to_tag_dict(lac)
+        if "detail" in lac_dict:
+            entry["log_adjacency_changes"] = "detail"
 
-    neighbors = _parse_neighbor(raw.get("neighbor"))
-    if neighbors:
-        result["neighbor"] = neighbors
+    mm_raw = (raw.get("max-metric") or {}).get("router-lsa")
+    if mm_raw:
+        entry["max_metric"] = {"router_lsa": from_device(mm_raw)}
 
-    params = _parse_parameters(raw.get("parameters"))
-    if params:
-        result["parameters"] = params
+    mpls_raw = raw.get("mpls-te") or {}
+    mpls_entry = {}
+    if "enable" in mpls_raw:
+        mpls_entry["enabled"] = True
+    if mpls_raw.get("router-address"):
+        mpls_entry["router_address"] = mpls_raw["router-address"]
+    if mpls_entry:
+        entry["mpls_te"] = mpls_entry
 
-    # passive interfaces — VyOS 1.5 uses interface <name> passive
-    iface_raw = raw.get("interface", {}) or {}
-    passive = sorted(
-        [name for name, data in iface_raw.items() if isinstance(data, dict) and "passive" in data],
-    )
+    neighbor_raw = raw.get("neighbor")
+    if neighbor_raw:
+        entry["neighbor"] = _keyed_list_from_device(neighbor_raw, _NEIGHBOR_KEY)
+
+    params_raw = raw.get("parameters")
+    if params_raw:
+        entry["parameters"] = from_device(params_raw)
+
+    passive, excluded = _passive_from_device(raw.get("interface"))
     if passive:
-        result["passive_interface"] = passive
+        entry["passive_interface"] = passive
+    if excluded:
+        entry["passive_interface_exclude"] = excluded
 
-    redist = _parse_redistribute(raw.get("redistribute"))
-    if redist:
-        result["redistribute"] = redist
+    redist_raw = raw.get("redistribute")
+    if redist_raw:
+        entry["redistribute"] = _keyed_list_from_device(redist_raw, _REDISTRIBUTE_KEY)
 
-    return result
+    timers = _timers_from_device(raw.get("refresh"), raw.get("timers"))
+    if timers:
+        entry["timers"] = timers
 
-
-def _area_type_cmds(abase, area_type, have_at):
-    cmds = []
-    have_at = have_at or {}
-    if area_type.get("normal") and not have_at.get("normal"):
-        cmds.append(("set", abase + ["area-type", "normal"]))
-    nssa = area_type.get("nssa") or {}
-    if nssa:
-        have_nssa = have_at.get("nssa") or {}
-        if not have_nssa:
-            cmds.append(("set", abase + ["area-type", "nssa"]))
-        if nssa.get("default_cost") and nssa["default_cost"] != have_nssa.get("default_cost"):
-            cmds.append(
-                (
-                    "set",
-                    abase
-                    + [
-                        "area-type",
-                        "nssa",
-                        "default-cost",
-                        str(nssa["default_cost"]),
-                    ],
-                ),
-            )
-        if nssa.get("no_summary") and not have_nssa.get("no_summary"):
-            cmds.append(("set", abase + ["area-type", "nssa", "no-summary"]))
-        if nssa.get("translate") and nssa["translate"] != have_nssa.get("translate"):
-            cmds.append(("set", abase + ["area-type", "nssa", "translate", nssa["translate"]]))
-    stub = area_type.get("stub") or {}
-    if stub:
-        have_stub = have_at.get("stub") or {}
-        if not have_stub:
-            if stub.get("default_cost"):
-                cmds.append(
-                    (
-                        "set",
-                        abase
-                        + [
-                            "area-type",
-                            "stub",
-                            "default-cost",
-                            str(stub["default_cost"]),
-                        ],
-                    ),
-                )
-            else:
-                cmds.append(("set", abase + ["area-type", "stub"]))
-        elif stub.get("default_cost") and stub["default_cost"] != have_stub.get("default_cost"):
-            cmds.append(
-                (
-                    "set",
-                    abase
-                    + [
-                        "area-type",
-                        "stub",
-                        "default-cost",
-                        str(stub["default_cost"]),
-                    ],
-                ),
-            )
-    return cmds
+    return entry
 
 
-def _area_cmds(area, have_area):
-    cmds = []
-    area_id = area["area_id"]
-    abase = _BASE + ["area", area_id]
-    have_area = have_area or {}
+def _kebab_fields(d):
+    """autoclean, then kebab-convert the resulting keys.
 
-    if area.get("area_type"):
-        cmds += _area_type_cmds(abase, area["area_type"], have_area.get("area_type"))
+    Safe specifically because every call site below is a leaf-level
+    dict of schema field names (nssa/stub attributes, distance.ospf,
+    default_information.originate, max_metric.router_lsa, parameters,
+    timers.throttle.spf, virtual_link's plain fields, and range/
+    neighbor/redistribute entry fields) with no further nested
+    tag-node-keyed structure underneath -- never an opaque value like
+    an area ID or interface name used as a dict key, which must stay
+    verbatim (confirmed real corruption risk: a blanket recursive
+    conversion turns "my_area" into "my-area").
 
-    if area.get("authentication") and area["authentication"] != have_area.get("authentication"):
-        cmds.append(("set", abase + ["authentication", area["authentication"]]))
-
-    if area.get("shortcut") and area["shortcut"] != have_area.get("shortcut"):
-        cmds.append(("set", abase + ["shortcut", area["shortcut"]]))
-
-    want_nets = {n["address"] for n in (area.get("network") or [])}
-    have_nets = {n["address"] for n in (have_area.get("network") or [])}
-    for addr in want_nets - have_nets:
-        cmds.append(("set", abase + ["network", addr]))
-
-    want_ranges = {r["address"]: r for r in (area.get("range") or [])}
-    have_ranges = {r["address"]: r for r in (have_area.get("range") or [])}
-    for addr, rng in want_ranges.items():
-        have_rng = have_ranges.get(addr, {})
-        if addr not in have_ranges:
-            cmds.append(("set", abase + ["range", addr]))
-        if rng.get("cost") and rng["cost"] != have_rng.get("cost"):
-            cmds.append(("set", abase + ["range", addr, "cost", str(rng["cost"])]))
-        if rng.get("not_advertise") and not have_rng.get("not_advertise"):
-            cmds.append(("set", abase + ["range", addr, "not-advertise"]))
-        if rng.get("substitute") and rng["substitute"] != have_rng.get("substitute"):
-            cmds.append(("set", abase + ["range", addr, "substitute", rng["substitute"]]))
-
-    return cmds
+    Needed because dict_op requires have's keys to already be genuine
+    device kebab-case -- it only normalizes underscores to dashes for
+    its own lookup index, but uses have's key verbatim for the output
+    path. autoclean deliberately leaves keys exactly as given (dict_op
+    is meant to convert during its own want-vs-have comparison), which
+    only works when have comes straight from the device. Here, have is
+    instead reconstructed by round-tripping through this module's own
+    entry-transforms (needed for confirmed structural exceptions like
+    area-type's "set" flag or the shared interface/passive subtree),
+    so any field passed through unconverted stays snake_case and
+    dict_op has no way to recover the real device key. Confirmed as a
+    real bug: "default_cost" appeared in a generated delete command
+    instead of "default-cost".
+    """
+    cleaned = autoclean(d)
+    return {k.replace("_", "-"): v for k, v in cleaned.items()}
 
 
-def _parameters_cmds(params, have_params):
-    cmds = []
-    have_params = have_params or {}
-    pbase = _BASE + ["parameters"]
-    if params.get("router_id") and params["router_id"] != have_params.get("router_id"):
-        cmds.append(("set", pbase + ["router-id", params["router_id"]]))
-    if params.get("abr_type") and params["abr_type"] != have_params.get("abr_type"):
-        cmds.append(("set", pbase + ["abr-type", params["abr_type"]]))
-    if params.get("opaque_lsa") and not have_params.get("opaque_lsa"):
-        cmds.append(("set", pbase + ["opaque-lsa"]))
-    if params.get("rfc1583_compatibility") and not have_params.get("rfc1583_compatibility"):
-        cmds.append(("set", pbase + ["rfc1583-compatibility"]))
-    return cmds
-
-
-def _redistribute_cmds(redist_list, have_redist_list):
-    cmds = []
-    want = {r["route_type"]: r for r in (redist_list or [])}
-    have = {r["route_type"]: r for r in (have_redist_list or [])}
-    for rt, entry in want.items():
-        have_entry = have.get(rt, {})
-        rbase = _BASE + ["redistribute", rt]
-        if rt not in have:
-            cmds.append(("set", rbase))
-        if entry.get("metric") and entry["metric"] != have_entry.get("metric"):
-            cmds.append(("set", rbase + ["metric", str(entry["metric"])]))
-        if entry.get("metric_type") and entry["metric_type"] != have_entry.get("metric_type"):
-            cmds.append(("set", rbase + ["metric-type", str(entry["metric_type"])]))
-        if entry.get("route_map") and entry["route_map"] != have_entry.get("route_map"):
-            cmds.append(("set", rbase + ["route-map", entry["route_map"]]))
-    return cmds
-
-
-def _neighbor_cmds(neighbors, have_neighbors):
-    cmds = []
-    want = {n["neighbor_id"]: n for n in (neighbors or [])}
-    have = {n["neighbor_id"]: n for n in (have_neighbors or [])}
-    for nb_id, entry in want.items():
-        have_entry = have.get(nb_id, {})
-        nbase = _BASE + ["neighbor", nb_id]
-        if nb_id not in have:
-            cmds.append(("set", nbase))
-        if entry.get("priority") and entry["priority"] != have_entry.get("priority"):
-            cmds.append(("set", nbase + ["priority", str(entry["priority"])]))
-        if entry.get("poll_interval") and entry["poll_interval"] != have_entry.get("poll_interval"):
-            cmds.append(("set", nbase + ["poll-interval", str(entry["poll_interval"])]))
-    return cmds
-
-
-def _default_info_cmds(di, have_di):
-    cmds = []
-    have_di = have_di or {}
-    orig = (di or {}).get("originate") or {}
-    have_orig = have_di.get("originate") or {}
-    if not orig:
-        return cmds
-    dbase = _BASE + ["default-information", "originate"]
-    if orig.get("always") and not have_orig.get("always"):
-        cmds.append(("set", dbase + ["always"]))
-    if orig.get("metric") and orig["metric"] != have_orig.get("metric"):
-        cmds.append(("set", dbase + ["metric", str(orig["metric"])]))
-    if orig.get("metric_type") and orig["metric_type"] != have_orig.get("metric_type"):
-        cmds.append(("set", dbase + ["metric-type", str(orig["metric_type"])]))
-    if orig.get("route_map") and orig["route_map"] != have_orig.get("route_map"):
-        cmds.append(("set", dbase + ["route-map", orig["route_map"]]))
-    return cmds
-
-
-def build_commands(config, have, state):
-    cmds = []
+def build_commands(config, raw_have, state):
+    raw_have = raw_have or {}
 
     if state == "deleted":
-        if have:
-            cmds.append(("delete", _BASE))
-        return cmds
+        return [("delete", _BASE)] if raw_have else []
 
+    want = _want_to_device(config)
+    norm_have = _want_to_device(_device_to_argspec(raw_have))
+
+    commands = []
     if state == "replaced":
-        would_set = build_commands(config, {}, "merged")
-        have_set = build_commands(have, {}, "merged")
-        if would_set == have_set:
-            return []
-        if have:
-            cmds.append(("delete", _BASE))
-        have = {}
-
-    config = config or {}
-
-    # parameters
-    if config.get("parameters"):
-        cmds += _parameters_cmds(config["parameters"], have.get("parameters"))
-
-    # auto_cost
-    ac = config.get("auto_cost") or {}
-    have_ac = have.get("auto_cost") or {}
-    if ac.get("reference_bandwidth") and ac["reference_bandwidth"] != have_ac.get(
-        "reference_bandwidth",
-    ):
-        cmds.append(
-            (
-                "set",
-                _BASE
-                + [
-                    "auto-cost",
-                    "reference-bandwidth",
-                    str(ac["reference_bandwidth"]),
-                ],
-            ),
-        )
-
-    # default_information
-    if config.get("default_information"):
-        cmds += _default_info_cmds(
-            config["default_information"],
-            have.get("default_information"),
-        )
-
-    # default_metric
-    if config.get("default_metric") and config["default_metric"] != have.get("default_metric"):
-        cmds.append(("set", _BASE + ["default-metric", str(config["default_metric"])]))
-
-    # distance
-    dist = config.get("distance") or {}
-    have_dist = have.get("distance") or {}
-    if dist.get("global") and dist["global"] != have_dist.get("global"):
-        cmds.append(("set", _BASE + ["distance", "global", str(dist["global"])]))
-    ospf_dist = dist.get("ospf") or {}
-    have_ospf_dist = have_dist.get("ospf") or {}
-    for key, api_key in [
-        ("external", "external"),
-        ("inter_area", "inter-area"),
-        ("intra_area", "intra-area"),
-    ]:
-        if ospf_dist.get(key) and ospf_dist[key] != have_ospf_dist.get(key):
-            cmds.append(("set", _BASE + ["distance", "ospf", api_key, str(ospf_dist[key])]))
-
-    # log_adjacency_changes
-    if config.get("log_adjacency_changes") and config["log_adjacency_changes"] != have.get(
-        "log_adjacency_changes",
-    ):
-        cmds.append(("set", _BASE + ["log-adjacency-changes", config["log_adjacency_changes"]]))
-
-    # neighbor
-    if config.get("neighbor"):
-        cmds += _neighbor_cmds(config["neighbor"], have.get("neighbor"))
-
-    # redistribute
-    if config.get("redistribute"):
-        cmds += _redistribute_cmds(config["redistribute"], have.get("redistribute"))
-
-    # passive_interface — VyOS 1.5 per-interface style
-    want_passive = set(config.get("passive_interface") or [])
-    have_passive = set(have.get("passive_interface") or [])
-    for iface in want_passive - have_passive:
-        cmds.append(("set", _BASE + ["interface", iface, "passive"]))
-
-    # areas
-    have_areas = {a["area_id"]: a for a in (have.get("areas") or [])}
-    for area in config.get("areas") or []:
-        have_area = have_areas.get(area["area_id"], {})
-        cmds += _area_cmds(area, have_area)
-
-    return cmds
+        commands += dict_op(want, norm_have, _BASE, op="purge")
+    commands += dict_op(want, norm_have, _BASE, op="set")
+    return commands
 
 
-ARGUMENT_SPEC = dict(
-    config=dict(
+_VLINK_AUTH_OPTIONS = dict(
+    md5=dict(
+        type="list",
+        elements="dict",
+        options=dict(
+            key_id=dict(type="int"),
+            md5_key=dict(type="str", no_log=True),
+        ),
+    ),
+    plaintext_password=dict(type="str", no_log=True),
+)
+
+_VLINK_OPTIONS = dict(
+    address=dict(type="str", required=True),
+    authentication=dict(type="dict", options=_VLINK_AUTH_OPTIONS),
+    dead_interval=dict(type="int"),
+    hello_interval=dict(type="int"),
+    retransmit_interval=dict(type="int"),
+    transmit_delay=dict(type="int"),
+)
+
+_AREA_OPTIONS = dict(
+    area_id=dict(type="str", required=True),
+    area_type=dict(
         type="dict",
         options=dict(
-            areas=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    area_id=dict(type="str", required=True),
-                    area_type=dict(
-                        type="dict",
-                        options=dict(
-                            normal=dict(type="bool"),
-                            nssa=dict(
-                                type="dict",
-                                options=dict(
-                                    set=dict(type="bool"),
-                                    default_cost=dict(type="int"),
-                                    no_summary=dict(type="bool"),
-                                    translate=dict(
-                                        type="str",
-                                        choices=["always", "candidate", "never"],
-                                    ),
-                                ),
-                            ),
-                            stub=dict(
-                                type="dict",
-                                options=dict(
-                                    set=dict(type="bool"),
-                                    default_cost=dict(type="int"),
-                                    no_summary=dict(type="bool"),
-                                ),
-                            ),
-                        ),
-                    ),
-                    authentication=dict(
-                        type="str",
-                        choices=["plaintext-password", "md5"],
-                    ),
-                    network=dict(
-                        type="list",
-                        elements="dict",
-                        options=dict(
-                            address=dict(type="str", required=True),
-                        ),
-                    ),
-                    range=dict(
-                        type="list",
-                        elements="dict",
-                        options=dict(
-                            address=dict(type="str", required=True),
-                            cost=dict(type="int"),
-                            not_advertise=dict(type="bool"),
-                            substitute=dict(type="str"),
-                        ),
-                    ),
-                    shortcut=dict(type="str", choices=["default", "disable", "enable"]),
-                ),
-            ),
-            auto_cost=dict(
+            normal=dict(type="bool"),
+            nssa=dict(
                 type="dict",
                 options=dict(
-                    reference_bandwidth=dict(type="int"),
+                    set=dict(type="bool"),
+                    default_cost=dict(type="int"),
+                    no_summary=dict(type="bool"),
+                    translate=dict(type="str", choices=["always", "candidate", "never"]),
                 ),
             ),
-            default_information=dict(
+            stub=dict(
                 type="dict",
                 options=dict(
-                    originate=dict(
-                        type="dict",
-                        options=dict(
-                            always=dict(type="bool"),
-                            metric=dict(type="int"),
-                            metric_type=dict(type="int"),
-                            route_map=dict(type="str"),
-                        ),
-                    ),
+                    set=dict(type="bool"),
+                    default_cost=dict(type="int"),
+                    no_summary=dict(type="bool"),
                 ),
             ),
-            default_metric=dict(type="int"),
-            distance=dict(
+        ),
+    ),
+    authentication=dict(type="str", choices=["plaintext-password", "md5"]),
+    network=dict(
+        type="list",
+        elements="dict",
+        options=dict(address=dict(type="str", required=True)),
+    ),
+    range=dict(
+        type="list",
+        elements="dict",
+        options=dict(
+            address=dict(type="str", required=True),
+            cost=dict(type="int"),
+            not_advertise=dict(type="bool"),
+            substitute=dict(type="str"),
+        ),
+    ),
+    shortcut=dict(type="str", choices=["default", "disable", "enable"]),
+    virtual_link=dict(type="list", elements="dict", options=_VLINK_OPTIONS),
+)
+
+_CONFIG_OPTIONS = dict(
+    areas=dict(type="list", elements="dict", options=_AREA_OPTIONS),
+    auto_cost=dict(
+        type="dict",
+        options=dict(reference_bandwidth=dict(type="int")),
+    ),
+    default_information=dict(
+        type="dict",
+        options=dict(
+            originate=dict(
                 type="dict",
                 options=dict(
-                    **{"global": dict(type="int")},
-                    ospf=dict(
-                        type="dict",
-                        options=dict(
-                            external=dict(type="int"),
-                            inter_area=dict(type="int"),
-                            intra_area=dict(type="int"),
-                        ),
-                    ),
-                ),
-            ),
-            log_adjacency_changes=dict(type="str", choices=["detail"]),
-            neighbor=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    neighbor_id=dict(type="str", required=True),
-                    poll_interval=dict(type="int"),
-                    priority=dict(type="int"),
-                ),
-            ),
-            parameters=dict(
-                type="dict",
-                options=dict(
-                    abr_type=dict(
-                        type="str",
-                        choices=["cisco", "ibm", "shortcut", "standard"],
-                    ),
-                    opaque_lsa=dict(type="bool"),
-                    rfc1583_compatibility=dict(type="bool"),
-                    router_id=dict(type="str"),
-                ),
-            ),
-            passive_interface=dict(type="list", elements="str"),
-            redistribute=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    route_type=dict(
-                        type="str",
-                        choices=["bgp", "connected", "kernel", "rip", "static"],
-                    ),
+                    always=dict(type="bool"),
                     metric=dict(type="int"),
                     metric_type=dict(type="int"),
                     route_map=dict(type="str"),
@@ -912,6 +1032,98 @@ ARGUMENT_SPEC = dict(
             ),
         ),
     ),
+    default_metric=dict(type="int"),
+    distance=dict(
+        type="dict",
+        options=dict(
+            **{"global": dict(type="int")},
+            ospf=dict(
+                type="dict",
+                options=dict(
+                    external=dict(type="int"),
+                    inter_area=dict(type="int"),
+                    intra_area=dict(type="int"),
+                ),
+            ),
+        ),
+    ),
+    log_adjacency_changes=dict(type="str", choices=["detail"]),
+    max_metric=dict(
+        type="dict",
+        options=dict(
+            router_lsa=dict(
+                type="dict",
+                options=dict(
+                    administrative=dict(type="bool"),
+                    on_shutdown=dict(type="int"),
+                    on_startup=dict(type="int"),
+                ),
+            ),
+        ),
+    ),
+    mpls_te=dict(
+        type="dict",
+        options=dict(
+            enabled=dict(type="bool"),
+            router_address=dict(type="str"),
+        ),
+    ),
+    neighbor=dict(
+        type="list",
+        elements="dict",
+        options=dict(
+            neighbor_id=dict(type="str", required=True),
+            poll_interval=dict(type="int"),
+            priority=dict(type="int"),
+        ),
+    ),
+    parameters=dict(
+        type="dict",
+        options=dict(
+            abr_type=dict(type="str", choices=["cisco", "ibm", "shortcut", "standard"]),
+            opaque_lsa=dict(type="bool"),
+            rfc1583_compatibility=dict(type="bool"),
+            router_id=dict(type="str"),
+        ),
+    ),
+    passive_interface=dict(type="list", elements="str"),
+    passive_interface_exclude=dict(type="list", elements="str"),
+    redistribute=dict(
+        type="list",
+        elements="dict",
+        options=dict(
+            route_type=dict(type="str", choices=["bgp", "connected", "kernel", "rip", "static"]),
+            metric=dict(type="int"),
+            metric_type=dict(type="int"),
+            route_map=dict(type="str"),
+        ),
+    ),
+    timers=dict(
+        type="dict",
+        options=dict(
+            refresh=dict(
+                type="dict",
+                options=dict(timers=dict(type="int")),
+            ),
+            throttle=dict(
+                type="dict",
+                options=dict(
+                    spf=dict(
+                        type="dict",
+                        options=dict(
+                            delay=dict(type="int"),
+                            initial_holdtime=dict(type="int"),
+                            max_holdtime=dict(type="int"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ),
+)
+
+ARGUMENT_SPEC = dict(
+    config=dict(type="dict", options=_CONFIG_OPTIONS),
     state=dict(
         default="merged",
         choices=["merged", "replaced", "deleted", "gathered"],
@@ -926,23 +1138,28 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or {}
 
-    have = get_running_config(vyos)
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(raw_have)
+    cast_by_spec(have, _CONFIG_OPTIONS)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(after_raw)
+        cast_by_spec(after, _CONFIG_OPTIONS)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,
