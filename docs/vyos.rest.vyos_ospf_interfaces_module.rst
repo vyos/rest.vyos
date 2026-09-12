@@ -17,10 +17,7 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- Manages OSPF and OSPFv3 interface configuration on VyOS devices via the REST API.
-- IPv4 OSPF maps to ``protocols ospf interface``.
-- IPv6 OSPFv3 maps to ``protocols ospfv3 interface``.
-- Uses REST API (``connection=httpapi``) instead of CLI.
+- Manages OSPFv2 (IPv4) and OSPFv3 (IPv6) per-interface configuration on VyOS devices via the REST API.
 
 
 
@@ -89,6 +86,23 @@ Parameters
                 </td>
                 <td>
                         <div>Address family identifier.</div>
+                </td>
+            </tr>
+            <tr>
+                    <td class="elbow-placeholder"></td>
+                    <td class="elbow-placeholder"></td>
+                <td colspan="3">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>area</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>OSPF area to assign this interface to (<code>set protocols ospf[v3] interface &lt;name&gt; area &lt;id&gt;</code>). This is the primary mechanism that enables OSPF on an interface at all -- confirmed via VyOS&#x27;s official documentation across 1.4+/1.5 LTS/rolling as the current syntax, distinct from and superseding the older (1.3-era) <code>area &lt;id&gt; interface &lt;name&gt;</code> form.</div>
                 </td>
             </tr>
             <tr>
@@ -198,7 +212,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>Interface bandwidth in kbps (IPv4 only).</div>
+                        <div>Interface bandwidth in Mbit/s (IPv4 only).</div>
                 </td>
             </tr>
             <tr>
@@ -304,7 +318,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Disable MTU check (IPv4 only).</div>
+                        <div>Disable MTU mismatch detection.</div>
                 </td>
             </tr>
             <tr>
@@ -327,7 +341,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Network type (IPv4 only).</div>
+                        <div>Network type.</div>
                 </td>
             </tr>
             <tr>
@@ -348,7 +362,7 @@ Parameters
                         </ul>
                 </td>
                 <td>
-                        <div>Disable adjacency formation (IPv6 only).</div>
+                        <div>Suppress adjacency formation on this interface.</div>
                 </td>
             </tr>
             <tr>
@@ -460,6 +474,14 @@ Notes
    - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
 
 
+See Also
+--------
+
+.. seealso::
+
+   :ref:`vyos.vyos.vyos_ospf_interfaces_module`
+      The official documentation on the **vyos.vyos.vyos_ospf_interfaces** module.
+
 
 Examples
 --------
@@ -473,26 +495,7 @@ Examples
             address_family:
               - afi: ipv4
                 cost: 100
-                transmit_delay: 50
-                priority: 26
-              - afi: ipv6
-                dead_interval: 39
-                passive: true
         state: merged
-
-    - name: Delete OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        config:
-          - name: eth1
-        state: deleted
-
-    - name: Delete all OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        state: deleted
-
-    - name: Gather current OSPF interface configuration
-      vyos.rest.vyos_ospf_interfaces:
-        state: gathered
 
 
 

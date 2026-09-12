@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-# GNU General Public License v3.0+
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from __future__ import absolute_import, division, print_function
 
 
@@ -11,10 +12,8 @@ DOCUMENTATION = r"""
 module: vyos_ospf_interfaces
 short_description: Manage OSPF interface configuration on VyOS devices using REST API
 description:
-  - Manages OSPF and OSPFv3 interface configuration on VyOS devices via the REST API.
-  - IPv4 OSPF maps to C(protocols ospf interface).
-  - IPv6 OSPFv3 maps to C(protocols ospfv3 interface).
-  - Uses REST API (C(connection=httpapi)) instead of CLI.
+  - Manages OSPFv2 (IPv4) and OSPFv3 (IPv6) per-interface configuration on
+    VyOS devices via the REST API.
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -38,6 +37,16 @@ options:
             type: str
             choices: [ipv4, ipv6]
             required: true
+          area:
+            description: >-
+              OSPF area to assign this interface to (C(set protocols
+              ospf[v3] interface <name> area <id>)). This is the
+              primary mechanism that enables OSPF on an interface at
+              all -- confirmed via VyOS's official documentation
+              across 1.4+/1.5 LTS/rolling as the current syntax,
+              distinct from and superseding the older (1.3-era)
+              C(area <id> interface <name>) form.
+            type: str
           authentication:
             description: Authentication settings (IPv4 only).
             type: dict
@@ -56,7 +65,7 @@ options:
                     description: MD5 key string.
                     type: str
           bandwidth:
-            description: Interface bandwidth in kbps (IPv4 only).
+            description: Interface bandwidth in Mbit/s (IPv4 only).
             type: int
           cost:
             description: Interface cost metric.
@@ -74,14 +83,14 @@ options:
             description: OSPFv3 instance ID (IPv6 only).
             type: str
           mtu_ignore:
-            description: Disable MTU check (IPv4 only).
+            description: Disable MTU mismatch detection.
             type: bool
           network:
-            description: Network type (IPv4 only).
+            description: Network type.
             type: str
             choices: [broadcast, non-broadcast, point-to-multipoint, point-to-point]
           passive:
-            description: Disable adjacency formation (IPv6 only).
+            description: Suppress adjacency formation on this interface.
             type: bool
           priority:
             description: Interface priority.
@@ -106,6 +115,8 @@ options:
 notes:
   - Requires C(ansible_connection=httpapi) with the VyOS httpapi plugin.
   - C(ansible_network_os) must be set to C(vyos.rest.vyos).
+seealso:
+  - module: vyos.vyos.vyos_ospf_interfaces
 """
 
 EXAMPLES = r"""
@@ -116,26 +127,7 @@ EXAMPLES = r"""
         address_family:
           - afi: ipv4
             cost: 100
-            transmit_delay: 50
-            priority: 26
-          - afi: ipv6
-            dead_interval: 39
-            passive: true
     state: merged
-
-- name: Delete OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    config:
-      - name: eth1
-    state: deleted
-
-- name: Delete all OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    state: deleted
-
-- name: Gather current OSPF interface configuration
-  vyos.rest.vyos_ospf_interfaces:
-    state: gathered
 """
 
 RETURN = r"""
@@ -166,336 +158,339 @@ response:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    autoclean,
+    cast_by_spec,
+    dict_op,
+    from_device,
+    to_tag_dict,
+)
 
 
 _BASE4 = ["protocols", "ospf", "interface"]
 _BASE6 = ["protocols", "ospfv3", "interface"]
 
-# IPv4 scalar fields: argspec_key -> api_key
-_IPV4_SCALARS = {
-    "bandwidth": "bandwidth",
-    "cost": "cost",
-    "dead_interval": "dead-interval",
-    "hello_interval": "hello-interval",
-    "mtu_ignore": "mtu-ignore",
-    "network": "network",
-    "priority": "priority",
-    "retransmit_interval": "retransmit-interval",
-    "transmit_delay": "transmit-delay",
-}
-
-# IPv6 scalar fields
-_IPV6_SCALARS = {
-    "cost": "cost",
-    "dead_interval": "dead-interval",
-    "hello_interval": "hello-interval",
-    "ifmtu": "ifmtu",
-    "instance": "instance-id",
-    "passive": "passive",
-    "priority": "priority",
-    "retransmit_interval": "retransmit-interval",
-    "transmit_delay": "transmit-delay",
-}
-
-# bool fields that use presence (no value)
-_IPV4_BOOL_PRESENCE = {"mtu_ignore"}
-_IPV6_BOOL_PRESENCE = {"passive"}
+_IPV6_RENAMES = {"instance": "instance-id"}
 
 
-def _parse_ipv4_iface(data):
-    af = {"afi": "ipv4"}
-    data = data or {}
-    for arg_key, api_key in _IPV4_SCALARS.items():
-        if api_key in data:
-            if arg_key in _IPV4_BOOL_PRESENCE:
-                af[arg_key] = True
-            else:
-                val = data[api_key]
-                if arg_key in (
-                    "bandwidth",
-                    "cost",
-                    "dead_interval",
-                    "hello_interval",
-                    "priority",
-                    "retransmit_interval",
-                    "transmit_delay",
-                ):
-                    try:
-                        af[arg_key] = int(val)
-                    except (TypeError, ValueError):
-                        af[arg_key] = val
-                else:
-                    af[arg_key] = val
-    # authentication
-    auth = data.get("authentication", {})
-    if auth:
-        auth_entry = {}
-        if "plaintext-password" in auth:
-            auth_entry["plaintext_password"] = auth["plaintext-password"]
-        md5 = auth.get("md5", {})
-        if md5:
-            key_id_data = md5.get("key-id", {})
-            if key_id_data:
-                key_id = list(key_id_data.keys())[0]
-                md5_key = key_id_data[key_id].get("md5-key")
-                auth_entry["md5_key"] = {"key_id": int(key_id), "key": md5_key}
-        if auth_entry:
-            af["authentication"] = auth_entry
-    return af
+def _derive_key_field(options_spec):
+    required = [k for k, spec in options_spec.items() if spec.get("required")]
+    if len(required) != 1:
+        raise ValueError(
+            "expected exactly one required suboption to serve as the key field, "
+            "found: {0}".format(required),
+        )
+    return required[0]
 
 
-def _parse_ipv6_iface(data):
-    af = {"afi": "ipv6"}
-    data = data or {}
-    for arg_key, api_key in _IPV6_SCALARS.items():
-        if api_key in data:
-            if arg_key in _IPV6_BOOL_PRESENCE:
-                af[arg_key] = True
-            else:
-                val = data[api_key]
-                if arg_key in (
-                    "cost",
-                    "dead_interval",
-                    "hello_interval",
-                    "ifmtu",
-                    "priority",
-                    "retransmit_interval",
-                    "transmit_delay",
-                ):
-                    try:
-                        af[arg_key] = int(val)
-                    except (TypeError, ValueError):
-                        af[arg_key] = val
-                else:
-                    af[arg_key] = val
-    return af
+def _kebab_fields(d):
+    cleaned = autoclean(d)
+    return {k.replace("_", "-"): v for k, v in cleaned.items()}
 
 
-def get_running_config(vyos):
-    raw4 = vyos.get_config(_BASE4) or {}
-    raw4 = raw4.get("interface", raw4)
-    raw6 = vyos.get_config(_BASE6) or {}
-    raw6 = raw6.get("interface", raw6)
-
-    ifaces = {}
-
-    for iface_name, data in raw4.items():
-        if iface_name not in ifaces:
-            ifaces[iface_name] = {"name": iface_name, "address_family": []}
-        af = _parse_ipv4_iface(data)
-        if len(af) > 1:  # more than just afi key
-            ifaces[iface_name]["address_family"].append(af)
-
-    for iface_name, data in raw6.items():
-        if iface_name not in ifaces:
-            ifaces[iface_name] = {"name": iface_name, "address_family": []}
-        af = _parse_ipv6_iface(data)
-        if len(af) > 1:
-            ifaces[iface_name]["address_family"].append(af)
-
-    result = sorted(ifaces.values(), key=lambda x: x["name"])
-    # Remove empty address_family lists
-    for iface in result:
-        if not iface["address_family"]:
-            del iface["address_family"]
+def _keyed_list_to_device(items, key_field, entry_transform=None):
+    entry_transform = entry_transform or _kebab_fields
+    result = {}
+    for item in items or []:
+        if not item.get(key_field):
+            continue
+        rest = {k: v for k, v in item.items() if k != key_field}
+        result[str(item[key_field])] = entry_transform(rest)
     return result
 
 
-def _ipv4_af_cmds(iface_name, af, have_af, op="set"):
-    cmds = []
-    base = _BASE4 + [iface_name]
-    have_af = have_af or {}
-
-    for arg_key, api_key in _IPV4_SCALARS.items():
-        want_val = af.get(arg_key)
-        have_val = have_af.get(arg_key)
-        if want_val is not None and want_val != have_val:
-            if arg_key in _IPV4_BOOL_PRESENCE:
-                cmds.append(("set", base + [api_key]))
-            else:
-                cmds.append(("set", base + [api_key, str(want_val)]))
-        elif op == "replace" and have_val is not None and want_val != have_val:
-            cmds.append(("delete", base + [api_key]))
-
-    # authentication
-    want_auth = af.get("authentication") or {}
-    have_auth = have_af.get("authentication") or {}
-    if want_auth.get("plaintext_password") and want_auth["plaintext_password"] != have_auth.get(
-        "plaintext_password",
-    ):
-        cmds.append(
-            (
-                "set",
-                base
-                + [
-                    "authentication",
-                    "plaintext-password",
-                    want_auth["plaintext_password"],
-                ],
-            ),
-        )
-    md5 = want_auth.get("md5_key") or {}
-    if md5 and md5 != have_auth.get("md5_key"):
-        cmds.append(
-            (
-                "set",
-                base
-                + [
-                    "authentication",
-                    "md5",
-                    "key-id",
-                    str(md5["key_id"]),
-                    "md5-key",
-                    md5["key"],
-                ],
-            ),
-        )
-
-    return cmds
+def _keyed_list_from_device(raw, key_field, entry_transform=None):
+    entry_transform = entry_transform or from_device
+    return [
+        {key_field: key, **entry_transform(data or {})}
+        for key, data in sorted(to_tag_dict(raw).items())
+    ]
 
 
-def _ipv6_af_cmds(iface_name, af, have_af, op="set"):
-    cmds = []
-    base = _BASE6 + [iface_name]
-    have_af = have_af or {}
-
-    for arg_key, api_key in _IPV6_SCALARS.items():
-        want_val = af.get(arg_key)
-        have_val = have_af.get(arg_key)
-        if want_val is not None and want_val != have_val:
-            if arg_key in _IPV6_BOOL_PRESENCE:
-                cmds.append(("set", base + [api_key]))
-            else:
-                cmds.append(("set", base + [api_key, str(want_val)]))
-        elif op == "replace" and have_val is not None and want_val != have_val:
-            cmds.append(("delete", base + [api_key]))
-
-    return cmds
+def _auth_to_device(auth):
+    if not auth:
+        return {}
+    device = {}
+    if auth.get("plaintext_password"):
+        device["plaintext-password"] = auth["plaintext_password"]
+    md5 = auth.get("md5_key") or {}
+    if md5.get("key_id") is not None and md5.get("key") is not None:
+        device["md5"] = {"key-id": {str(md5["key_id"]): {"md5-key": md5["key"]}}}
+    return device
 
 
-def build_commands(config, have_raw, state):
-    cmds = []
-    have_map = {e["name"]: e for e in have_raw}
+def _auth_from_device(data):
+    if not data:
+        return None
+    entry = {}
+    if data.get("plaintext-password"):
+        entry["plaintext_password"] = data["plaintext-password"]
+    key_id_raw = (data.get("md5") or {}).get("key-id")
+    if key_id_raw:
+        key_id, kdata = sorted(to_tag_dict(key_id_raw).items())[0]
+        entry["md5_key"] = {"key_id": int(key_id), "key": (kdata or {}).get("md5-key")}
+    return entry or None
+
+
+def _af4_entry_to_device(rest):
+    exclude = {"afi", "authentication"}
+    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
+    if rest.get("authentication"):
+        auth_device = _auth_to_device(rest["authentication"])
+        if auth_device:
+            device["authentication"] = auth_device
+    return device
+
+
+def _af4_entry_from_device(data):
+    exclude = {"authentication"}
+    entry = from_device({k: v for k, v in data.items() if k not in exclude})
+    auth = _auth_from_device(data.get("authentication"))
+    if auth:
+        entry["authentication"] = auth
+    return entry
+
+
+def _af6_entry_to_device(rest):
+    exclude = set(_IPV6_RENAMES)
+    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
+    for arg_key, device_key in _IPV6_RENAMES.items():
+        if rest.get(arg_key) is not None:
+            device[device_key] = rest[arg_key]
+    return device
+
+
+def _af6_entry_from_device(data):
+    exclude = set(_IPV6_RENAMES.values())
+    entry = from_device({k: v for k, v in data.items() if k not in exclude})
+    for arg_key, device_key in _IPV6_RENAMES.items():
+        if data.get(device_key) is not None:
+            entry[arg_key] = data[device_key]
+    return entry
+
+
+def _want_to_device(config):
+    want4 = {}
+    want6 = {}
+    for entry in config or []:
+        name = entry.get("name")
+        if not name:
+            continue
+        for af in entry.get("address_family") or []:
+            afi = af.get("afi")
+            rest = {k: v for k, v in af.items() if k != "afi"}
+            if afi == "ipv4":
+                want4[name] = _af4_entry_to_device(rest)
+            elif afi == "ipv6":
+                want6[name] = _af6_entry_to_device(rest)
+    return want4, want6
+
+
+def get_running_config(vyos):
+    """VyOS's REST API collapses a single-child tag node to a plain
+    string (or a list for multiple) -- confirmed by reproduction: an
+    unguarded .get("interface", ...) on a non-dict response raises
+    AttributeError, and consuming an unnormalized raw4/raw6 downstream
+    (e.g. in build_commands's deleted branch) iterates a collapsed
+    string's individual characters as if they were interface names,
+    producing corrupted delete paths. Guarding the unwrap and
+    normalizing via to_tag_dict here means every caller always
+    receives a genuine {name: {...}} dict, with no need to re-guard
+    at each use site.
+    """
+    raw4 = vyos.get_config(_BASE4) or {}
+    if isinstance(raw4, dict):
+        raw4 = raw4.get("interface", raw4)
+    raw4 = to_tag_dict(raw4)
+
+    raw6 = vyos.get_config(_BASE6) or {}
+    if isinstance(raw6, dict):
+        raw6 = raw6.get("interface", raw6)
+    raw6 = to_tag_dict(raw6)
+
+    return raw4, raw6
+
+
+def _device_to_argspec(raw4, raw6):
+    ifaces = {}
+    for name, data in sorted(to_tag_dict(raw4 or {}).items()):
+        entry = _af4_entry_from_device(data or {})
+        if entry:
+            ifaces.setdefault(name, {"name": name, "address_family": []})
+            ifaces[name]["address_family"].append({"afi": "ipv4", **entry})
+    for name, data in sorted(to_tag_dict(raw6 or {}).items()):
+        entry = _af6_entry_from_device(data or {})
+        if entry:
+            ifaces.setdefault(name, {"name": name, "address_family": []})
+            ifaces[name]["address_family"].append({"afi": "ipv6", **entry})
+    return sorted(ifaces.values(), key=lambda i: i["name"])
+
+
+def _validate_config(config):
+    """Confirmed real bugs, both by reproduction:
+
+    1. md5_key.key/key_id were checked by truthiness, not presence --
+       key_id set without key reached _auth_to_device and produced
+       {"md5-key": None} in the generated command (a broken device
+       write, not a validation failure); an empty-string key without
+       key_id silently passed validation and then got dropped
+       entirely by _auth_to_device's own key_id is not None check
+       (the original confirmed bug, just reachable via a second
+       value). is not None checks catch both directions and don't
+       treat a legitimately-empty (but explicitly set) value as
+       "unset".
+
+    2. authentication is documented and confirmed (via vyos-1x
+       schema) as IPv4-only -- OSPFv3's interface config has no
+       authentication node at all -- but the shared argspec doesn't
+       enforce this, and _af6_entry_to_device would silently forward
+       it into the ipv6 device path, where the real device would
+       reject it at apply time instead of failing cleanly upfront.
+    """
+    for entry in config or []:
+        name = entry.get("name")
+        for af in entry.get("address_family") or []:
+            afi = af.get("afi")
+            auth = af.get("authentication") or {}
+
+            if afi == "ipv6" and auth:
+                return (
+                    "address_family.authentication was set for interface "
+                    "'{0}' with afi: ipv6 -- authentication is IPv4-only "
+                    "and has no corresponding OSPFv3 device path.".format(name)
+                )
+
+            md5 = auth.get("md5_key") or {}
+            has_key = md5.get("key") is not None
+            has_key_id = md5.get("key_id") is not None
+            if has_key != has_key_id:
+                return (
+                    "address_family.authentication.md5_key.key and .key_id "
+                    "were not both set for interface '{0}' -- both are "
+                    "required together.".format(name)
+                )
+    return None
+
+
+def build_commands(config, raw_have, state):
+    raw4, raw6 = raw_have
+    config = config or []
 
     if state == "deleted":
+        cmds = []
         if not config:
-            # delete all
-            if have_raw:
-                for iface in have_raw:
-                    name = iface["name"]
-                    afs = {af["afi"] for af in iface.get("address_family", [])}
-                    if "ipv4" in afs:
-                        cmds.append(("delete", _BASE4 + [name]))
-                    if "ipv6" in afs:
-                        cmds.append(("delete", _BASE6 + [name]))
-        else:
-            for entry in config:
-                name = entry["name"]
-                if name in have_map:
-                    have_afs = {af["afi"] for af in have_map[name].get("address_family", [])}
-                    want_afis = {af["afi"] for af in (entry.get("address_family") or [])}
-                    if not want_afis:
-                        # delete all AFIs for this interface
-                        if "ipv4" in have_afs:
-                            cmds.append(("delete", _BASE4 + [name]))
-                        if "ipv6" in have_afs:
-                            cmds.append(("delete", _BASE6 + [name]))
-                    else:
-                        if "ipv4" in want_afis and "ipv4" in have_afs:
-                            cmds.append(("delete", _BASE4 + [name]))
-                        if "ipv6" in want_afis and "ipv6" in have_afs:
-                            cmds.append(("delete", _BASE6 + [name]))
+            for name in raw4 or {}:
+                cmds.append(("delete", _BASE4 + [name]))
+            for name in raw6 or {}:
+                cmds.append(("delete", _BASE6 + [name]))
+            return cmds
+        for entry in config:
+            name = entry.get("name")
+            if not name:
+                continue
+            want_afis = {af.get("afi") for af in (entry.get("address_family") or [])}
+            if not want_afis:
+                if name in (raw4 or {}):
+                    cmds.append(("delete", _BASE4 + [name]))
+                if name in (raw6 or {}):
+                    cmds.append(("delete", _BASE6 + [name]))
+            else:
+                if "ipv4" in want_afis and name in (raw4 or {}):
+                    cmds.append(("delete", _BASE4 + [name]))
+                if "ipv6" in want_afis and name in (raw6 or {}):
+                    cmds.append(("delete", _BASE6 + [name]))
         return cmds
 
+    want4, want6 = _want_to_device(config)
+    have_argspec = _device_to_argspec(raw4, raw6)
+    norm4, norm6 = _want_to_device(have_argspec)
+
+    commands = []
     if state == "overridden":
-        want_names = {e["name"] for e in config}
-        for name, have_iface in have_map.items():
-            if name not in want_names:
-                have_afs = {af["afi"] for af in have_iface.get("address_family", [])}
-                if "ipv4" in have_afs:
-                    cmds.append(("delete", _BASE4 + [name]))
-                if "ipv6" in have_afs:
-                    cmds.append(("delete", _BASE6 + [name]))
+        commands += dict_op(want4, norm4, _BASE4, op="purge")
+        commands += dict_op(want6, norm6, _BASE6, op="purge")
+        # Confirmed bug: an interface present on the raw device with
+        # an entirely empty per-AFI entry (bare presence, nothing
+        # configured under it) produces {} from _af*_entry_from_device,
+        # which _device_to_argspec silently omits -- invisible to both
+        # want and norm_have, so dict_op's purge above (which only
+        # ever iterates have's own keys) can never generate a delete
+        # for it. These names are, by construction, guaranteed absent
+        # from norm4/norm6, so there's no risk of duplicating a delete
+        # dict_op already issued.
+        for name in raw4 or {}:
+            if name not in norm4 and name not in want4:
+                commands.append(("delete", _BASE4 + [name]))
+        for name in raw6 or {}:
+            if name not in norm6 and name not in want6:
+                commands.append(("delete", _BASE6 + [name]))
+    elif state == "replaced":
+        for entry in config:
+            name = entry.get("name")
+            if not name:
+                continue
+            for af in entry.get("address_family") or []:
+                afi = af.get("afi")
+                if afi == "ipv4":
+                    commands += dict_op(
+                        want4.get(name, {}),
+                        norm4.get(name, {}),
+                        _BASE4 + [name],
+                        op="purge",
+                    )
+                elif afi == "ipv6":
+                    commands += dict_op(
+                        want6.get(name, {}),
+                        norm6.get(name, {}),
+                        _BASE6 + [name],
+                        op="purge",
+                    )
+    commands += dict_op(want4, norm4, _BASE4, op="set")
+    commands += dict_op(want6, norm6, _BASE6, op="set")
+    return commands
 
-    for entry in config:
-        name = entry["name"]
-        have_iface = have_map.get(name, {})
-        have_af_map = {af["afi"]: af for af in have_iface.get("address_family", [])}
 
-        for af in entry.get("address_family", []):
-            afi = af["afi"]
-            have_af = have_af_map.get(afi, {})
-
-            if state == "replaced":
-                af_clean = {k: v for k, v in af.items() if v is not None}
-                if have_af and have_af != af_clean:
-                    if afi == "ipv4":
-                        cmds.append(("delete", _BASE4 + [name]))
-                        have_af = {}
-                    else:
-                        cmds.append(("delete", _BASE6 + [name]))
-                        have_af = {}
-                elif have_af == af_clean:
-                    continue  # already matches — idempotent
-
-            if afi == "ipv4":
-                cmds += _ipv4_af_cmds(name, af, have_af)
-            else:
-                cmds += _ipv6_af_cmds(name, af, have_af)
-
-    return cmds
-
-
-ARGUMENT_SPEC = dict(
-    config=dict(
-        type="list",
-        elements="dict",
+_AUTH_OPTIONS = dict(
+    plaintext_password=dict(type="str", no_log=True),
+    md5_key=dict(
+        type="dict",
+        no_log=True,
         options=dict(
-            name=dict(type="str", required=True),
-            address_family=dict(
-                type="list",
-                elements="dict",
-                options=dict(
-                    afi=dict(type="str", choices=["ipv4", "ipv6"], required=True),
-                    authentication=dict(
-                        type="dict",
-                        options=dict(
-                            plaintext_password=dict(type="str", no_log=True),
-                            md5_key=dict(
-                                type="dict",
-                                no_log=True,
-                                options=dict(
-                                    key_id=dict(type="int"),
-                                    key=dict(type="str", no_log=True),
-                                ),
-                            ),
-                        ),
-                    ),
-                    bandwidth=dict(type="int"),
-                    cost=dict(type="int"),
-                    dead_interval=dict(type="int"),
-                    hello_interval=dict(type="int"),
-                    ifmtu=dict(type="int"),
-                    instance=dict(type="str"),
-                    mtu_ignore=dict(type="bool"),
-                    network=dict(
-                        type="str",
-                        choices=[
-                            "broadcast",
-                            "non-broadcast",
-                            "point-to-multipoint",
-                            "point-to-point",
-                        ],
-                    ),
-                    passive=dict(type="bool"),
-                    priority=dict(type="int"),
-                    retransmit_interval=dict(type="int"),
-                    transmit_delay=dict(type="int"),
-                ),
-            ),
+            key_id=dict(type="int"),
+            key=dict(type="str", no_log=True),
         ),
     ),
+)
+
+_AF_OPTIONS = dict(
+    afi=dict(type="str", choices=["ipv4", "ipv6"], required=True),
+    area=dict(type="str"),
+    authentication=dict(type="dict", options=_AUTH_OPTIONS),
+    bandwidth=dict(type="int"),
+    cost=dict(type="int"),
+    dead_interval=dict(type="int"),
+    hello_interval=dict(type="int"),
+    ifmtu=dict(type="int"),
+    instance=dict(type="str"),
+    mtu_ignore=dict(type="bool"),
+    network=dict(
+        type="str",
+        choices=["broadcast", "non-broadcast", "point-to-multipoint", "point-to-point"],
+    ),
+    passive=dict(type="bool"),
+    priority=dict(type="int"),
+    retransmit_interval=dict(type="int"),
+    transmit_delay=dict(type="int"),
+)
+
+_ENTRY_OPTIONS = dict(
+    name=dict(type="str", required=True),
+    address_family=dict(type="list", elements="dict", options=_AF_OPTIONS),
+)
+
+ARGUMENT_SPEC = dict(
+    config=dict(type="list", elements="dict", options=_ENTRY_OPTIONS),
     state=dict(
         default="merged",
         choices=["merged", "replaced", "overridden", "deleted", "gathered"],
@@ -510,23 +505,36 @@ def main():
     state = module.params["state"]
     config = module.params.get("config") or []
 
-    have = get_running_config(vyos)
+    validation_error = _validate_config(config)
+    if validation_error:
+        module.fail_json(msg=validation_error)
+
+    raw_have = get_running_config(vyos)
+    have = _device_to_argspec(*raw_have)
+    for iface in have:
+        for af in iface.get("address_family") or []:
+            cast_by_spec(af, _AF_OPTIONS)
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    commands = build_commands(config, have, state)
+    commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
 
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after_raw = get_running_config(vyos)
+        after = _device_to_argspec(*after_raw)
+        for iface in after:
+            for af in iface.get("address_family") or []:
+                cast_by_spec(af, _AF_OPTIONS)
         module.exit_json(
             changed=True,
             before=have,
-            after=get_running_config(vyos),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,
