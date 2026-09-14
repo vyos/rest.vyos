@@ -79,14 +79,18 @@ class TestHostnameKeyAlwaysPresent(unittest.TestCase):
 
         from unittest.mock import patch
 
-        sys.argv = ["x", json.dumps({"ANSIBLE_MODULE_ARGS": {"state": "gathered"}})]
+        import ansible.module_utils.basic as basic
+
+        argv = ["x", json.dumps({"ANSIBLE_MODULE_ARGS": {"state": "gathered"}})]
         captured = {}
 
         def fake_exit_json(self_mod, **kwargs):
             captured.update(kwargs)
             raise SystemExit(0)
 
-        with patch(
+        basic._ANSIBLE_ARGS = None
+        basic._PARSED_MODULE_ARGS = None
+        with patch.object(sys, "argv", argv), patch(
             "ansible_collections.vyos.rest.plugins.module_utils.vyos.VyOSRestClient",
         ) as mock_client, patch(
             "ansible.module_utils.basic.AnsibleModule.exit_json",
@@ -114,7 +118,9 @@ class TestGatheredReturnsCommands(unittest.TestCase):
 
         from unittest.mock import patch
 
-        sys.argv = [
+        import ansible.module_utils.basic as basic
+
+        argv = [
             "x",
             json.dumps({"ANSIBLE_MODULE_ARGS": {"state": "gathered"}}),
         ]
@@ -124,7 +130,9 @@ class TestGatheredReturnsCommands(unittest.TestCase):
             captured.update(kwargs)
             raise SystemExit(0)
 
-        with patch(
+        basic._ANSIBLE_ARGS = None
+        basic._PARSED_MODULE_ARGS = None
+        with patch.object(sys, "argv", argv), patch(
             "ansible_collections.vyos.rest.plugins.module_utils.vyos.VyOSRestClient",
         ) as mock_client, patch(
             "ansible.module_utils.basic.AnsibleModule.exit_json",
@@ -173,6 +181,128 @@ class TestArgumentSpecNoConnectionParams(unittest.TestCase):
     def test_no_connection_params_in_argspec(self):
         for key in ("hostname", "port", "api_key", "timeout", "verify_ssl"):
             self.assertNotIn(key, ARGUMENT_SPEC)
+
+
+class TestEmptyHostnameFailsExplicitly(unittest.TestCase):
+    """Confirmed real bug (Copilot): with state=merged, an empty
+    string for config.hostname previously produced a silent no-op --
+    build_commands' falsy check treated "" the same as "not
+    specified" -- even though hostname is declared required=True.
+    Ansible's own argspec validation only checks presence, not
+    non-emptiness, so this reached build_commands unnoticed. Confirmed
+    by direct reproduction before fixing; now fails explicitly instead.
+
+    In-process pattern (patch.object for sys.argv, matching the
+    established tests elsewhere in this file) rather than subprocess
+    isolation: confirmed the subprocess approach breaks under
+    ansible-test --docker's custom collection-loading machinery, which
+    a freshly spawned subprocess does not inherit.
+    """
+
+    def _run_main(self, config, state="merged"):
+        import json
+        import sys
+
+        from unittest.mock import patch
+
+        import ansible.module_utils.basic as basic
+
+        args = {"state": state}
+        if config is not None:
+            args["config"] = config
+        argv = ["x", json.dumps({"ANSIBLE_MODULE_ARGS": args})]
+        captured = {}
+
+        def fake_exit_json(self_mod, **kwargs):
+            captured.update(kwargs)
+            raise SystemExit(0)
+
+        def fake_fail_json(self_mod, **kwargs):
+            captured.update(kwargs)
+            captured["failed"] = True
+            raise SystemExit(1)
+
+        basic._ANSIBLE_ARGS = None
+        basic._PARSED_MODULE_ARGS = None
+        with patch.object(sys, "argv", argv), patch(
+            "ansible_collections.vyos.rest.plugins.module_utils.vyos.VyOSRestClient",
+        ) as mock_client, patch(
+            "ansible.module_utils.basic.AnsibleModule.exit_json",
+            fake_exit_json,
+        ), patch(
+            "ansible.module_utils.basic.AnsibleModule.fail_json",
+            fake_fail_json,
+        ):
+            mock_client.return_value.retrieve_return_value.return_value = {
+                "data": "existing-host",
+            }
+            from ansible_collections.vyos.rest.plugins.modules import vyos_hostname
+
+            with self.assertRaises(SystemExit):
+                vyos_hostname.main()
+        return captured
+
+    def test_empty_hostname_fails_explicitly(self):
+        result = self._run_main({"hostname": ""})
+        self.assertTrue(result.get("failed"))
+        self.assertIn("non-empty", result.get("msg", ""))
+
+    def test_non_empty_hostname_still_works(self):
+        result = self._run_main({"hostname": "newhost"})
+        self.assertNotIn("failed", result)
+
+
+class TestCheckModeOmitsAfter(unittest.TestCase):
+    """Confirmed real bug (Copilot): check_mode returned after=have
+    even when commands was non-empty, misrepresenting the pre-change
+    state as if it were the post-change result. Now matches the
+    established convention across the rest of the collection
+    (confirmed against vyos_nat, vyos_ha, vyos_snmp_server,
+    vyos_ntp_global): omit "after" entirely in check mode.
+    """
+
+    def test_check_mode_omits_after(self):
+        import json
+        import sys
+
+        from unittest.mock import patch
+
+        import ansible.module_utils.basic as basic
+
+        argv = [
+            "x",
+            json.dumps(
+                {
+                    "ANSIBLE_MODULE_ARGS": {
+                        "config": {"hostname": "newhost"},
+                        "state": "merged",
+                        "_ansible_check_mode": True,
+                    },
+                },
+            ),
+        ]
+        captured = {}
+
+        def fake_exit_json(self_mod, **kwargs):
+            captured.update(kwargs)
+            raise SystemExit(0)
+
+        basic._ANSIBLE_ARGS = None
+        basic._PARSED_MODULE_ARGS = None
+        with patch.object(sys, "argv", argv), patch(
+            "ansible_collections.vyos.rest.plugins.module_utils.vyos.VyOSRestClient",
+        ) as mock_client, patch(
+            "ansible.module_utils.basic.AnsibleModule.exit_json",
+            fake_exit_json,
+        ):
+            mock_client.return_value.retrieve_return_value.return_value = {"data": "oldhost"}
+            from ansible_collections.vyos.rest.plugins.modules import vyos_hostname
+
+            with self.assertRaises(SystemExit):
+                vyos_hostname.main()
+
+        self.assertTrue(captured.get("changed"))
+        self.assertNotIn("after", captured)
 
 
 if __name__ == "__main__":

@@ -149,6 +149,8 @@ def main():
         state = "merged"
 
     config = module.params.get("config") or {}
+    if state == "merged" and not config.get("hostname"):
+        module.fail_json(msg="config.hostname must be a non-empty string")
 
     try:
         current = get_running_config(vyos)
@@ -163,7 +165,10 @@ def main():
     commands = build_commands(config, current, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
+        # Matches the established convention across the rest of the
+        # collection: omit "after" entirely in check mode, rather than
+        # reporting have as if it were the post-change state.
+        module.exit_json(changed=bool(commands), commands=commands, before=have)
 
     if commands:
         response = vyos.apply_commands(commands)
