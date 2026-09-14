@@ -79,7 +79,7 @@ class TestHostnameKeyAlwaysPresent(unittest.TestCase):
 
         from unittest.mock import patch
 
-        import ansible.module_utils.basic as basic
+        from ansible.module_utils import basic
 
         argv = ["x", json.dumps({"ANSIBLE_MODULE_ARGS": {"state": "gathered"}})]
         captured = {}
@@ -118,7 +118,7 @@ class TestGatheredReturnsCommands(unittest.TestCase):
 
         from unittest.mock import patch
 
-        import ansible.module_utils.basic as basic
+        from ansible.module_utils import basic
 
         argv = [
             "x",
@@ -205,7 +205,7 @@ class TestEmptyHostnameFailsExplicitly(unittest.TestCase):
 
         from unittest.mock import patch
 
-        import ansible.module_utils.basic as basic
+        from ansible.module_utils import basic
 
         args = {"state": state}
         if config is not None:
@@ -267,7 +267,7 @@ class TestCheckModeOmitsAfter(unittest.TestCase):
 
         from unittest.mock import patch
 
-        import ansible.module_utils.basic as basic
+        from ansible.module_utils import basic
 
         argv = [
             "x",
