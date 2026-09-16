@@ -39,15 +39,18 @@ options:
             required: true
           area:
             description: >-
-              OSPF area to assign this interface to (C(set protocols
-              ospf interface <name> area <id>) for OSPFv2, C(set
-              protocols ospfv3 interface <name> area <id>) for
-              OSPFv3). This is the
-              primary mechanism that enables OSPF on an interface at
-              all -- confirmed via VyOS's official documentation
-              across 1.4+/1.5 LTS/rolling as the current syntax,
-              distinct from and superseding the older (1.3-era)
-              C(area <id> interface <name>) form.
+                OSPF area to assign this interface to (C(set protocols
+                ospf interface <name> area <id>) for OSPFv2, C(set
+                protocols ospfv3 interface <name> area <id>) for
+                OSPFv3). This is a per-interface alternative to
+                enabling OSPF via C(area <id> network <prefix>) --
+                VyOS's own documentation frames the network-based form
+                as standard and this per-interface form as more
+                convenient in some cases (many interfaces/subnets).
+                Confirmed via VyOS's official documentation across
+                1.4+/1.5 LTS/rolling as the current syntax, distinct
+                from and superseding the older (1.3-era) C(area <id>
+                interface <name>) form.
             type: str
           authentication:
             description: Authentication settings (IPv4 only).
