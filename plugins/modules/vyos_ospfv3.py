@@ -24,7 +24,8 @@ description:
     C(set protocols ospfv3 area <id> interface <name>) is the superseded,
     1.3-era syntax. The current mechanism, C(set protocols ospfv3 interface
     <name> area <id>), is a per-interface setting and is modeled in
-    M(vyos.rest.vyos_ospf_interfaces)'s C(area) field instead.
+    M(vyos.rest.vyos_ospf_interfaces)'s C(area) field instead (and is not
+    affected by this module's C(state=replaced)).
   - >-
     C(distance) and C(graceful-restart) are real, confirmed OSPFv3 features
     not modeled here, matching a genuine gap in the CLI module's own scope
