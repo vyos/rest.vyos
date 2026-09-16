@@ -320,7 +320,8 @@ class VyOSModule:
         that's actually already correct.
         """
         result = self._client.retrieve_return_value(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def apply_commands(self, commands):
         if not commands:
