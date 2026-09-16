@@ -21,8 +21,8 @@ description:
     neighbor, parameters, passive_interface, passive_interface_exclude,
     redistribute, timers. VyOS's OSPF schema is considerably larger than
     even this -- access-list, aggregation, capability, graceful-restart,
-    ldp-sync, maximum-paths, per-interface tuning (bandwidth/hello-
-    multiplier/network-type/authentication/intervals beyond passive),
+    ldp-sync, maximum-paths, per-interface
+    tuning (bandwidth/hello-multiplier/network-type/authentication/intervals beyond passive),
     segment-routing, and summary-address are not modeled here, matching
     real gaps in the CLI module's own scope, not oversights.
   - >-
@@ -534,11 +534,13 @@ def _vlink_auth_to_device(auth):
     device = {}
     md5_list = auth.get("md5") or []
     if md5_list:
-        device["md5"] = {
+        md5_device = {
             str(entry["key_id"]): {"md5-key": entry["md5_key"]}
             for entry in md5_list
-            if entry.get("key_id") is not None
+            if entry.get("key_id") is not None and entry.get("md5_key") is not None
         }
+        if md5_device:
+            device["md5"] = md5_device
     if auth.get("plaintext_password"):
         device["plaintext-password"] = auth["plaintext_password"]
     return device
