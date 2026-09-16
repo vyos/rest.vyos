@@ -102,7 +102,7 @@ Parameters
                 <td>
                 </td>
                 <td>
-                        <div>OSPF area to assign this interface to (<code>set protocols ospf[v3] interface &lt;name&gt; area &lt;id&gt;</code>). This is the primary mechanism that enables OSPF on an interface at all -- confirmed via VyOS&#x27;s official documentation across 1.4+/1.5 LTS/rolling as the current syntax, distinct from and superseding the older (1.3-era) <code>area &lt;id&gt; interface &lt;name&gt;</code> form.</div>
+                        <div>OSPF area to assign this interface to (<code>set protocols ospf interface &lt;name&gt; area &lt;id&gt;</code> for OSPFv2, <code>set protocols ospfv3 interface &lt;name&gt; area &lt;id&gt;</code> for OSPFv3). This is the primary mechanism that enables OSPF on an interface at all -- confirmed via VyOS&#x27;s official documentation across 1.4+/1.5 LTS/rolling as the current syntax, distinct from and superseding the older (1.3-era) <code>area &lt;id&gt; interface &lt;name&gt;</code> form.</div>
                 </td>
             </tr>
             <tr>

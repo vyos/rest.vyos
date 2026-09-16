@@ -40,7 +40,9 @@ options:
           area:
             description: >-
               OSPF area to assign this interface to (C(set protocols
-              ospf[v3] interface <name> area <id>)). This is the
+              ospf interface <name> area <id>) for OSPFv2, C(set
+              protocols ospfv3 interface <name> area <id>) for
+              OSPFv3). This is the
               primary mechanism that enables OSPF on an interface at
               all -- confirmed via VyOS's official documentation
               across 1.4+/1.5 LTS/rolling as the current syntax,
