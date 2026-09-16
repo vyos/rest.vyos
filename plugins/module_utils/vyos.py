@@ -373,7 +373,8 @@ class VyOSModule:
         rather than being indistinguishable from a valid empty response.
         """
         result = self._client.show(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def save_config(self, file_path=None):
         """Save the running configuration to disk."""
