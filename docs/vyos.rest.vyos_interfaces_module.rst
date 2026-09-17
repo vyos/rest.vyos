@@ -19,7 +19,7 @@ Synopsis
 --------
 - Manages L2 interface configuration (description, MTU, speed, duplex, enabled, VRF assignment, VLAN sub-interfaces) on VyOS devices using the HTTPS REST API.
 - IP address configuration is handled by :ref:`vyos.rest.vyos_l3_interfaces <vyos.rest.vyos_l3_interfaces_module>`.
-- Covers 11 interface types (ethernet, bonding, loopback, tunnel, wireguard, vti, dummy, openvpn, pppoe, wireless, bridge), resolved from the interface name. The current CLI collection module documents a narrower, deliberate scope of 5 types (ethernet, bonding, vxlan, loopback, vti) -- this module's broader coverage is a deliberate choice, not an oversight, and the additional types beyond CLI's documented set are not independently re-verified against the device schema here (matching the original module's own scope, carried over unchanged).
+- Covers 11 interface types (ethernet, bonding, loopback, tunnel, wireguard, vti, dummy, openvpn, pppoe, wireless, bridge), resolved from the device response when present, otherwise guessed from the interface name. The current CLI collection module documents a narrower scope of 5 types (ethernet, bonding, vxlan, loopback, vti).
 
 
 

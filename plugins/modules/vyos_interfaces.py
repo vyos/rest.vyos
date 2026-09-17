@@ -18,14 +18,11 @@ description:
   - IP address configuration is handled by M(vyos.rest.vyos_l3_interfaces).
   - >-
     Covers 11 interface types (ethernet, bonding, loopback, tunnel,
-    wireguard, vti, dummy, openvpn, pppoe, wireless, bridge), resolved from
-    the interface name. The current CLI collection module documents a
-    narrower, deliberate scope of 5 types (ethernet, bonding, vxlan,
-    loopback, vti) -- this module's broader coverage is a deliberate
-    choice, not an oversight, and the additional types beyond CLI's
-    documented set are not independently re-verified against the device
-    schema here (matching the original module's own scope, carried over
-    unchanged).
+    wireguard, vti, dummy, openvpn, pppoe, wireless, bridge), resolved
+    from the device response when present, otherwise guessed from the
+    interface name. The current CLI collection module documents a
+    narrower scope of 5 types (ethernet, bonding, vxlan, loopback,
+    vti).
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -206,7 +203,7 @@ def _resolve_iface_type(name, raw_have):
     guessing at all.
     """
     for itype, ifaces in (raw_have or {}).items():
-        if isinstance(ifaces, dict) and name in ifaces:
+        if name in to_tag_dict(ifaces):
             return itype
     return _guess_iface_type(name)
 
@@ -341,8 +338,6 @@ def get_running_config(vyos):
 def _device_to_argspec(raw):
     result = []
     for itype, ifaces in sorted((raw or {}).items()):
-        if not isinstance(ifaces, dict):
-            continue
         for name, data in sorted(to_tag_dict(ifaces).items()):
             entry = {"name": name}
             entry.update(_iface_entry_from_device(data or {}))
@@ -402,6 +397,16 @@ def build_commands(config, raw_have, state):
 
         if state in ("replaced", "overridden"):
             commands += dict_op(want_device, have_device, base, op="purge")
+        else:
+            if want_entry.get("enabled", True) and have_device.get("disable") is not None:
+                commands.append(("delete", base + ["disable"]))
+            for want_vif in want_entry.get("vifs") or []:
+                vlan_id = want_vif.get("vlan_id")
+                if vlan_id is None:
+                    continue
+                have_vif = (have_device.get("vif") or {}).get(str(vlan_id)) or {}
+                if want_vif.get("enabled", True) and have_vif.get("disable") is not None:
+                    commands.append(("delete", base + ["vif", str(vlan_id), "disable"]))
         commands += dict_op(want_device, have_device, base, op="set")
 
     return commands
