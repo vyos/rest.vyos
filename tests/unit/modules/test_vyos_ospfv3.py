@@ -200,6 +200,7 @@ class TestBuildCommands(VyOSModuleTestCase):
         vyos_ospfv2's own established precedent -- unlike
         vyos_static_routes/vyos_route_maps, which scope replaced per
         named item."""
+        raw_have = {"parameters": {"router-id": "1.1.1.1"}, "redistribute": {"bgp": {}}}
         config = {"parameters": {"router_id": "1.1.1.1"}}
         cmds = build_commands(config, raw_have, "replaced")
         self.assertIn(("delete", _BASE + ["redistribute"]), cmds)

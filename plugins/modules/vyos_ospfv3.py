@@ -250,10 +250,6 @@ def _area_entry_from_device(data):
     return entry
 
 
-_REDISTRIBUTE_KEY = "route_type"
-_AREA_KEY = "area_id"
-
-
 def _want_to_device(config):
     config = config or {}
     device = {}
@@ -339,9 +335,16 @@ _PARAMETERS_OPTIONS = dict(
 )
 
 _REDISTRIBUTE_OPTIONS = dict(
-    route_type=dict(type="str", choices=["bgp", "connected", "kernel", "ripng", "static"]),
+    route_type=dict(
+        type="str",
+        required=True,
+        choices=["bgp", "connected", "kernel", "ripng", "static"],
+    ),
     route_map=dict(type="str"),
 )
+
+_AREA_KEY = _derive_key_field(_AREA_OPTIONS)
+_REDISTRIBUTE_KEY = _derive_key_field(_REDISTRIBUTE_OPTIONS)
 
 _CONFIG_OPTIONS = dict(
     areas=dict(type="list", elements="dict", options=_AREA_OPTIONS),
@@ -375,7 +378,7 @@ def main():
     commands = build_commands(config, raw_have, state)
 
     if module.check_mode:
-        module.exit_json(changed=bool(commands), commands=commands, before=have, after=have)
+        module.exit_json(changed=bool(commands), commands=commands, before=have)
 
     if commands:
         response = vyos.apply_commands(commands)
