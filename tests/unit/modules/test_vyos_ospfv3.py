@@ -196,11 +196,10 @@ class TestBuildCommands(VyOSModuleTestCase):
 
     def test_replaced_is_whole_resource_not_scoped(self):
         """Confirmed matching this module's own documented contract
-        ("replaced replaces the entire OSPFv3 configuration") and
+        ("replaced replaces the module-managed OSPFv3 configuration") and
         vyos_ospfv2's own established precedent -- unlike
         vyos_static_routes/vyos_route_maps, which scope replaced per
         named item."""
-        raw_have = {"parameters": {"router-id": "1.1.1.1"}, "redistribute": {"bgp": {}}}
         config = {"parameters": {"router_id": "1.1.1.1"}}
         cmds = build_commands(config, raw_have, "replaced")
         self.assertIn(("delete", _BASE + ["redistribute"]), cmds)
