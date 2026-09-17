@@ -82,6 +82,7 @@ options:
         suboptions:
           route_type:
             description: Protocol to redistribute.
+            required: true
             type: str
             choices: [bgp, connected, kernel, ripng, static]
           route_map:
