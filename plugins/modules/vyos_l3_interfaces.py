@@ -194,7 +194,7 @@ def _resolve_iface_type(name, raw_have):
     real type of.
     """
     for itype, ifaces in (raw_have or {}).items():
-        if isinstance(ifaces, dict) and name in ifaces:
+        if name in to_tag_dict(ifaces):
             return itype
     return _guess_iface_type(name)
 
@@ -257,8 +257,6 @@ def get_running_config(vyos):
 def _device_to_argspec(raw):
     result = []
     for itype, ifaces in sorted((raw or {}).items()):
-        if not isinstance(ifaces, dict):
-            continue
         for name, idata in sorted(to_tag_dict(ifaces).items()):
             idata = idata or {}
             entry = {"name": name}
@@ -382,8 +380,6 @@ def build_commands(config, raw_have, state):
             base = _iface_base(name, raw_have)
             named_addrs = entry.get("ipv4") or entry.get("ipv6") or entry.get("vifs")
             if not named_addrs:
-                # No specific addresses/vifs named -- clear everything
-                # this module owns for the interface.
                 cmds += _addr_cmds(base, [], have["ipv4"], "deleted")
                 cmds += _addr_cmds(base, [], have["ipv6"], "deleted")
                 cmds += _vif_addr_cmds(base, {}, have["vifs"], "deleted")
@@ -395,7 +391,9 @@ def build_commands(config, raw_have, state):
                 for vid, want_vif in want["vifs"].items():
                     have_vif = have["vifs"].get(vid, {"ipv4": [], "ipv6": []})
                     vif_base = base + ["vif", str(vid)]
-                    for addr in want_vif["ipv4"] + want_vif["ipv6"]:
+                    want_addrs = want_vif["ipv4"] + want_vif["ipv6"]
+                    addrs = want_addrs or (have_vif["ipv4"] + have_vif["ipv6"])
+                    for addr in addrs:
                         if addr in have_vif["ipv4"] + have_vif["ipv6"]:
                             cmds.append(("delete", vif_base + ["address", addr]))
         return cmds
