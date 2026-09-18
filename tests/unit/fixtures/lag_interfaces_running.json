@@ -1,12 +1,15 @@
 {
   "bond0": {
+    "mode": "802.3ad",
+    "hash-policy": "layer2",
+    "primary": "eth1",
+    "member": { "interface": { "eth1": {}, "eth2": {} } },
     "arp-monitor": {
       "interval": "100",
-      "target": {
-        "192.0.2.1": {}
-      }
-    },
-    "hash-policy": "layer2",
+      "target": { "192.0.2.1": {}, "192.0.2.2": {} }
+    }
+  },
+  "bond1": {
     "mode": "active-backup"
   }
 }

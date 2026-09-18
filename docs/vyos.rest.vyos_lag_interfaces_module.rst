@@ -18,7 +18,7 @@ Version added: 1.0.0
 Synopsis
 --------
 - Manages Link Aggregation Group (LAG/bonding) interface configuration on VyOS devices using the HTTPS REST API.
-- Mirrors ``vyos.vyos.vyos_lag_interfaces`` but uses the HTTP API instead of CLI.
+- A bonding interface's device path (``interfaces bonding <name>``) is shared with :ref:`vyos.rest.vyos_interfaces <vyos.rest.vyos_interfaces_module>` (L2 attributes: description, mtu, vrf) and :ref:`vyos.rest.vyos_l3_interfaces <vyos.rest.vyos_l3_interfaces_module>` (addresses) -- every command this module generates is scoped to exactly ``mode``/ ``primary``/``hash-policy``/``member``/``arp-monitor``, never the bond's subtree as a whole, so it never touches those other modules' fields.
 
 
 
@@ -220,21 +220,6 @@ Parameters
             <tr>
                 <td colspan="3">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>running_config</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>Used only with state <code>parsed</code>.</div>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="3">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -248,8 +233,6 @@ Parameters
                                     <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
-                                    <li>rendered</li>
-                                    <li>parsed</li>
                         </ul>
                 </td>
                 <td>
@@ -258,8 +241,6 @@ Parameters
                         <div><code>overridden</code> - Replace config for all LAG interfaces.</div>
                         <div><code>deleted</code> - Remove listed or all LAG interface config.</div>
                         <div><code>gathered</code> - Read LAG config from device without changes.</div>
-                        <div><code>rendered</code> - Return commands for provided config without connecting.</div>
-                        <div><code>parsed</code> - Parse running_config into structured data.</div>
                 </td>
             </tr>
     </table>
@@ -274,6 +255,10 @@ See Also
 
    :ref:`vyos.vyos.vyos_lag_interfaces_module`
       The official documentation on the **vyos.vyos.vyos_lag_interfaces** module.
+   :ref:`vyos.rest.vyos_interfaces_module`
+      The official documentation on the **vyos.rest.vyos_interfaces** module.
+   :ref:`vyos.rest.vyos_l3_interfaces_module`
+      The official documentation on the **vyos.rest.vyos_l3_interfaces** module.
 
 
 Examples
@@ -371,36 +356,6 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 <td>when state is gathered</td>
                 <td>
                             <div>Current LAG configuration as structured data.</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>parsed</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is parsed</td>
-                <td>
-                            <div>Structured data parsed from running_config (state=parsed).</div>
-                    <br/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="1">
-                    <div class="ansibleOptionAnchor" id="return-"></div>
-                    <b>rendered</b>
-                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
-                    <div style="font-size: small">
-                      <span style="color: purple">list</span>
-                    </div>
-                </td>
-                <td>when state is rendered</td>
-                <td>
-                            <div>Commands for provided config (state=rendered).</div>
                     <br/>
                 </td>
             </tr>
