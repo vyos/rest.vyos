@@ -1,0 +1,87 @@
+---
+- debug:
+    msg: START vyos_vrf merged protocols integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge VRF with BGP
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              table_id: 101
+              protocols:
+                bgp:
+                  system_as: 65001
+                  neighbor:
+                    - address: 10.0.0.1
+                      remote_as: 65002
+                      description: peer1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Merge VRF with BGP (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              table_id: 101
+              protocols:
+                bgp:
+                  system_as: 65001
+                  neighbor:
+                    - address: 10.0.0.1
+                      remote_as: 65002
+                      description: peer1
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Merge VRF with OSPF and static routes
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              table_id: 101
+              protocols:
+                ospf:
+                  areas:
+                    - area_id: "0"
+                      networks:
+                        - 10.0.0.0/24
+                  parameters:
+                    router_id: 10.0.0.1
+                static:
+                  routes:
+                    - dest: 192.168.10.0/24
+                      next_hops:
+                        - 10.0.0.254
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather and verify protocols
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.instances[0].protocols.bgp.system_as == 65001
+          - result.gathered.instances[0].protocols.ospf.areas | length == 1
+          - result.gathered.instances[0].protocols.static.routes | length == 1
+
+  always:
+    - include_tasks: _remove_config.yaml

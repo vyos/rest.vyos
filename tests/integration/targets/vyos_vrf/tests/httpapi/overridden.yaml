@@ -1,0 +1,50 @@
+---
+- debug:
+    msg: START vyos_vrf overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override with single VRF
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf3
+              table_id: 200
+              vni: 2000
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather and verify override
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.instances | length == 1
+          - result.gathered.instances[0].name == "vrf3"
+          - result.gathered.instances[0].table_id == 200
+
+    - name: Override (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf3
+              table_id: 200
+              vni: 2000
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

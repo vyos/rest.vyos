@@ -1,0 +1,59 @@
+---
+- debug:
+    msg: START vyos_vrf merged integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: Merge VRF configuration
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          bind_to_all: true
+          instances:
+            - name: vrf1
+              description: red
+              table_id: 101
+              vni: 501
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.after.instances | length == 1
+          - result.after.instances[0].name == "vrf1"
+          - result.after.instances[0].table_id == 101
+
+    - name: Merge VRF configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          bind_to_all: true
+          instances:
+            - name: vrf1
+              description: red
+              table_id: 101
+              vni: 501
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+    - name: Merge second VRF instance
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf2
+              table_id: 102
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.after.instances | length == 2
+
+  always:
+    - include_tasks: _remove_config.yaml
