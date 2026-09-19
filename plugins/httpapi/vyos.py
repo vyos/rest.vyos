@@ -13,6 +13,11 @@ short_description: HttpApi plugin for VyOS REST API
 description:
   - This HttpApi plugin provides methods to connect to VyOS devices via their
     HTTPS REST API.
+  - Use with C(ansible_connection=ansible.netcommon.httpapi) and
+    C(ansible_network_os=vyos.rest.vyos).
+  - The VyOS REST API must be enabled with
+    C(set service https api keys id ansible key YOUR_KEY),
+    C(set service https api rest), then C(commit && save).
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -21,6 +26,8 @@ options:
     type: str
     description:
       - The API key configured on the VyOS device.
+      - Set C(ansible_httpapi_api_key) in inventory or the C(VYOS_API_KEY)
+        environment variable.
     env:
       - name: VYOS_API_KEY
     vars:
@@ -28,6 +35,19 @@ options:
       - name: ansible_vyos_api_key
   auth_method:
     type: str
+    description:
+      - Authentication method to use.
+      - C(key) sends the API key as a form field (default, backward-compatible).
+      - C(header) sends the API key as an C(X-API-Key) header.
+      - C(bearer) exchanges the API key for a short-lived JWT via C(POST /token)
+        and sends it as an Authorization Bearer header for subsequent requests.
+      - C(mtls) uses mutual TLS client certificate authentication. No API key
+        is sent. Requires C(ansible_httpapi_client_cert) and
+        C(ansible_httpapi_client_key) to be set at the connection level.
+      - C(oidc) fetches a Bearer token from an external identity provider using
+        the OAuth2 client credentials grant and sends it as an Authorization
+        Bearer header. Requires C(ansible_vyos_oidc_token_url),
+        C(ansible_vyos_oidc_client_id), and C(ansible_vyos_oidc_client_secret).
     default: key
     choices:
       - key
@@ -50,15 +70,93 @@ options:
       - name: ansible_vyos_oidc_token_url
   oidc_client_id:
     type: str
+    description:
+      - OAuth2 client ID for the client credentials grant.
+      - Required when C(auth_method=oidc).
     vars:
       - name: ansible_vyos_oidc_client_id
   oidc_client_secret:
     type: str
+    description:
+      - OAuth2 client secret for the client credentials grant.
+      - Required when C(auth_method=oidc).
     vars:
       - name: ansible_vyos_oidc_client_secret
+notes:
+  - Bearer tokens are cached in memory for the duration of the connection
+    and refreshed automatically 30 seconds before expiry.
+  - Token expiry is controlled on the device via
+    C(set service https api rest authentication expiration <seconds>).
+  - For mTLS, set C(ansible_httpapi_client_cert) and C(ansible_httpapi_client_key)
+    at the connection level. The netcommon httpapi connection plugin handles
+    the TLS handshake automatically.
+  - OIDC tokens are cached and refreshed using the C(expires_in) value
+    returned by the identity provider.
 """
 
-EXAMPLES = r""""""
+EXAMPLES = r"""
+# inventory.yml - form-field API key (default, backward-compatible)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
+
+# inventory.yml - X-API-Key header
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
+      ansible_vyos_auth_method: header
+
+# inventory.yml - Bearer token (JWT)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_httpapi_api_key: mysecretkey
+      ansible_vyos_auth_method: bearer
+
+# inventory.yml - mTLS client certificate
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_vyos_auth_method: mtls
+      ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
+      ansible_httpapi_client_key: /etc/ansible/certs/client.key
+
+# inventory.yml - OIDC (Keycloak client credentials)
+all:
+  hosts:
+    vyos01:
+      ansible_host: 192.168.1.1
+      ansible_connection: ansible.netcommon.httpapi
+      ansible_network_os: vyos.rest.vyos
+      ansible_httpapi_use_ssl: true
+      ansible_httpapi_validate_certs: false
+      ansible_vyos_auth_method: oidc
+      ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
+      ansible_vyos_oidc_client_id: vyos-api
+      ansible_vyos_oidc_client_secret: mysecret
+"""
 
 import json
 import time
