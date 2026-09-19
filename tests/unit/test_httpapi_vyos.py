@@ -197,6 +197,28 @@ class TestSendRequestBearerMethod(unittest.TestCase):
             plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("Invalid key", str(ctx.exception))
 
+    def test_bearer_raises_when_token_missing_from_response(self):
+        """Regression test for confirmed bug (CodeRabbit): a successful
+        response with no "token" key would previously cache None and
+        send a literal "Authorization: Bearer None" header."""
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
+        plugin.connection.send.return_value = _make_response(
+            {"success": True, "data": {"expires_in": 3600}, "error": None},
+        )
+        with self.assertRaises(ConnectionError) as ctx:
+            plugin.send_request("/retrieve", op="showConfig", path=[])
+        self.assertIn("token", str(ctx.exception).lower())
+
+    def test_bearer_raises_when_token_is_null(self):
+        """Same confirmed bug as above, but with "token": null explicitly
+        present rather than the key being absent entirely."""
+        plugin = _make_plugin(auth_method="bearer", api_key="testkey")
+        plugin.connection.send.return_value = _make_response(
+            {"success": True, "data": {"token": None, "expires_in": 3600}, "error": None},
+        )
+        with self.assertRaises(ConnectionError):
+            plugin.send_request("/retrieve", op="showConfig", path=[])
+
 
 class TestSendRequestMtlsMethod(unittest.TestCase):
     def test_mtls_sends_no_api_key(self):
@@ -223,7 +245,7 @@ class TestSendRequestMtlsMethod(unittest.TestCase):
 class TestSendRequestOidcMethod(unittest.TestCase):
     def _plugin(
         self,
-        token_url="http://idp/token",
+        token_url="https://idp/token",
         client_id="vyos-api",
         client_secret="secret",
     ):
@@ -320,6 +342,45 @@ class TestSendRequestOidcMethod(unittest.TestCase):
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("access_token", str(ctx.exception))
+
+    def test_oidc_raises_when_access_token_is_null(self):
+        """Same confirmed bug class as the missing-key case above, but
+        with "access_token": null explicitly present rather than the
+        key being absent entirely -- the old "not in" check missed
+        this, since the key genuinely is present."""
+        plugin = self._plugin()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"access_token": None, "expires_in": 3600},
+        ).encode()
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ):
+            with self.assertRaises(ConnectionError):
+                plugin.send_request("/retrieve", op="showConfig", path=[])
+
+    def test_oidc_raises_when_access_token_is_empty_string(self):
+        plugin = self._plugin()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"access_token": "", "expires_in": 3600},
+        ).encode()
+        with patch(
+            "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url",
+            return_value=mock_resp,
+        ):
+            with self.assertRaises(ConnectionError):
+                plugin.send_request("/retrieve", op="showConfig", path=[])
+
+    def test_oidc_rejects_http_token_url(self):
+        """Regression test for confirmed bug (CodeRabbit, security):
+        open_url() had no scheme validation, so an http:// token_url
+        would transmit the OAuth2 client_secret in plaintext."""
+        plugin = self._plugin(token_url="http://insecure.example.com/token")
+        with self.assertRaises(ConnectionError) as ctx:
+            plugin.send_request("/retrieve", op="showConfig", path=[])
+        self.assertIn("https://", str(ctx.exception))
 
 
 class TestHandleHttpError(unittest.TestCase):

@@ -1,3 +1,3 @@
 ---
 minor_changes:
-  - httpapi/vyos.py - Added support for new authentication methods - mTLS, OIDC, JWT Bearer.
+  - httpapi/vyos.py - Added support for new authentication methods - X-API-Key header, mTLS, OIDC, JWT Bearer.

@@ -13,11 +13,6 @@ short_description: HttpApi plugin for VyOS REST API
 description:
   - This HttpApi plugin provides methods to connect to VyOS devices via their
     HTTPS REST API.
-  - Use with C(ansible_connection=ansible.netcommon.httpapi) and
-    C(ansible_network_os=vyos.rest.vyos).
-  - The VyOS REST API must be enabled with
-    C(set service https api keys id ansible key YOUR_KEY),
-    C(set service https api rest), then C(commit && save).
 version_added: "1.0.0"
 author:
   - VyOS Community (@vyos)
@@ -26,8 +21,6 @@ options:
     type: str
     description:
       - The API key configured on the VyOS device.
-      - Set C(ansible_httpapi_api_key) in inventory or the C(VYOS_API_KEY)
-        environment variable.
     env:
       - name: VYOS_API_KEY
     vars:
@@ -35,19 +28,6 @@ options:
       - name: ansible_vyos_api_key
   auth_method:
     type: str
-    description:
-      - Authentication method to use.
-      - C(key) sends the API key as a form field (default, backward-compatible).
-      - C(header) sends the API key as an C(X-API-Key) header.
-      - C(bearer) exchanges the API key for a short-lived JWT via C(POST /token)
-        and sends it as an Authorization Bearer header for subsequent requests.
-      - C(mtls) uses mutual TLS client certificate authentication. No API key
-        is sent. Requires C(ansible_httpapi_client_cert) and
-        C(ansible_httpapi_client_key) to be set at the connection level.
-      - C(oidc) fetches a Bearer token from an external identity provider using
-        the OAuth2 client credentials grant and sends it as an Authorization
-        Bearer header. Requires C(ansible_vyos_oidc_token_url),
-        C(ansible_vyos_oidc_client_id), and C(ansible_vyos_oidc_client_secret).
     default: key
     choices:
       - key
@@ -63,97 +43,22 @@ options:
     description:
       - Full URL of the OAuth2/OIDC token endpoint.
       - Required when C(auth_method=oidc).
+      - Must use C(https://) -- the client secret is sent in the request
+        body, so an C(http://) URL is rejected to avoid transmitting it
+        in plaintext.
     vars:
       - name: ansible_vyos_oidc_token_url
   oidc_client_id:
     type: str
-    description:
-      - OAuth2 client ID for the client credentials grant.
-      - Required when C(auth_method=oidc).
     vars:
       - name: ansible_vyos_oidc_client_id
   oidc_client_secret:
     type: str
-    description:
-      - OAuth2 client secret for the client credentials grant.
-      - Required when C(auth_method=oidc).
     vars:
       - name: ansible_vyos_oidc_client_secret
-notes:
-  - Bearer tokens are cached in memory for the duration of the connection
-    and refreshed automatically 30 seconds before expiry.
-  - Token expiry is controlled on the device via
-    C(set service https api rest authentication expiration <seconds>).
-  - For mTLS, set C(ansible_httpapi_client_cert) and C(ansible_httpapi_client_key)
-    at the connection level. The netcommon httpapi connection plugin handles
-    the TLS handshake automatically.
-  - OIDC tokens are cached and refreshed using the C(expires_in) value
-    returned by the identity provider.
 """
 
-EXAMPLES = r"""
-# inventory.yml - form-field API key (default, backward-compatible)
-all:
-  hosts:
-    vyos01:
-      ansible_host: 192.168.1.1
-      ansible_connection: ansible.netcommon.httpapi
-      ansible_network_os: vyos.rest.vyos
-      ansible_httpapi_use_ssl: true
-      ansible_httpapi_validate_certs: false
-      ansible_httpapi_api_key: mysecretkey
-
-# inventory.yml - X-API-Key header
-all:
-  hosts:
-    vyos01:
-      ansible_host: 192.168.1.1
-      ansible_connection: ansible.netcommon.httpapi
-      ansible_network_os: vyos.rest.vyos
-      ansible_httpapi_use_ssl: true
-      ansible_httpapi_validate_certs: false
-      ansible_httpapi_api_key: mysecretkey
-      ansible_vyos_auth_method: header
-
-# inventory.yml - Bearer token (JWT)
-all:
-  hosts:
-    vyos01:
-      ansible_host: 192.168.1.1
-      ansible_connection: ansible.netcommon.httpapi
-      ansible_network_os: vyos.rest.vyos
-      ansible_httpapi_use_ssl: true
-      ansible_httpapi_validate_certs: false
-      ansible_httpapi_api_key: mysecretkey
-      ansible_vyos_auth_method: bearer
-
-# inventory.yml - mTLS client certificate
-all:
-  hosts:
-    vyos01:
-      ansible_host: 192.168.1.1
-      ansible_connection: ansible.netcommon.httpapi
-      ansible_network_os: vyos.rest.vyos
-      ansible_httpapi_use_ssl: true
-      ansible_httpapi_validate_certs: false
-      ansible_vyos_auth_method: mtls
-      ansible_httpapi_client_cert: /etc/ansible/certs/client.pem
-      ansible_httpapi_client_key: /etc/ansible/certs/client.key
-
-# inventory.yml - OIDC (Keycloak client credentials)
-all:
-  hosts:
-    vyos01:
-      ansible_host: 192.168.1.1
-      ansible_connection: ansible.netcommon.httpapi
-      ansible_network_os: vyos.rest.vyos
-      ansible_httpapi_use_ssl: true
-      ansible_httpapi_validate_certs: false
-      ansible_vyos_auth_method: oidc
-      ansible_vyos_oidc_token_url: https://keycloak.example.com/realms/vyos/protocol/openid-connect/token
-      ansible_vyos_oidc_client_id: vyos-api
-      ansible_vyos_oidc_client_secret: mysecret
-"""
+EXAMPLES = r""""""
 
 import json
 import time
@@ -254,7 +159,12 @@ class HttpApi(HttpApiBase):
                 ),
             )
         token_data = result.get("data", {})
-        self._bearer_token = token_data.get("token")
+        token = token_data.get("token")
+        if not token:
+            raise ConnectionError(
+                "VyOS /token response missing a valid token value.",
+            )
+        self._bearer_token = token
         expires_in = token_data.get("expires_in", 3600)
         self._bearer_token_expiry = time.time() + expires_in
         return self._bearer_token
@@ -274,6 +184,11 @@ class HttpApi(HttpApiBase):
         if not token_url:
             raise ConnectionError(
                 "ansible_vyos_oidc_token_url is required for auth_method=oidc.",
+            )
+        if not token_url.lower().startswith("https://"):
+            raise ConnectionError(
+                "ansible_vyos_oidc_token_url must use https:// -- refusing to "
+                "send the OIDC client secret over an insecure connection.",
             )
         if not client_id:
             raise ConnectionError(
@@ -313,32 +228,19 @@ class HttpApi(HttpApiBase):
                 "OIDC token endpoint returned non-JSON: {0}".format(raw[:300]),
             )
 
-        if "access_token" not in token_response:
+        access_token = token_response.get("access_token")
+        if not access_token:
             raise ConnectionError(
-                "OIDC token response missing access_token: {0}".format(raw[:300]),
+                "OIDC token response missing a valid access_token: {0}".format(raw[:300]),
             )
 
-        self._oidc_token = token_response["access_token"]
+        self._oidc_token = access_token
         expires_in = token_response.get("expires_in", 3600)
         self._oidc_token_expiry = time.time() + expires_in
         return self._oidc_token
 
     def send_request(self, data, **payload):  # pylint: disable=arguments-renamed
-        """POST to a VyOS REST endpoint.
-
-        Args:
-            data (str): API path, e.g. '/configure' or '/retrieve'.
-                        Named 'data' to match the HttpApiBase signature.
-                        Internally referred to as endpoint to avoid collision
-                        with the VyOS payload field also called 'data'.
-            **payload: VyOS API fields: op, path, value, url, file, etc.
-
-        Returns:
-            dict: Parsed JSON response from VyOS.
-
-        Raises:
-            ConnectionError: on HTTP error or VyOS success=false response.
-        """
+        """POST to a VyOS REST endpoint."""
         endpoint = data
         auth_method = self._get_auth_method()
 
@@ -377,9 +279,6 @@ class HttpApi(HttpApiBase):
                 )
 
             elif auth_method == "mtls":
-                # No API key sent - authentication is via client certificate
-                # configured at the connection level via ansible_httpapi_client_cert
-                # and ansible_httpapi_client_key.
                 form_data = urlencode({"data": body})
                 response, response_data = self.connection.send(
                     endpoint,
@@ -403,7 +302,6 @@ class HttpApi(HttpApiBase):
                 )
 
             else:
-                # default: key in form body (backward-compatible)
                 api_key = self._get_api_key()
                 form_data = urlencode({"data": body, "key": api_key})
                 response, response_data = self.connection.send(
