@@ -28,9 +28,18 @@ options:
       bind_to_all:
         description:
           - Enable binding services to all VRFs.
-          - Omit this option entirely to leave the current device setting
-            untouched. Only set it explicitly (C(true) or C(false)) when you
-            want this module to manage it.
+          - >-
+            Whether omitting this option preserves the current device
+            setting depends on C(state). With C(merged), and with
+            C(deleted) when specific C(instances) are named, omission
+            leaves it untouched. With C(replaced) or C(overridden),
+            omission deletes an existing setting, since those states
+            replace everything not explicitly present in C(config).
+            With C(deleted) and no C(instances) given, the entire VRF
+            configuration (including this setting) is removed.
+          - Only set this explicitly (C(true) or C(false)) when you want
+            this module to manage it under C(merged) or C(deleted) with
+            named instances.
         type: bool
       instances:
         description: List of VRF instances.
@@ -229,7 +238,8 @@ after:
   returned: when changed
   type: dict
 commands:
-  description: List of API command tuples sent to the device.
+  description: List of API command tuples sent to the device, or that
+    would be sent (in check mode).
   returned: state is not gathered
   type: list
 gathered:
@@ -785,6 +795,14 @@ def build_commands(config, raw_have, state):
             cmds += dict_op(vrf_want, vrf_have, _BASE + ["name", vrf_name], op="purge")
         if "bind-to-all" not in want and "bind-to-all" in norm_have:
             cmds.append(("delete", _BASE + ["bind-to-all"]))
+    elif config.get("bind_to_all") is False and "bind-to-all" in norm_have:
+        # merged never runs a purge pass, so _spec_to_device's blanket
+        # "val is False: continue" skip means an explicit bind_to_all:
+        # false is otherwise indistinguishable from omission by the
+        # time dict_op sees "want" -- confirmed real bug: the device's
+        # bind-to-all setting silently stayed enabled with no delete
+        # command generated and changed=false reported.
+        cmds.append(("delete", _BASE + ["bind-to-all"]))
 
     cmds += dict_op(want, norm_have, _BASE, op="set")
 

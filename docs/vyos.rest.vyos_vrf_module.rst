@@ -68,7 +68,8 @@ Parameters
                 </td>
                 <td>
                         <div>Enable binding services to all VRFs.</div>
-                        <div>Omit this option entirely to leave the current device setting untouched. Only set it explicitly (<code>true</code> or <code>false</code>) when you want this module to manage it.</div>
+                        <div>Whether omitting this option preserves the current device setting depends on <code>state</code>. With <code>merged</code>, and with <code>deleted</code> when specific <code>instances</code> are named, omission leaves it untouched. With <code>replaced</code> or <code>overridden</code>, omission deletes an existing setting, since those states replace everything not explicitly present in <code>config</code>. With <code>deleted</code> and no <code>instances</code> given, the entire VRF configuration (including this setting) is removed.</div>
+                        <div>Only set this explicitly (<code>true</code> or <code>false</code>) when you want this module to manage it under <code>merged</code> or <code>deleted</code> with named instances.</div>
                 </td>
             </tr>
             <tr>
@@ -812,7 +813,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                 </td>
                 <td>state is not gathered</td>
                 <td>
-                            <div>List of API command tuples sent to the device.</div>
+                            <div>List of API command tuples sent to the device, or that would be sent (in check mode).</div>
                     <br/>
                 </td>
             </tr>

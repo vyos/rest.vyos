@@ -228,11 +228,23 @@ class TestOspfBuildCommands(unittest.TestCase):
             _RAW_HAVE,
             "merged",
         )
-        paths = [c[1] for c in cmds]
         self.assertIn(
-            ["vrf", "name", "vrf1", "protocols", "ospf", "parameters", "router-id", "10.0.0.99"],
-            paths,
+            (
+                "set",
+                [
+                    "vrf",
+                    "name",
+                    "vrf1",
+                    "protocols",
+                    "ospf",
+                    "parameters",
+                    "router-id",
+                    "10.0.0.99",
+                ],
+            ),
+            cmds,
         )
+        paths = [c[1] for c in cmds]
         self.assertFalse(
             any("router_id" in p for p in paths),
             "router_id (underscore) must never appear in a device path",
