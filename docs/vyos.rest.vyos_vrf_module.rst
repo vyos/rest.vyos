@@ -62,12 +62,13 @@ Parameters
                 </td>
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
-                                    <li><div style="color: blue"><b>no</b>&nbsp;&larr;</div></li>
+                                    <li>no</li>
                                     <li>yes</li>
                         </ul>
                 </td>
                 <td>
                         <div>Enable binding services to all VRFs.</div>
+                        <div>Omit this option entirely to leave the current device setting untouched. Only set it explicitly (<code>true</code> or <code>false</code>) when you want this module to manage it.</div>
                 </td>
             </tr>
             <tr>
@@ -656,6 +657,8 @@ Parameters
                 </td>
                 <td>
                         <div>Routing table ID associated with this VRF.</div>
+                        <div>The device enforces the valid range and rejects an invalid value with its own error message.</div>
+                        <div>VyOS does not support changing an existing VRF&#x27;s table ID in place -- it must be deleted and recreated. <code>state=merged</code> and <code>state=replaced</code> fail with a clear error if this differs from the current device value, rather than silently deleting and recreating the VRF. Use <code>state=overridden</code> (which deletes and recreates the VRF, re-applying every other desired field, since it already replaces everything to match <code>config</code>), or explicitly run <code>state=deleted</code> followed by <code>state=merged</code>/<code>replaced</code> as separate tasks.</div>
                 </td>
             </tr>
             <tr>
@@ -792,7 +795,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">dictionary</span>
                     </div>
                 </td>
-                <td>always</td>
+                <td>state is not gathered</td>
                 <td>
                             <div>VRF configuration before this module ran.</div>
                     <br/>
@@ -807,7 +810,7 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
                       <span style="color: purple">list</span>
                     </div>
                 </td>
-                <td>always</td>
+                <td>state is not gathered</td>
                 <td>
                             <div>List of API command tuples sent to the device.</div>
                     <br/>

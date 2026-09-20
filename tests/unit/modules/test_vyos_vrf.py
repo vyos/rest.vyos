@@ -17,15 +17,7 @@ from ansible_collections.vyos.rest.plugins.modules.vyos_vrf import (
 from .base import load_fixture
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
 _RAW_HAVE = load_fixture("vrf_running.json")
-
-# ---------------------------------------------------------------------------
-# _device_to_argspec — top-level VRF properties
-# ---------------------------------------------------------------------------
 
 
 class TestDeviceToArgspec(unittest.TestCase):
@@ -60,11 +52,6 @@ class TestDeviceToArgspec(unittest.TestCase):
         self.assertEqual(_device_to_argspec(None), {})
 
 
-# ---------------------------------------------------------------------------
-# _proto_from_device — BGP
-# ---------------------------------------------------------------------------
-
-
 class TestBgpFromDevice(unittest.TestCase):
     def setUp(self):
         self.raw = _RAW_HAVE["name"]["vrf1"]["protocols"]["bgp"]
@@ -83,11 +70,6 @@ class TestBgpFromDevice(unittest.TestCase):
     def test_empty_input(self):
         self.assertEqual(_proto_from_device({}, "bgp"), {})
         self.assertEqual(_proto_from_device(None, "bgp"), {})
-
-
-# ---------------------------------------------------------------------------
-# _proto_to_device + build_commands — BGP
-# ---------------------------------------------------------------------------
 
 
 class TestBgpToDevice(unittest.TestCase):
@@ -146,7 +128,6 @@ class TestBgpToDevice(unittest.TestCase):
             ],
             paths,
         )
-        # existing neighbor should not be re-set
         self.assertNotIn(
             [
                 "vrf",
@@ -161,11 +142,6 @@ class TestBgpToDevice(unittest.TestCase):
             ],
             paths,
         )
-
-
-# ---------------------------------------------------------------------------
-# _proto_from_device — OSPFv2
-# ---------------------------------------------------------------------------
 
 
 class TestOspfFromDevice(unittest.TestCase):
@@ -185,11 +161,6 @@ class TestOspfFromDevice(unittest.TestCase):
 
     def test_empty_input(self):
         self.assertEqual(_proto_from_device({}, "ospf"), {})
-
-
-# ---------------------------------------------------------------------------
-# build_commands — OSPFv2
-# ---------------------------------------------------------------------------
 
 
 class TestOspfBuildCommands(unittest.TestCase):
@@ -238,10 +209,34 @@ class TestOspfBuildCommands(unittest.TestCase):
             paths,
         )
 
-
-# ---------------------------------------------------------------------------
-# _proto_from_device — static routes
-# ---------------------------------------------------------------------------
+    def test_change_router_id(self):
+        """Regression test: confirmed bug where router_id was missing
+        from _DEVICE_RENAMES. A brand-new router_id happened to work
+        via dict_op's own fallback conversion, and an unchanged value
+        happened to stay idempotent since both sides of the comparison
+        shared the same (wrong) key -- only *changing* an existing
+        router_id actually exposed the corrupted "router_id" (no
+        hyphen) device path, which VyOS would reject."""
+        want_ospf = {
+            "areas": [
+                {"area_id": "0", "networks": ["10.0.0.0/24", "172.16.0.0/24"]},
+            ],
+            "parameters": {"router_id": "10.0.0.99"},
+        }
+        cmds = build_commands(
+            {"instances": [{"name": "vrf1", "table_id": 101, "protocols": {"ospf": want_ospf}}]},
+            _RAW_HAVE,
+            "merged",
+        )
+        paths = [c[1] for c in cmds]
+        self.assertIn(
+            ["vrf", "name", "vrf1", "protocols", "ospf", "parameters", "router-id", "10.0.0.99"],
+            paths,
+        )
+        self.assertFalse(
+            any("router_id" in p for p in paths),
+            "router_id (underscore) must never appear in a device path",
+        )
 
 
 class TestStaticFromDevice(unittest.TestCase):
@@ -257,11 +252,6 @@ class TestStaticFromDevice(unittest.TestCase):
 
     def test_empty_input(self):
         self.assertEqual(_proto_from_device({}, "static"), {})
-
-
-# ---------------------------------------------------------------------------
-# build_commands — static routes
-# ---------------------------------------------------------------------------
 
 
 class TestStaticBuildCommands(unittest.TestCase):
@@ -308,11 +298,6 @@ class TestStaticBuildCommands(unittest.TestCase):
         )
 
 
-# ---------------------------------------------------------------------------
-# _protocols_from_device
-# ---------------------------------------------------------------------------
-
-
 class TestProtocolsFromDevice(unittest.TestCase):
     def test_all_protocols(self):
         raw_vrf = _RAW_HAVE["name"]["vrf1"]
@@ -325,11 +310,6 @@ class TestProtocolsFromDevice(unittest.TestCase):
         raw_vrf = _RAW_HAVE["name"]["vrf2"]
         result = _protocols_from_device(raw_vrf)
         self.assertIsNone(result)
-
-
-# ---------------------------------------------------------------------------
-# build_commands — top-level VRF operations
-# ---------------------------------------------------------------------------
 
 
 class TestBuildCommands(unittest.TestCase):

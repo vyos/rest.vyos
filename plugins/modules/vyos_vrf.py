@@ -26,9 +26,12 @@ options:
     type: dict
     suboptions:
       bind_to_all:
-        description: Enable binding services to all VRFs.
+        description:
+          - Enable binding services to all VRFs.
+          - Omit this option entirely to leave the current device setting
+            untouched. Only set it explicitly (C(true) or C(false)) when you
+            want this module to manage it.
         type: bool
-        default: false
       instances:
         description: List of VRF instances.
         type: list
@@ -46,7 +49,20 @@ options:
             type: bool
             default: false
           table_id:
-            description: Routing table ID associated with this VRF.
+            description:
+              - Routing table ID associated with this VRF.
+              - The device enforces the valid range and rejects an invalid
+                value with its own error message.
+              - VyOS does not support changing an existing VRF's table ID
+                in place -- it must be deleted and recreated. C(state=merged)
+                and C(state=replaced) fail with a clear error if this
+                differs from the current device value, rather than
+                silently deleting and recreating the VRF. Use
+                C(state=overridden) (which deletes and recreates the VRF,
+                re-applying every other desired field, since it already
+                replaces everything to match C(config)), or explicitly run
+                C(state=deleted) followed by C(state=merged)/C(replaced)
+                as separate tasks.
             type: int
           vni:
             description: Virtual Network Identifier.
@@ -206,7 +222,7 @@ EXAMPLES = r"""
 RETURN = r"""
 before:
   description: VRF configuration before this module ran.
-  returned: always
+  returned: state is not gathered
   type: dict
 after:
   description: VRF configuration after this module ran.
@@ -214,7 +230,7 @@ after:
   type: dict
 commands:
   description: List of API command tuples sent to the device.
-  returned: always
+  returned: state is not gathered
   type: list
 gathered:
   description: Current VRF configuration as structured data.
@@ -262,6 +278,7 @@ _DEVICE_RENAMES = {
     "areas": "area",
     "routes": "route",
     "bind_to_all": "bind-to-all",
+    "router_id": "router-id",
 }
 
 
@@ -569,14 +586,48 @@ def _device_to_argspec(raw):
 # ---------------------------------------------------------------------------
 
 
+def _routes_to_device(routes):
+    """Split routes by address family -- VyOS requires IPv4 static
+    routes under "route" and IPv6 under "route6" as genuinely separate
+    device subtrees (confirmed against VyOS's own interface-definitions
+    schema: static-route.xml.i and static-route6.xml.i are distinct
+    includes, not a single shared "route" path for both families).
+    """
+    device = {}
+    for entry in routes or []:
+        dest = entry.get("dest")
+        if not dest:
+            continue
+        container = "route6" if ":" in dest else "route"
+        route_device = _route_to_device({k: v for k, v in entry.items() if k != "dest"})
+        device.setdefault(container, {})[dest] = route_device
+    return device
+
+
+def _routes_from_device(raw):
+    """Inverse of _routes_to_device -- merge the route and route6
+    device subtrees back into a single argspec routes list."""
+    entries = []
+    for container in ("route", "route6"):
+        raw_container = (raw or {}).get(container)
+        if raw_container:
+            entries += _keyed_list_from_device(raw_container, "dest", _route_from_device)
+    return sorted(entries, key=lambda e: e["dest"])
+
+
 def _proto_to_device(proto_config, proto_key):
     """argspec protocol config -> device protocol dict."""
+    if proto_key == "static":
+        return _routes_to_device((proto_config or {}).get("routes"))
     result = _spec_to_device(proto_config or {}, _PROTO_OPTIONS[proto_key]["options"])
     return result
 
 
 def _proto_from_device(raw, proto_key):
     """Device protocol dict -> argspec protocol config."""
+    if proto_key == "static":
+        routes = _routes_from_device(raw)
+        return {"routes": routes} if routes else {}
     result = _device_to_spec(raw or {}, _PROTO_OPTIONS[proto_key]["options"])
     cast_by_spec(result, _PROTO_OPTIONS[proto_key]["options"])
     return result
@@ -593,7 +644,7 @@ _PROTO_HANDLERS = ["bgp", "ospf", "static"]
 _PROTO_TAG_CONTAINERS = {
     "bgp": ["neighbor"],
     "ospf": ["area"],
-    "static": ["route"],
+    "static": ["route", "route6"],
 }
 
 
@@ -692,6 +743,40 @@ def build_commands(config, raw_have, state):
     for vrf_name in want.get("name") or {}:
         norm_have.setdefault("name", {}).setdefault(vrf_name, {})
 
+    # VyOS's routing table ID cannot be modified in place once assigned --
+    # confirmed via VyOS's own official documentation ("A routing table ID
+    # can not be modified once it is assigned. It can only be changed by
+    # deleting and re-adding the VRF instance") and its source
+    # (ConfigError: "VRF ... table id modification not possible!"). This
+    # module never does that destructive delete-and-recreate silently
+    # under merged/replaced -- only overridden's own explicit contract
+    # ("replace everything to match want, destructively if needed")
+    # covers it; merged/replaced fail loudly instead, so a table_id
+    # change is always something the user explicitly asked for via the
+    # right state, not a surprise this module decided on their behalf.
+    recreated_vrfs = set()
+    for vrf_name, vrf_want in (want.get("name") or {}).items():
+        vrf_have = (norm_have.get("name") or {}).get(vrf_name) or {}
+        want_table = vrf_want.get("table")
+        have_table = vrf_have.get("table")
+        if want_table is None or have_table is None or str(want_table) == str(have_table):
+            continue
+        if state == "overridden":
+            cmds.append(("delete", _BASE + ["name", vrf_name]))
+            norm_have["name"][vrf_name] = {}
+            recreated_vrfs.add(vrf_name)
+        else:
+            raise ValueError(
+                "VRF '{name}': table_id cannot be changed in place under "
+                "state={state} -- VyOS does not support modifying an "
+                "existing VRF's routing table. Use state=overridden, or "
+                "explicitly remove and recreate it with separate "
+                "state=deleted and state=merged/replaced tasks.".format(
+                    name=vrf_name,
+                    state=state,
+                ),
+            )
+
     if state == "overridden":
         cmds += dict_op(want, norm_have, _BASE, op="purge")
     elif state == "replaced":
@@ -709,9 +794,12 @@ def build_commands(config, raw_have, state):
         if not vrf_name:
             continue
         protocols = inst.get("protocols") or {}
-        raw_vrf = (raw_have.get("name") or {}).get(vrf_name) or {}
+        if vrf_name in recreated_vrfs:
+            raw_vrf = {}
+        else:
+            raw_vrf = (raw_have.get("name") or {}).get(vrf_name) or {}
         raw_proto = raw_vrf.get("protocols") or {}
-        if protocols or state in ("overridden", "replaced"):
+        if protocols or state in ("overridden", "replaced") or vrf_name in recreated_vrfs:
             cmds += _protocol_commands(vrf_name, protocols, raw_proto, state)
 
     return cmds
@@ -739,7 +827,7 @@ ARGUMENT_SPEC = dict(
     config=dict(
         type="dict",
         options=dict(
-            bind_to_all=dict(type="bool", default=False),
+            bind_to_all=dict(type="bool"),
             instances=dict(
                 type="list",
                 elements="dict",
@@ -892,7 +980,10 @@ def main():
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
 
-    cmds = build_commands(config, raw_have, state)
+    try:
+        cmds = build_commands(config, raw_have, state)
+    except ValueError as exc:
+        module.fail_json(msg=str(exc))
 
     if module.check_mode:
         module.exit_json(changed=bool(cmds), commands=cmds, before=have)

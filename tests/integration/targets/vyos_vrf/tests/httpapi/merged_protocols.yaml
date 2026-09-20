@@ -83,5 +83,35 @@
           - result.gathered.instances[0].protocols.ospf.areas | length == 1
           - result.gathered.instances[0].protocols.static.routes | length == 1
 
+    - name: Change an already-set OSPF router_id
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              table_id: 101
+              protocols:
+                ospf:
+                  areas:
+                    - area_id: "0"
+                      networks:
+                        - 10.0.0.0/24
+                  parameters:
+                    router_id: 10.0.0.99
+        state: merged
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather and verify router_id was actually changed
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.instances[0].protocols.ospf.parameters.router_id == "10.0.0.99"
+
   always:
     - include_tasks: _remove_config.yaml
