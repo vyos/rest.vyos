@@ -166,6 +166,11 @@ Examples
 
 .. code-block:: yaml
 
+    # NOTE: ansible_httpapi_validate_certs: false below is shown for lab/testing
+    # convenience with self-signed certificates only. In production, use a
+    # properly signed certificate and set ansible_httpapi_validate_certs: true
+    # (the default) -- or omit the option entirely.
+
     # inventory.yml - form-field API key (default, backward-compatible)
     all:
       hosts:

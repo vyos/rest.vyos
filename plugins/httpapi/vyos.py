@@ -95,6 +95,11 @@ notes:
 """
 
 EXAMPLES = r"""
+# NOTE: ansible_httpapi_validate_certs: false below is shown for lab/testing
+# convenience with self-signed certificates only. In production, use a
+# properly signed certificate and set ansible_httpapi_validate_certs: true
+# (the default) -- or omit the option entirely.
+
 # inventory.yml - form-field API key (default, backward-compatible)
 all:
   hosts:
@@ -329,7 +334,8 @@ class HttpApi(HttpApiBase):
         access_token = token_response.get("access_token")
         if not access_token:
             raise ConnectionError(
-                "OIDC token response missing a valid access_token: {0}".format(raw[:300]),
+                "OIDC token response missing a valid access_token "
+                "(response keys: {0}).".format(sorted(token_response.keys())),
             )
 
         self._oidc_token = access_token
