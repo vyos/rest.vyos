@@ -259,6 +259,56 @@ class TestBuildCommands(VyOSModuleTestCase):
         expected = ("delete", _BASE + ["route", "192.0.2.0/24", "next-hop", "10.0.0.1", "distance"])
         self.assertIn(expected, cmds)
 
+    def test_merged_explicit_enabled_true_clears_stale_disable(self):
+        """Confirmed real gap from review: dict_op(op="set") only ever
+        walks want's own keys, so it can never reach a "disable" leaf
+        that's simply absent from want -- under "merged" (which never
+        runs a purge pass at all) there was no way to clear a
+        previously disabled next-hop. Fixed via an explicit check
+        against the original argspec-shape config for enabled: true,
+        scoped to merged specifically since replaced/overridden
+        already handle this correctly through their existing purge
+        pass."""
+        raw_have = {"route": {"192.0.2.0/24": {"next-hop": {"10.0.0.1": {"disable": {}}}}}}
+        config = [
+            {
+                "afi": "ipv4",
+                "routes": [
+                    {
+                        "dest": "192.0.2.0/24",
+                        "next_hops": [
+                            {"forward_router_address": "10.0.0.1", "enabled": True},
+                        ],
+                    },
+                ],
+            },
+        ]
+        cmds = build_commands(config, raw_have, "merged")
+        expected = ("delete", _BASE + ["route", "192.0.2.0/24", "next-hop", "10.0.0.1", "disable"])
+        self.assertIn(expected, cmds)
+
+    def test_merged_omitted_enabled_leaves_existing_disable_alone(self):
+        """enabled deliberately has no default (fixed alongside the
+        above): omitting it entirely means "no opinion", so an
+        unrelated merged update must not silently re-enable an
+        existing disabled next-hop."""
+        raw_have = {"route": {"192.0.2.0/24": {"next-hop": {"10.0.0.1": {"disable": {}}}}}}
+        config = [
+            {
+                "afi": "ipv4",
+                "routes": [
+                    {
+                        "dest": "192.0.2.0/24",
+                        "next_hops": [
+                            {"forward_router_address": "10.0.0.1", "admin_distance": 5},
+                        ],
+                    },
+                ],
+            },
+        ]
+        cmds = build_commands(config, raw_have, "merged")
+        self.assertFalse(any("disable" in str(c) for c in cmds))
+
     def test_replaced_scoped_to_named_route_only(self):
         raw_have = {
             "route": {
