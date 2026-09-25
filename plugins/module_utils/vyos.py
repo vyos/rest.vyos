@@ -320,7 +320,8 @@ class VyOSModule:
         that's actually already correct.
         """
         result = self._client.retrieve_return_value(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def apply_commands(self, commands):
         if not commands:
@@ -372,7 +373,8 @@ class VyOSModule:
         rather than being indistinguishable from a valid empty response.
         """
         result = self._client.show(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def save_config(self, file_path=None):
         """Save the running configuration to disk."""
