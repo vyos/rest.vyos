@@ -73,11 +73,13 @@ class TestGetValue(unittest.TestCase):
 
     def test_zero_preserved_not_emptied(self):
         vyos = self._vyos_with_data(0)
-        self.assertEqual(vyos.get_value(["some", "path"]), 0)
+        result = vyos.get_value(["some", "path"])
+        self.assertEqual(result, 0)
+        self.assertIs(type(result), int)
 
     def test_false_preserved_not_emptied(self):
         vyos = self._vyos_with_data(False)
-        self.assertEqual(vyos.get_value(["some", "path"]), False)
+        self.assertIs(vyos.get_value(["some", "path"]), False)
 
     def test_genuine_string_value_passes_through(self):
         vyos = self._vyos_with_data("vyos-core-01")
@@ -112,11 +114,13 @@ class TestShow(unittest.TestCase):
 
     def test_zero_preserved_not_emptied(self):
         vyos = self._vyos_with_data(0)
-        self.assertEqual(vyos.show(["some", "op", "path"]), 0)
+        result = vyos.show(["some", "op", "path"])
+        self.assertEqual(result, 0)
+        self.assertIs(type(result), int)
 
     def test_false_preserved_not_emptied(self):
         vyos = self._vyos_with_data(False)
-        self.assertEqual(vyos.show(["some", "op", "path"]), False)
+        self.assertIs(vyos.show(["some", "op", "path"]), False)
 
     def test_genuine_output_passes_through(self):
         vyos = self._vyos_with_data("interface eth0 up")
