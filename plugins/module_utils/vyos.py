@@ -304,6 +304,24 @@ class VyOSModule:
         except VyOSRestError:
             return {}
 
+    def get_value(self, path):
+        """Retrieve a single scalar leaf value at *path*.
+
+        Uses VyOS's dedicated "returnValue" retrieve operation --
+        genuinely distinct from get_config's "showConfig" operation,
+        which returns a config subtree rather than a single value.
+        Appropriate for a plain leafNode (e.g. "system host-name"),
+        not a container.
+
+        Errors genuinely propagate rather than being swallowed into a
+        misleading "absent" result: a transient failure here must not
+        be indistinguishable from the value legitimately being unset,
+        since a module could otherwise decide to overwrite a value
+        that's actually already correct.
+        """
+        result = self._client.retrieve_return_value(path)
+        return result.get("data") or ""
+
     def apply_commands(self, commands):
         if not commands:
             return []
