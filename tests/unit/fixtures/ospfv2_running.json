@@ -2,41 +2,70 @@
   "area": {
     "2": {
       "area-type": { "normal": {} },
-      "network": "192.0.2.0/24"
-    },
-    "3": {
-      "area-type": { "nssa": {} }
+      "authentication": "plaintext-password",
+      "shortcut": "enable"
     },
     "4": {
-      "area-type": { "stub": { "default-cost": "20" } },
-      "range": {
-        "192.0.3.0/24": { "cost": "10" },
-        "192.0.4.0/24": {}
+      "area-type": { "stub": { "default-cost": "20", "no-summary": {} } },
+      "network": { "192.0.2.0/24": {} },
+      "range": { "192.0.3.0/24": { "cost": "10", "not-advertise": {} } },
+      "virtual-link": {
+        "10.0.0.1": {
+          "authentication": { "plaintext-password": "secret" },
+          "dead-interval": "40",
+          "hello-interval": "10"
+        }
       }
+    },
+    "5": {
+      "area-type": { "nssa": { "default-cost": "5", "translate": "always" } }
     }
   },
   "auto-cost": { "reference-bandwidth": "2" },
-  "interface": { "eth1": { "passive": {} }, "eth2": { "passive": {} } },
-  "log-adjacency-changes": { "detail": {} },
-  "neighbor": {
-    "192.0.11.12": { "priority": "2", "poll-interval": "10" }
-  },
-  "parameters": {
-    "router-id": "192.0.1.1",
-    "abr-type": "cisco",
-    "opaque-lsa": {},
-    "rfc1583-compatibility": {}
-  },
-  "redistribute": {
-    "bgp": { "metric": "10", "metric-type": "2" },
-    "connected": {}
-  },
   "default-information": {
     "originate": {
       "always": {},
       "metric": "10",
       "metric-type": "2",
       "route-map": "ingress"
+    }
+  },
+  "default-metric": "5",
+  "distance": {
+    "global": "110",
+    "ospf": { "external": "150", "inter-area": "120", "intra-area": "100" }
+  },
+  "log-adjacency-changes": { "detail": {} },
+  "max-metric": {
+    "router-lsa": {
+      "administrative": {},
+      "on-shutdown": "10",
+      "on-startup": "20"
+    }
+  },
+  "mpls-te": { "enable": {}, "router-address": "192.0.11.11" },
+  "neighbor": { "192.0.11.12": { "priority": "2", "poll-interval": "30" } },
+  "parameters": {
+    "router-id": "192.0.1.1",
+    "opaque-lsa": {},
+    "rfc1583-compatibility": {},
+    "abr-type": "cisco"
+  },
+  "interface": {
+    "eth1": { "passive": {} },
+    "eth2": { "passive": { "disable": {} } }
+  },
+  "redistribute": {
+    "bgp": { "metric": "10", "metric-type": "2", "route-map": "redist-map" }
+  },
+  "refresh": { "timers": "300" },
+  "timers": {
+    "throttle": {
+      "spf": {
+        "delay": "200",
+        "initial-holdtime": "500",
+        "max-holdtime": "2000"
+      }
     }
   }
 }
