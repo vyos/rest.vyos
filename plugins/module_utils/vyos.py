@@ -381,3 +381,24 @@ class VyOSModule:
             return True
         except VyOSRestError:
             return False
+
+
+def import_module_plugin(name):
+    """Import a sibling plugin from plugins/modules/ by name.
+
+    Ansible's AnsiballZ does not add plugins/modules to sys.path, so
+    collection modules cannot be imported via the standard import system.
+    This utility resolves the module file relative to this module_utils
+    directory and loads it with importlib.
+    """
+    import importlib.util
+    import os
+
+    modules_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "modules"),
+    )
+    module_path = os.path.join(modules_dir, "{0}.py".format(name))
+    spec = importlib.util.spec_from_file_location(name, module_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
