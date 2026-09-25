@@ -193,12 +193,19 @@ Parameters
                 <td>
                         <ul style="margin: 0; padding: 0"><b>Choices:</b>
                                     <li>no</li>
+<<<<<<< HEAD
                                     <li>yes</li>
+=======
+                                    <li><div style="color: blue"><b>yes</b>&nbsp;&larr;</div></li>
+>>>>>>> cedca79 (T8989: new auth methods)
                         </ul>
                 </td>
                 <td>
                         <div>Whether this next-hop is enabled.</div>
+<<<<<<< HEAD
                         <div>Deliberately has no default: leaving it unset means &quot;no opinion&quot; and an existing device-side disabled state is left alone under <code>merged</code>. Explicitly setting <code>true</code> actively clears a previously disabled next-hop, which <code>merged</code> could otherwise never do (only <code>replaced</code>/<code>overridden</code> run a purge pass capable of noticing an omitted value).</div>
+=======
+>>>>>>> cedca79 (T8989: new auth methods)
                 </td>
             </tr>
             <tr>
@@ -262,7 +269,11 @@ Parameters
                 <td>
                         <div><code>merged</code> - Add routes without removing existing ones.</div>
                         <div><code>replaced</code> - Replace each named route (by afi + dest) exactly as specified.</div>
+<<<<<<< HEAD
                         <div><code>overridden</code> - Replace the module-known parts of the static route table (see module scope note above; unmodeled attributes on unmodeled routes are not touched).</div>
+=======
+                        <div><code>overridden</code> - Replace the entire static route table.</div>
+>>>>>>> cedca79 (T8989: new auth methods)
                         <div><code>deleted</code> - Remove listed or all static routes.</div>
                         <div><code>gathered</code> - Read static routes from device without changes.</div>
                 </td>

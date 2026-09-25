@@ -202,7 +202,11 @@ Parameters
                 </td>
                 <td>
                         <div>LLDP administrative mode for this interface.</div>
+<<<<<<< HEAD
                         <div><code>rx-tx</code> sends and receives LLDP frames (device default).</div>
+=======
+                        <div><code>rx-tx</code> sends and receives LLDP frames (default).</div>
+>>>>>>> cedca79 (T8989: new auth methods)
                         <div><code>disable</code> disables LLDP on this interface.</div>
                         <div><code>rx</code> receives only.</div>
                         <div><code>tx</code> transmits only.</div>
@@ -229,6 +233,24 @@ Parameters
             <tr>
                 <td colspan="4">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
+<<<<<<< HEAD
+=======
+                    <b>running_config</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                <td>
+                        <div>Used only with state <code>parsed</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+>>>>>>> cedca79 (T8989: new auth methods)
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -242,6 +264,11 @@ Parameters
                                     <li>overridden</li>
                                     <li>deleted</li>
                                     <li>gathered</li>
+<<<<<<< HEAD
+=======
+                                    <li>rendered</li>
+                                    <li>parsed</li>
+>>>>>>> cedca79 (T8989: new auth methods)
                         </ul>
                 </td>
                 <td>
@@ -250,6 +277,11 @@ Parameters
                         <div><code>overridden</code> - Replace config for all LLDP interfaces.</div>
                         <div><code>deleted</code> - Remove listed or all LLDP interface config.</div>
                         <div><code>gathered</code> - Read LLDP interface config from device without changes.</div>
+<<<<<<< HEAD
+=======
+                        <div><code>rendered</code> - Return commands for provided config without connecting.</div>
+                        <div><code>parsed</code> - Parse running_config into structured data.</div>
+>>>>>>> cedca79 (T8989: new auth methods)
                 </td>
             </tr>
     </table>
@@ -380,6 +412,39 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
             <tr>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="return-"></div>
+<<<<<<< HEAD
+=======
+                    <b>parsed</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">list</span>
+                    </div>
+                </td>
+                <td>when state is parsed</td>
+                <td>
+                            <div>Structured data parsed from running_config (state=parsed).</div>
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+                    <b>rendered</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">list</span>
+                    </div>
+                </td>
+                <td>when state is rendered</td>
+                <td>
+                            <div>Commands for provided config (state=rendered).</div>
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+>>>>>>> cedca79 (T8989: new auth methods)
                     <b>response</b>
                     <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
                     <div style="font-size: small">
