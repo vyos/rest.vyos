@@ -1,6 +1,4 @@
 {
-  "parameters": { "router-id": "192.0.2.10" },
-  "redistribute": { "bgp": {}, "connected": { "route-map": "RM1" } },
   "area": {
     "2": {
       "export-list": "export1",
@@ -11,9 +9,12 @@
       }
     },
     "3": {
-      "range": {
-        "2001:db40::/32": {}
-      }
+      "range": { "2001:db40::/32": { "advertise": {} } }
     }
+  },
+  "parameters": { "router-id": "192.0.2.10" },
+  "redistribute": {
+    "bgp": { "route-map": "redist-map" },
+    "static": {}
   }
 }
