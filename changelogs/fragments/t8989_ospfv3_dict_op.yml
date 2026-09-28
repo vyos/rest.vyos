@@ -1,0 +1,3 @@
+---
+minor_changes:
+  - vyos_ospfv3 - Refactor module to dict_op style.

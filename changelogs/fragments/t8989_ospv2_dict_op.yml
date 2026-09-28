@@ -1,0 +1,5 @@
+---
+minor_changes:
+  - vyos_ospfv2 - refactor command generation onto ``dict_op``.
+  - vyos_ospfv2 - add support for ``areas[].virtual_link``, ``max_metric``,
+    ``mpls_te``, ``timers``, and ``passive_interface_exclude``.
