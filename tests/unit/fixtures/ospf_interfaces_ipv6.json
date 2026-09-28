@@ -1,4 +1,9 @@
 {
-  "eth1": { "dead-interval": "39", "passive": {} },
+  "eth1": {
+    "dead-interval": "39",
+    "passive": {},
+    "instance-id": "5",
+    "ifmtu": "1500"
+  },
   "eth2": {}
 }
