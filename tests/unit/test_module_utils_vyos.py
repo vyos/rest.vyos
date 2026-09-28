@@ -14,7 +14,12 @@ __metaclass__ = type
 
 import unittest
 
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import cast_by_spec
+from unittest.mock import MagicMock
+
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
+    VyOSModule,
+    cast_by_spec,
+)
 
 
 class TestCastBySpecIntCollapse(unittest.TestCase):
@@ -49,6 +54,87 @@ class TestCastBySpecIntCollapse(unittest.TestCase):
         entry = {"distance": None}
         cast_by_spec(entry, {"distance": {"type": "int"}})
         self.assertIsNone(entry["distance"])
+
+
+class TestGetValue(unittest.TestCase):
+    """Regression tests for a confirmed bug (Copilot): get_value()
+    previously did `result.get("data") or ""`, which incorrectly
+    converts any falsy-but-valid scalar (0, False, an already-empty
+    string) into an empty string -- indistinguishable from the value
+    being genuinely unset. Fixed to only treat a missing "data" key
+    (None) as unset, leaving every other value -- including falsy
+    ones -- exactly as returned."""
+
+    def _vyos_with_data(self, data):
+        vyos = VyOSModule.__new__(VyOSModule)
+        vyos._client = MagicMock()
+        vyos._client.retrieve_return_value.return_value = {"data": data}
+        return vyos
+
+    def test_zero_preserved_not_emptied(self):
+        vyos = self._vyos_with_data(0)
+        result = vyos.get_value(["some", "path"])
+        self.assertEqual(result, 0)
+        self.assertIs(type(result), int)
+
+    def test_false_preserved_not_emptied(self):
+        vyos = self._vyos_with_data(False)
+        self.assertIs(vyos.get_value(["some", "path"]), False)
+
+    def test_genuine_string_value_passes_through(self):
+        vyos = self._vyos_with_data("vyos-core-01")
+        self.assertEqual(vyos.get_value(["some", "path"]), "vyos-core-01")
+
+    def test_already_empty_string_stays_empty(self):
+        vyos = self._vyos_with_data("")
+        self.assertEqual(vyos.get_value(["some", "path"]), "")
+
+    def test_missing_data_key_becomes_empty_string(self):
+        vyos = VyOSModule.__new__(VyOSModule)
+        vyos._client = MagicMock()
+        vyos._client.retrieve_return_value.return_value = {}
+        self.assertEqual(vyos.get_value(["some", "path"]), "")
+
+
+class TestShow(unittest.TestCase):
+    """Regression tests for the same confirmed bug class as
+    TestGetValue, found independently in show(): `result.get("data")
+    or ""` incorrectly converts any falsy-but-valid scalar (0, False,
+    an already-empty string) from an operational show command into an
+    empty string -- indistinguishable from the command genuinely
+    returning nothing. Fixed to only treat a missing "data" key
+    (None) as empty, leaving every other value -- including falsy
+    ones -- exactly as returned."""
+
+    def _vyos_with_data(self, data):
+        vyos = VyOSModule.__new__(VyOSModule)
+        vyos._client = MagicMock()
+        vyos._client.show.return_value = {"data": data}
+        return vyos
+
+    def test_zero_preserved_not_emptied(self):
+        vyos = self._vyos_with_data(0)
+        result = vyos.show(["some", "op", "path"])
+        self.assertEqual(result, 0)
+        self.assertIs(type(result), int)
+
+    def test_false_preserved_not_emptied(self):
+        vyos = self._vyos_with_data(False)
+        self.assertIs(vyos.show(["some", "op", "path"]), False)
+
+    def test_genuine_output_passes_through(self):
+        vyos = self._vyos_with_data("interface eth0 up")
+        self.assertEqual(vyos.show(["some", "op", "path"]), "interface eth0 up")
+
+    def test_already_empty_string_stays_empty(self):
+        vyos = self._vyos_with_data("")
+        self.assertEqual(vyos.show(["some", "op", "path"]), "")
+
+    def test_missing_data_key_becomes_empty_string(self):
+        vyos = VyOSModule.__new__(VyOSModule)
+        vyos._client = MagicMock()
+        vyos._client.show.return_value = {}
+        self.assertEqual(vyos.show(["some", "op", "path"]), "")
 
 
 if __name__ == "__main__":
