@@ -1,0 +1,4 @@
+---
+- name: Remove VRF configuration
+  vyos.rest.vyos_vrf:
+    state: deleted

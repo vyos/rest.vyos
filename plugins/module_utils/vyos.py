@@ -320,7 +320,8 @@ class VyOSModule:
         that's actually already correct.
         """
         result = self._client.retrieve_return_value(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def apply_commands(self, commands):
         if not commands:
@@ -372,7 +373,8 @@ class VyOSModule:
         rather than being indistinguishable from a valid empty response.
         """
         result = self._client.show(path)
-        return result.get("data") or ""
+        data = result.get("data")
+        return "" if data is None else data
 
     def save_config(self, file_path=None):
         """Save the running configuration to disk."""
@@ -381,3 +383,24 @@ class VyOSModule:
             return True
         except VyOSRestError:
             return False
+
+
+def import_module_plugin(name):
+    """Import a sibling plugin from plugins/modules/ by name.
+
+    Ansible's AnsiballZ does not add plugins/modules to sys.path, so
+    collection modules cannot be imported via the standard import system.
+    This utility resolves the module file relative to this module_utils
+    directory and loads it with importlib.
+    """
+    import importlib.util
+    import os
+
+    modules_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "modules"),
+    )
+    module_path = os.path.join(modules_dir, "{0}.py".format(name))
+    spec = importlib.util.spec_from_file_location(name, module_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod

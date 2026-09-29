@@ -1,0 +1,52 @@
+---
+- debug:
+    msg: START vyos_vrf replaced integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Replace vrf1 configuration
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              description: updated
+              table_id: 101
+              vni: 999
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Gather and verify replacement
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.gathered.instances[0].vni == 999
+          - result.gathered.instances[0].description == "updated"
+          - result.gathered.instances[0].disable is not defined or result.gathered.instances[0].disable == false
+
+    - name: Replace vrf1 (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_vrf:
+        config:
+          instances:
+            - name: vrf1
+              description: updated
+              table_id: 101
+              vni: 999
+        state: replaced
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml

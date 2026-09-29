@@ -1,0 +1,82 @@
+---
+- debug:
+    msg: START vyos_vrf round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_vrf:
+        config:
+          bind_to_all: true
+          instances:
+            - name: vrf1
+              description: red
+              table_id: 101
+              vni: 501
+              protocols:
+                bgp:
+                  system_as: 65001
+                  neighbor:
+                    - address: 10.0.0.1
+                      remote_as: 65002
+                ospf:
+                  areas:
+                    - area_id: "0"
+                      networks:
+                        - 10.0.0.0/24
+                  parameters:
+                    router_id: 10.0.0.1
+                static:
+                  routes:
+                    - dest: 192.168.10.0/24
+                      next_hops:
+                        - 10.0.0.254
+        state: merged
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered.gathered.bind_to_all == true
+          - gathered.gathered.instances[0].name == "vrf1"
+          - gathered.gathered.instances[0].table_id == 101
+          - gathered.gathered.instances[0].protocols.bgp.system_as == 65001
+          - gathered.gathered.instances[0].protocols.ospf.parameters.router_id == "10.0.0.1"
+          - gathered.gathered.instances[0].protocols.static.routes[0].dest == "192.168.10.0/24"
+
+    - name: RTT - Modify description and add BGP neighbor
+      vyos.rest.vyos_vrf:
+        config:
+          bind_to_all: true
+          instances:
+            - name: vrf1
+              description: red-updated
+              table_id: 101
+              vni: 501
+              protocols:
+                bgp:
+                  system_as: 65001
+                  neighbor:
+                    - address: 10.0.0.1
+                      remote_as: 65002
+                    - address: 10.0.0.2
+                      remote_as: 65003
+        state: replaced
+
+    - name: RTT - Gather after modify
+      register: gathered2
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - gathered2.gathered.instances[0].description == "red-updated"
+          - gathered2.gathered.instances[0].protocols.bgp.neighbor | length == 2
+          - gathered2.gathered.instances[0].protocols.ospf is not defined
+
+  always:
+    - include_tasks: _remove_config.yaml

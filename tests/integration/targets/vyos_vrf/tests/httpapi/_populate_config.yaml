@@ -1,0 +1,23 @@
+---
+- name: Populate VRF configuration
+  vyos.rest.vyos_vrf:
+    config:
+      bind_to_all: true
+      instances:
+        - name: vrf1
+          description: red
+          table_id: 101
+          vni: 501
+          disable: true
+        - name: vrf2
+          description: blah2
+          table_id: 102
+          vni: 102
+          address_family:
+            - afi: ipv4
+              disable_forwarding: true
+              nht_no_resolve_via_default: true
+            - afi: ipv6
+              disable_forwarding: true
+              nht_no_resolve_via_default: true
+    state: merged

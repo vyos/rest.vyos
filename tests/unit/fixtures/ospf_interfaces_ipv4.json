@@ -1,4 +1,13 @@
 {
-  "eth1": { "cost": "100", "transmit-delay": "50", "priority": "26" },
-  "eth2": { "cost": "200" }
+  "eth1": {
+    "cost": "100",
+    "transmit-delay": "50",
+    "priority": "26",
+    "dead-interval": "40",
+    "mtu-ignore": {},
+    "authentication": { "md5": { "key-id": { "10": { "md5-key": "secret" } } } }
+  },
+  "eth2": {
+    "cost": "200"
+  }
 }

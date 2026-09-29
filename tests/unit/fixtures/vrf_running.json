@@ -1,0 +1,42 @@
+{
+  "bind-to-all": {},
+  "name": {
+    "vrf1": {
+      "description": "red",
+      "disable": {},
+      "table": "101",
+      "vni": "501",
+      "protocols": {
+        "bgp": {
+          "system-as": "65001",
+          "neighbor": {
+            "10.0.0.1": { "remote-as": "65002", "description": "peer1" }
+          }
+        },
+        "ospf": {
+          "area": { "0": { "network": ["10.0.0.0/24", "172.16.0.0/24"] } },
+          "parameters": { "router-id": "10.0.0.1" }
+        },
+        "static": {
+          "route": {
+            "192.168.10.0/24": { "next-hop": { "10.0.0.254": {} } }
+          }
+        }
+      }
+    },
+    "vrf2": {
+      "description": "blah2",
+      "disable": {},
+      "table": "102",
+      "vni": "102",
+      "ip": {
+        "disable-forwarding": {},
+        "nht": { "no-resolve-via-default": {} }
+      },
+      "ipv6": {
+        "disable-forwarding": {},
+        "nht": { "no-resolve-via-default": {} }
+      }
+    }
+  }
+}

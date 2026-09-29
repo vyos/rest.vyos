@@ -1,0 +1,27 @@
+---
+- debug:
+    msg: START vyos_vrf gathered integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Gather VRF configuration
+      register: result
+      vyos.rest.vyos_vrf:
+        state: gathered
+
+    - assert:
+        that:
+          - result.changed == false
+          - result.gathered.bind_to_all == true
+          - result.gathered.instances | length == 2
+          - result.gathered.instances[0].name == "vrf1"
+          - result.gathered.instances[0].table_id == 101
+          - result.gathered.instances[0].vni == 501
+          - result.gathered.instances[0].disable == true
+          - result.gathered.instances[1].name == "vrf2"
+          - result.gathered.instances[1].table_id == 102
+
+  always:
+    - include_tasks: _remove_config.yaml
