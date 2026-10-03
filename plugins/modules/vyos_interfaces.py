@@ -153,21 +153,14 @@ response:
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
     VyOSModule,
-    autoclean,
     cast_by_spec,
     dict_op,
-    from_device,
     to_tag_dict,
 )
 
 
 _BASE = ["interfaces"]
 
-# Interface name prefix -> device type-category key. Carried over
-# unchanged from the original module (11 types) -- kept as-is per
-# explicit direction, not independently re-verified against the
-# device schema for this rework (unlike the fields below, which are
-# newly confirmed).
 _IFACE_TYPE_PREFIX = {
     "eth": "ethernet",
     "bond": "bonding",
@@ -194,13 +187,7 @@ def _resolve_iface_type(name, raw_have):
     """Prefer the real type from the device's own raw response
     (organized by type at the top level) over a name-prefix guess --
     only fall back to guessing for a brand-new interface that doesn't
-    exist on the device yet, where the real type genuinely can't be
-    determined any other way.
-
-    Confirmed real bug in the original: the prefix guess was applied
-    unconditionally, even for interfaces already known to the device,
-    where the type is directly and reliably available without any
-    guessing at all.
+    exist on the device yet.
     """
     for itype, ifaces in (raw_have or {}).items():
         if name in to_tag_dict(ifaces):
@@ -212,26 +199,33 @@ def _iface_base(name, raw_have):
     return _BASE + [_resolve_iface_type(name, raw_have), name]
 
 
-def _kebab_fields(d):
-    """autoclean, then kebab-convert the resulting keys.
+_DEVICE_RENAMES = {
+    "vifs": "vif",
+}
 
-    Needed because dict_op requires have's keys to already be genuine
-    device kebab-case -- it only normalizes underscores to dashes for
-    its own lookup index, but uses have's key verbatim for the output
-    path. autoclean deliberately leaves keys exactly as given (dict_op
-    is meant to convert during its own want-vs-have comparison), which
-    only works when have comes straight from the device. Here, have is
-    reconstructed by round-tripping through this module's own entry-
-    transforms, so any field passed through unconverted would stay
-    snake_case and dict_op would have no way to recover the real
-    device key -- confirmed as a real bug during vyos_ospfv2's build.
+_ENABLED_FIELD = "enabled"
+_DISABLE_DEVICE_KEY = "disable"
+
+
+def _derive_key_field(options_spec):
+    """The field identifying each entry in a keyed-list section is
+    never inferable from a generic walk alone -- but it doesn't need
+    to be hand-declared either: every such section in this argspec
+    already marks exactly one suboption required=True (you can't
+    create a VIF without a vlan_id). Deriving it here means the key
+    field is asserted to exist by the argspec itself, not duplicated
+    in a place that could drift out of sync with it.
     """
-    cleaned = autoclean(d)
-    return {k.replace("_", "-"): v for k, v in cleaned.items()}
+    required = [k for k, spec in options_spec.items() if spec.get("required")]
+    if len(required) != 1:
+        raise ValueError(
+            "expected exactly one required suboption to serve as the key field, "
+            "found: {0}".format(required),
+        )
+    return required[0]
 
 
-def _keyed_list_to_device(items, key_field, entry_transform=None):
-    entry_transform = entry_transform or _kebab_fields
+def _keyed_list_to_device(items, key_field, entry_transform):
     result = {}
     for item in items or []:
         if item.get(key_field) is None:
@@ -241,8 +235,7 @@ def _keyed_list_to_device(items, key_field, entry_transform=None):
     return result
 
 
-def _keyed_list_from_device(raw, key_field, entry_transform=None, key_cast=None):
-    entry_transform = entry_transform or from_device
+def _keyed_list_from_device(raw, key_field, entry_transform, key_cast=None):
     key_cast = key_cast or (lambda k: k)
     return [
         {key_field: key_cast(key), **entry_transform(data or {})}
@@ -250,87 +243,93 @@ def _keyed_list_from_device(raw, key_field, entry_transform=None, key_cast=None)
     ]
 
 
-# ---------------------------------------------------------------------------
-# vif -- confirmed against vyos-1x/official docs: description, mtu, and a
-# disable presence leaf, keyed by VLAN ID.
-# ---------------------------------------------------------------------------
+def _spec_to_device(value, options_spec):
+    if not isinstance(value, dict):
+        return value
+    result = {}
+    for arg_key, sub_spec in options_spec.items():
+        if arg_key == _ENABLED_FIELD:
+            if value.get(arg_key) is False:
+                result[_DISABLE_DEVICE_KEY] = {}
+            continue
+
+        val = value.get(arg_key)
+        if val is None or val is False:
+            continue
+
+        device_key = _DEVICE_RENAMES.get(arg_key, arg_key.replace("_", "-"))
+        sub_type = sub_spec.get("type")
+        sub_options = sub_spec.get("options")
+
+        if sub_type == "dict" and sub_options:
+            converted = _spec_to_device(val, sub_options)
+            if converted:
+                result[device_key] = converted
+        elif sub_type == "list" and sub_options:
+            key_field = _derive_key_field(sub_options)
+            result[device_key] = _keyed_list_to_device(
+                val,
+                key_field,
+                lambda rest, spec=sub_options: _spec_to_device(rest, spec),
+            )
+        elif val is True:
+            result[device_key] = {}
+        elif sub_type == "list":
+            result[device_key] = list(val)
+        else:
+            result[device_key] = val
+    return result
 
 
-def _vif_entry_to_device(rest):
-    exclude = {"enabled"}
-    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
-    if rest.get("enabled") is False:
-        device["disable"] = {}
-    return device
+def _device_to_spec(raw, options_spec):
+    if not raw or not isinstance(raw, dict):
+        return {}
+    have_idx = {k.replace("-", "_"): k for k in raw}
+    result = {}
 
+    if _ENABLED_FIELD in options_spec and _DISABLE_DEVICE_KEY in raw:
+        result[_ENABLED_FIELD] = False
 
-def _vif_entry_from_device(data):
-    entry = {}
-    if "description" in data:
-        entry["description"] = data["description"]
-    if "mtu" in data:
-        entry["mtu"] = data["mtu"]
-    if "disable" in data:
-        entry["enabled"] = False
-    return entry
+    for arg_key, sub_spec in options_spec.items():
+        if arg_key == _ENABLED_FIELD:
+            continue
+        device_key = _DEVICE_RENAMES.get(arg_key, arg_key.replace("_", "-"))
+        orig_key = device_key if device_key in raw else have_idx.get(arg_key)
+        if orig_key is None:
+            continue
+        raw_val = raw[orig_key]
+        sub_type = sub_spec.get("type")
+        sub_options = sub_spec.get("options")
 
-
-def _iface_entry_to_device(rest):
-    exclude = {"enabled", "vifs"}
-    device = _kebab_fields({k: v for k, v in rest.items() if k not in exclude})
-    if rest.get("enabled") is False:
-        device["disable"] = {}
-    vifs = rest.get("vifs") or []
-    if vifs:
-        device["vif"] = _keyed_list_to_device(vifs, "vlan_id", _vif_entry_to_device)
-    return device
-
-
-def _iface_entry_from_device(data):
-    """Explicit allowlist of only the fields this module owns.
-
-    Confirmed severe bug otherwise: a blanket from_device() pass-
-    through of the entire raw device dict picks up every field VyOS
-    happens to return for this interface -- address, hw-id, and
-    anything else -- not just description/mtu/duplex/speed/vrf/vif/
-    disable. Since this module's "deleted" state and replaced/
-    overridden's dict_op purge both operate against the reconstructed
-    have, an unmanaged field like "address" (owned by
-    vyos_l3_interfaces, not this module) would be treated as "present
-    in have, absent from want" and get deleted right alongside the
-    L2 fields this module is actually meant to manage. Confirmed via
-    real hardware: this could delete an interface's IP address --
-    including the one the REST API itself is reachable through.
-    """
-    entry = {}
-    for arg_key, device_key in (
-        ("description", "description"),
-        ("mtu", "mtu"),
-        ("duplex", "duplex"),
-        ("speed", "speed"),
-        ("vrf", "vrf"),
-    ):
-        if device_key in data:
-            entry[arg_key] = data[device_key]
-    if "disable" in data:
-        entry["enabled"] = False
-    vif_raw = data.get("vif")
-    if vif_raw:
-        entry["vifs"] = _keyed_list_from_device(
-            vif_raw,
-            "vlan_id",
-            _vif_entry_from_device,
-            key_cast=int,
-        )
-    return entry
+        if sub_type == "dict" and sub_options:
+            converted = _device_to_spec(raw_val, sub_options)
+            if converted:
+                result[arg_key] = converted
+        elif sub_type == "list" and sub_options:
+            key_field = _derive_key_field(sub_options)
+            key_cast = int if sub_options[key_field].get("type") == "int" else None
+            entries = _keyed_list_from_device(
+                raw_val,
+                key_field,
+                lambda d, spec=sub_options: _device_to_spec(d, spec),
+                key_cast=key_cast,
+            )
+            if entries:
+                result[arg_key] = entries
+        elif sub_type == "list":
+            if raw_val:
+                result[arg_key] = sorted(to_tag_dict(raw_val).keys())
+        elif isinstance(raw_val, dict) and not raw_val:
+            result[arg_key] = True
+        else:
+            result[arg_key] = raw_val
+    return result
 
 
 def get_running_config(vyos):
     """VyOS's REST API collapses a single-child tag node to a plain
-    string (or a list for multiple) -- confirmed as a real failure
-    mode during vyos_ospf_interfaces's build. Normalizing through
-    to_tag_dict unconditionally means callers always receive a
-    genuine dict.
+    string (or a list for multiple) -- normalizing through to_tag_dict
+    unconditionally means callers always receive a genuine dict.
     """
     return to_tag_dict(vyos.get_config(_BASE) or {})
 
@@ -340,24 +339,72 @@ def _device_to_argspec(raw):
     for itype, ifaces in sorted((raw or {}).items()):
         for name, data in sorted(to_tag_dict(ifaces).items()):
             entry = {"name": name}
-            entry.update(_iface_entry_from_device(data or {}))
+            entry.update(_device_to_spec(data or {}, _ENTRY_OPTIONS))
             result.append(entry)
     return result
 
 
-def _scoped_purge_commands(name, have_entry, raw_have):
-    """Delete only the fields this module manages for one interface,
-    via dict_op purge against an empty want -- never a whole-subtree
-    delete. Safe specifically because have_device is built from the
-    now-allowlisted _iface_entry_from_device/_vif_entry_from_device,
-    so it can never contain an unmanaged field like address to begin
-    with.
+def _shadow_vif_entries(want_device, have_device):
+    """Ensure want_device has a (possibly empty) placeholder for every
+    VLAN ID present in have_device's own "vif" dict, so a dict_op
+    purge recurses into each VIF individually rather than treating the
+    whole "vif" key, or any single VLAN entry, as one unit.
     """
-    have_device = _iface_entry_to_device(
-        {k: v for k, v in have_entry.items() if k != "name"},
-    )
+    have_vifs = have_device.get("vif")
+    if not have_vifs:
+        return want_device
+    shadowed = dict(want_device)
+    want_vifs = dict(shadowed.get("vif") or {})
+    for vlan_id in have_vifs:
+        want_vifs.setdefault(vlan_id, {})
+    shadowed["vif"] = want_vifs
+    return shadowed
+
+
+def _purge_commands(want_device, have_device, base):
+    return dict_op(_shadow_vif_entries(want_device, have_device), have_device, base, op="purge")
+
+
+def _entry_to_device(entry, options_spec):
+    """to-device conversion for a keyed entry whose own key field
+    (e.g. "name" for an interface, same role "vlan_id" plays for a
+    VIF) is present in the input but must never be treated as a
+    regular child leaf -- it identifies the entry itself and is
+    already expressed in the API path (_iface_base), not a field to
+    set/purge under it. _keyed_list_to_device already strips a VIF's
+    "vlan_id" the same way before conversion; interface entries need
+    the same treatment here since build_commands handles the top
+    level manually rather than through that helper.
+    """
+    key_field = _derive_key_field(options_spec)
+    rest = {k: v for k, v in (entry or {}).items() if k != key_field}
+    return _spec_to_device(rest, options_spec)
+
+
+def _scoped_purge_commands(name, have_entry, raw_have):
+    """Remove every field this module manages for one interface --
+    scoped to this module's own fields only, never a whole-subtree
+    delete for the VIF container shared with vyos_l3_interfaces.
+    """
+    have_device = _entry_to_device(have_entry, _ENTRY_OPTIONS)
     base = _iface_base(name, raw_have)
-    return dict_op({}, have_device, base, op="purge")
+    return _purge_commands({}, have_device, base)
+
+
+def _enabled_leaves(device):
+    result = {}
+    if _DISABLE_DEVICE_KEY in device:
+        result[_DISABLE_DEVICE_KEY] = device[_DISABLE_DEVICE_KEY]
+    vif = device.get("vif")
+    if vif:
+        vif_result = {
+            vlan_id: {_DISABLE_DEVICE_KEY: v[_DISABLE_DEVICE_KEY]}
+            for vlan_id, v in vif.items()
+            if _DISABLE_DEVICE_KEY in v
+        }
+        if vif_result:
+            result["vif"] = vif_result
+    return result
 
 
 def build_commands(config, raw_have, state):
@@ -370,14 +417,13 @@ def build_commands(config, raw_have, state):
 
     if state == "deleted":
         cmds = []
-        if not config:
-            for name, have_entry in have_by_name.items():
-                cmds += _scoped_purge_commands(name, have_entry, raw_have)
-            return cmds
-        for entry in config:
-            name = entry.get("name")
-            if name and name in have_by_name:
-                cmds += _scoped_purge_commands(name, have_by_name[name], raw_have)
+        targets = (
+            have_by_name
+            if not config
+            else {n: have_by_name[n] for n in want_by_name if n in have_by_name}
+        )
+        for name, have_entry in targets.items():
+            cmds += _scoped_purge_commands(name, have_entry, raw_have)
         return cmds
 
     commands = []
@@ -387,57 +433,54 @@ def build_commands(config, raw_have, state):
 
     for name, want_entry in want_by_name.items():
         have_entry = have_by_name.get(name, {})
-        want_device = _iface_entry_to_device(
-            {k: v for k, v in want_entry.items() if k != "name"},
-        )
-        have_device = _iface_entry_to_device(
-            {k: v for k, v in have_entry.items() if k != "name"},
-        )
+        want_device = _entry_to_device(want_entry, _ENTRY_OPTIONS)
+        have_device = _entry_to_device(have_entry, _ENTRY_OPTIONS)
         base = _iface_base(name, raw_have)
 
         if state in ("replaced", "overridden"):
-            commands += dict_op(want_device, have_device, base, op="purge")
+            commands += _purge_commands(want_device, have_device, base)
         else:
-            if want_entry.get("enabled", True) and have_device.get("disable") is not None:
-                commands.append(("delete", base + ["disable"]))
-            for want_vif in want_entry.get("vifs") or []:
-                vlan_id = want_vif.get("vlan_id")
-                if vlan_id is None:
-                    continue
-                have_vif = (have_device.get("vif") or {}).get(str(vlan_id)) or {}
-                if want_vif.get("enabled", True) and have_vif.get("disable") is not None:
-                    commands.append(("delete", base + ["vif", str(vlan_id), "disable"]))
+            want_enabled = _enabled_leaves(want_device)
+            have_enabled = _enabled_leaves(have_device)
+            commands += _purge_commands(want_enabled, have_enabled, base)
         commands += dict_op(want_device, have_device, base, op="set")
 
     return commands
 
 
-_VIF_OPTIONS = dict(
-    vlan_id=dict(type="int", required=True),
-    description=dict(type="str"),
-    enabled=dict(type="bool", default=True),
-    mtu=dict(type="int"),
-)
-
-_ENTRY_OPTIONS = dict(
-    name=dict(type="str", required=True),
-    description=dict(type="str"),
-    enabled=dict(type="bool", default=True),
-    mtu=dict(type="int"),
-    duplex=dict(type="str", choices=["auto", "full", "half"]),
-    speed=dict(type="str", choices=["auto", "10", "100", "1000", "2500", "10000"]),
-    vrf=dict(type="str"),
-    vifs=dict(type="list", elements="dict", options=_VIF_OPTIONS),
-)
-
 ARGUMENT_SPEC = dict(
-    config=dict(type="list", elements="dict", options=_ENTRY_OPTIONS),
+    config=dict(
+        type="list",
+        elements="dict",
+        options=dict(
+            name=dict(type="str", required=True),
+            description=dict(type="str"),
+            enabled=dict(type="bool", default=True),
+            mtu=dict(type="int"),
+            duplex=dict(type="str", choices=["auto", "full", "half"]),
+            speed=dict(type="str", choices=["auto", "10", "100", "1000", "2500", "10000"]),
+            vrf=dict(type="str"),
+            vifs=dict(
+                type="list",
+                elements="dict",
+                options=dict(
+                    vlan_id=dict(type="int", required=True),
+                    description=dict(type="str"),
+                    enabled=dict(type="bool", default=True),
+                    mtu=dict(type="int"),
+                ),
+            ),
+        ),
+    ),
     state=dict(
         type="str",
         default="merged",
         choices=["merged", "replaced", "overridden", "deleted", "gathered"],
     ),
 )
+
+_ENTRY_OPTIONS = ARGUMENT_SPEC["config"]["options"]
+_VIF_OPTIONS = _ENTRY_OPTIONS["vifs"]["options"]
 
 
 def main():
