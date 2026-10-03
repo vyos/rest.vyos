@@ -1,0 +1,104 @@
+---
+- debug:
+    msg: START vyos_interfaces overridden integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+- include_tasks: _populate_config.yaml
+
+- block:
+    - name: Override interface configuration
+      register: result
+      vyos.rest.vyos_interfaces: &id001
+        config:
+          - name: eth0
+            description: Ansible overridden interface
+            mtu: 1300
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+
+    - name: Override interface configuration (IDEMPOTENT)
+      register: result
+      vyos.rest.vyos_interfaces: *id001
+
+    - name: Assert idempotent
+      assert:
+        that:
+          - result.changed == false
+          - result.commands == []
+
+  always:
+    - include_tasks: _remove_config.yaml
+
+# Regression test (CodeRabbit, PR #33): overriding while an interface's
+# VIF is left entirely unlisted (the interface itself isn't even named
+# in config) must never delete the whole VIF node -- only this
+# module's own managed leaves within it -- since vyos_l3_interfaces
+# may have an address configured on that same VIF.
+- block:
+    - name: Set up an interface with a VIF
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth1
+            description: mgmt
+            vifs:
+              - vlan_id: 200
+                description: management vlan
+        state: merged
+
+    - name: Set an address on that VIF via vyos_l3_interfaces
+      vyos.rest.vyos_l3_interfaces:
+        config:
+          - name: eth1
+            vifs:
+              - vlan_id: 200
+                ipv4:
+                  - address: 192.0.2.1/24
+        state: merged
+
+    - name: Override with eth1 entirely unlisted
+      register: result
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth0
+            description: Ansible overridden interface
+        state: overridden
+
+    - assert:
+        that:
+          - result.changed == true
+          - "'interfaces,ethernet,eth1,vif' not in (result.commands | map('join', ',') | list | join('|'))"
+          - "'interfaces,ethernet,eth1,vif,200' not in (result.commands | map('join', ',') | list | join('|'))"
+
+    - name: Confirm the address survived, via vyos_l3_interfaces
+      register: l3_check
+      vyos.rest.vyos_l3_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - >-
+            l3_check.gathered
+            | selectattr('name', 'equalto', 'eth1')
+            | map(attribute='vifs')
+            | first
+            | selectattr('vlan_id', 'equalto', 200)
+            | map(attribute='ipv4')
+            | first
+            | map(attribute='address')
+            | list == ['192.0.2.1/24']
+
+  always:
+    - vyos.rest.vyos_interfaces:
+        config:
+          - name: eth1
+        state: deleted
+      ignore_errors: true
+    - vyos.rest.vyos_l3_interfaces:
+        config:
+          - name: eth1
+        state: deleted
+      ignore_errors: true
+    - include_tasks: _remove_config.yaml
