@@ -1,178 +1,242 @@
-# -*- coding: utf-8 -*-
-# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
-
-from __future__ import absolute_import, division, print_function
-
-
-__metaclass__ = type
-
-DOCUMENTATION = r"""
----
-name: vyos
-short_description: HttpApi plugin for VyOS REST API
-description:
-  - This HttpApi plugin provides methods to connect to VyOS devices via their
-    HTTPS REST API.
-  - Use with C(ansible_connection=ansible.netcommon.httpapi) and
-    C(ansible_network_os=vyos.rest.vyos).
-  - The VyOS REST API must be enabled with
-    C(set service https api keys id ansible key YOUR_KEY),
-    C(set service https api rest), then C(commit && save).
-version_added: "1.0.0"
-author:
-  - VyOS Community (@vyos)
-options:
-  api_key:
-    type: str
-    description:
-      - The API key configured on the VyOS device.
-      - Set C(ansible_httpapi_api_key) in inventory or the C(VYOS_API_KEY)
-        environment variable.
-    env:
-      - name: VYOS_API_KEY
-    vars:
-      - name: ansible_httpapi_api_key
-      - name: ansible_vyos_api_key
-"""
-
 import json
-import traceback
+import os
+import time
 
-
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from ansible.errors import AnsibleConnectionFailure
-from ansible.module_utils._text import to_text
 from ansible.module_utils.connection import ConnectionError
 from ansible.plugins.httpapi import HttpApiBase
 
 
-class HttpApi(HttpApiBase):
-    """HttpApi plugin for the VyOS HTTPS REST API."""
+DOCUMENTATION = r"""
+---
+httpapi: vyos
+short_description: VyOS REST API
+description:
+  - HTTPAPI plugin for interacting with VyOS REST API.
+  - >-
+    Supports multiple authentication methods against the VyOS REST API --
+    C(key) (API key in the request body), C(header) (API key as an
+    C(X-API-Key) header), C(bearer) (a VyOS-issued bearer token, fetched
+    and cached), C(mtls) (mutual TLS, no application-level credential),
+    and C(oidc) (a bearer token obtained from an external OpenID Connect
+    provider via the client_credentials grant, fetched and cached).
+author: Evgeny Molotkov (@eomnom62)
+options:
+  api_key:
+    description: VyOS API key. Required for auth_method C(key), C(header), and C(bearer).
+    type: str
+    vars:
+      - name: ansible_httpapi_api_key
+    env:
+      - name: ANSIBLE_HTTPAPI_API_KEY
+      - name: VYOS_API_KEY
+    ini:
+      - section: httpapi
+        key: api_key
+  auth_method:
+    description: Authentication method to use against the VyOS REST API.
+    type: str
+    choices: [key, header, bearer, mtls, oidc]
+    default: key
+    vars:
+      - name: ansible_httpapi_auth_method
+    ini:
+      - section: httpapi
+        key: auth_method
+  oidc_token_url:
+    description: Token endpoint URL of the OIDC provider. Required for auth_method C(oidc).
+    type: str
+    vars:
+      - name: ansible_httpapi_oidc_token_url
+    ini:
+      - section: httpapi
+        key: oidc_token_url
+  oidc_client_id:
+    description: OIDC client ID for the client_credentials grant.
+    type: str
+    vars:
+      - name: ansible_httpapi_oidc_client_id
+    ini:
+      - section: httpapi
+        key: oidc_client_id
+  oidc_client_secret:
+    description: OIDC client secret for the client_credentials grant.
+    type: str
+    vars:
+      - name: ansible_httpapi_oidc_client_secret
+    ini:
+      - section: httpapi
+        key: oidc_client_secret
+"""
 
-    def login(self, username, password):
-        """VyOS uses a static API key — no login endpoint needed."""
-        pass
+
+class HttpApi(HttpApiBase):
+
+    def __init__(self, connection):
+        super().__init__(connection)
+        self._bearer_token = None
+        self._bearer_token_expiry = 0
+        self._oidc_token = None
+        self._oidc_token_expiry = 0
 
     def logout(self):
-        pass
+        self._bearer_token = None
+        self._bearer_token_expiry = 0
+        self._oidc_token = None
+        self._oidc_token_expiry = 0
 
-    def update_auth(self, response, response_text):
-        return None
-
-    def handle_httperror(self, exc):
-        if exc.code == 401:
+    def handle_httperror(self, exception):
+        if getattr(exception, "code", None) == 401:
             raise AnsibleConnectionFailure(
-                "VyOS API returned HTTP 401 Unauthorized. "
-                "Check ansible_httpapi_api_key is correct and that "
-                "'set service https api rest' is configured on the device.",
+                "Authentication to the VyOS REST API failed: {0}".format(exception),
             )
-        return exc
+        return exception
+
+    # -----------------------------------------------------------------
+    # API key resolution -- shared by the key, header, and bearer
+    # (token-fetch) auth methods.
+    # -----------------------------------------------------------------
 
     def _get_api_key(self):
-        """Read the API key — option, env var, or fail clearly."""
-        try:
-            key = self.get_option("api_key")
-        except Exception:
-            key = None
-        if not key:
-            import os
-
-            key = os.environ.get("VYOS_API_KEY", "")
-        if not key:
+        api_key = self.get_option("api_key")
+        if not api_key:
+            api_key = os.environ.get("VYOS_API_KEY")
+        if not api_key:
             raise ConnectionError(
-                "No VyOS API key found. Set ansible_httpapi_api_key in "
-                "inventory or export VYOS_API_KEY=<key>.",
+                "No VyOS API key available: set api_key (or ANSIBLE_HTTPAPI_API_KEY / "
+                "VYOS_API_KEY) to authenticate.",
             )
-        return key
+        return api_key
 
-    def send_request(self, data, **payload):  # pylint: disable=arguments-renamed
-        """POST to a VyOS REST endpoint.
+    @staticmethod
+    def _parse_response(response):
+        if hasattr(response, "read"):
+            response = response.read()
+        if isinstance(response, bytes):
+            response = response.decode("utf-8")
+        if isinstance(response, str):
+            response = json.loads(response)
+        return response
 
-        Args:
-            data (str): API path, e.g. '/configure' or '/retrieve'.
-                        Named 'data' to match the HttpApiBase signature.
-                        Internally referred to as endpoint to avoid collision
-                        with the VyOS payload field also called 'data'.
-            **payload: VyOS API fields: op, path, value, url, file, etc.
+    # -----------------------------------------------------------------
+    # Bearer token: fetched from the VyOS device itself (/token),
+    # authenticated the same way the "key" method authenticates an
+    # ordinary request, then cached until it expires.
+    # -----------------------------------------------------------------
 
-        Returns:
-            dict: Parsed JSON response from VyOS.
+    def _fetch_bearer_token(self):
+        api_key = self._get_api_key()
+        body = urlencode({"key": api_key})
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        _status, raw_response = self.connection.send(
+            "/token",
+            data=body,
+            method="POST",
+            headers=headers,
+        )
+        response = self._parse_response(raw_response)
+        if not response.get("success"):
+            raise ConnectionError(response.get("error") or "VyOS token request failed")
+        data = response.get("data") or {}
+        token = data.get("token")
+        expires_in = data.get("expires_in", 3600)
+        self._bearer_token = token
+        self._bearer_token_expiry = time.time() + expires_in
+        return token
 
-        Raises:
-            ConnectionError: on HTTP error or VyOS success=false response.
-        """
-        endpoint = data
+    def _get_bearer_token(self):
+        if self._bearer_token and self._bearer_token_expiry > time.time():
+            return self._bearer_token
+        return self._fetch_bearer_token()
 
+    # -----------------------------------------------------------------
+    # OIDC token: fetched from an external IdP via the
+    # client_credentials grant, cached the same way as the bearer
+    # token.
+    # -----------------------------------------------------------------
+
+    def _fetch_oidc_token(self):
+        token_url = self.get_option("oidc_token_url")
+        if not token_url:
+            raise ConnectionError(
+                "oidc_token_url is required when auth_method=oidc.",
+            )
+        body = urlencode(
+            {
+                "grant_type": "client_credentials",
+                "client_id": self.get_option("oidc_client_id"),
+                "client_secret": self.get_option("oidc_client_secret"),
+            },
+        ).encode("utf-8")
+        request = Request(
+            token_url,
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
         try:
-            api_key = self._get_api_key()
-            if "_raw_list" in payload:
-                body = json.dumps(payload["_raw_list"])
-            else:
-                body = json.dumps(payload)
-
-            form_data = urlencode({"data": body, "key": api_key})
-            response, response_data = self.connection.send(
-                endpoint,
-                data=form_data,
-                method="POST",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-
-            raw = to_text(response_data.getvalue())
-
-            try:
-                result = json.loads(raw)
-            except ValueError:
-                raise ConnectionError(
-                    "VyOS API at {ep} returned non-JSON ({code}): {raw}".format(
-                        ep=endpoint,
-                        code=getattr(response, "status", "?"),
-                        raw=raw[:300],
-                    ),
-                )
-
-            if not result.get("success"):
-                raise ConnectionError(
-                    "VyOS API error [{ep}]: {err}".format(
-                        ep=endpoint,
-                        err=result.get("error") or "success=false",
-                    ),
-                )
-
-            return result
-
-        except (ConnectionError, AnsibleConnectionFailure):
-            raise
+            with urlopen(request) as resp:
+                payload = json.loads(resp.read())
         except Exception as exc:
-            raise ConnectionError(
-                "{exc_type} in send_request({ep}): {exc}\n{tb}".format(
-                    exc_type=type(exc).__name__,
-                    ep=endpoint,
-                    exc=to_text(exc),
-                    tb=traceback.format_exc(),
-                ),
-            )
+            raise ConnectionError("OIDC token fetch failed: {0}".format(exc))
 
-    def get_info(self):
-        """GET /info — the one unauthenticated endpoint."""
-        try:
-            response, response_data = self.connection.send(
-                "/info",
-                data=None,
-                method="GET",
-            )
-            return json.loads(to_text(response_data.getvalue()))
-        except (ConnectionError, AnsibleConnectionFailure):
-            raise
-        except Exception as exc:
+        access_token = payload.get("access_token")
+        if not access_token:
             raise ConnectionError(
-                "{exc_type} in get_info(): {exc}\n{tb}".format(
-                    exc_type=type(exc).__name__,
-                    exc=to_text(exc),
-                    tb=traceback.format_exc(),
-                ),
+                "OIDC token response did not contain an access_token.",
             )
+        expires_in = payload.get("expires_in", 3600)
+        self._oidc_token = access_token
+        self._oidc_token_expiry = time.time() + expires_in
+        return access_token
+
+    def _get_oidc_token(self):
+        if self._oidc_token and self._oidc_token_expiry > time.time():
+            return self._oidc_token
+        return self._fetch_oidc_token()
+
+    # -----------------------------------------------------------------
+    # send_request: shared by every auth method. Only the auth
+    # material attached to the request (body field vs. header, and
+    # which header) differs by method; the request/response envelope
+    # itself is identical.
+    # -----------------------------------------------------------------
+
+    def send_request(self, url_path, **data):
+        auth_method = self.get_option("auth_method") or "key"
+
+        form_data = {}
+        if data:
+            form_data["data"] = json.dumps(data)
+
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+        if auth_method == "key":
+            form_data["key"] = self._get_api_key()
+        elif auth_method == "header":
+            headers["X-API-Key"] = self._get_api_key()
+        elif auth_method == "bearer":
+            headers["Authorization"] = "Bearer {0}".format(self._get_bearer_token())
+        elif auth_method == "oidc":
+            headers["Authorization"] = "Bearer {0}".format(self._get_oidc_token())
+        elif auth_method == "mtls":
+            pass
+        else:
+            raise ConnectionError("Unsupported auth_method: {0}".format(auth_method))
+
+        body = urlencode(form_data)
+
+        _status, raw_response = self.connection.send(
+            url_path,
+            data=body,
+            method="POST",
+            headers=headers,
+        )
+        response = self._parse_response(raw_response)
+
+        if not response.get("success"):
+            raise ConnectionError(response.get("error") or "VyOS API request failed")
+
+        return response

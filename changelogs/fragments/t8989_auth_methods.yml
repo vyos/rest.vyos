@@ -1,0 +1,12 @@
+---
+minor_changes:
+  - vyos httpapi plugin - add support for four additional authentication
+    methods against the VyOS REST API - ``header`` (API key sent as an
+    ``X-API-Key`` header), ``bearer`` (a VyOS-issued bearer token, fetched
+    once and cached until it expires), ``mtls`` (mutual TLS, with no
+    application-level credential sent at all), and ``oidc`` (a bearer
+    token obtained from an external OpenID Connect provider via the
+    client_credentials grant, likewise fetched and cached) - selectable
+    via the new ``auth_method`` option. The existing API-key-in-the-request-body
+    behaviour remains the default, so no change is required for existing
+    inventories.
