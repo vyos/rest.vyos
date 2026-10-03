@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Unit tests for plugins/httpapi/vyos.py
 
-Tests cover all three auth methods (key, header, bearer) and token
-caching behaviour. The Ansible connection layer is mocked so no
+Tests cover all five auth methods (key, header, bearer, mTLS, and OIDC)
+and token caching behaviour. The Ansible connection layer is mocked so no
 real device is needed.
 """
 from __future__ import absolute_import, division, print_function
@@ -374,6 +374,26 @@ class TestSendRequestOidcMethod(unittest.TestCase):
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("OIDC token fetch failed", str(ctx.exception))
+
+    def test_oidc_passes_configured_timeout(self):
+        """An unavailable or stalled IdP must not hang the task
+        indefinitely -- the timeout is passed through explicitly
+        rather than relying on open_url's own default."""
+        plugin = self._plugin()
+        plugin.get_option = {
+            "auth_method": "oidc",
+            "oidc_token_url": "http://idp/token",
+            "oidc_client_id": "vyos-api",
+            "oidc_client_secret": "secret",
+            "oidc_timeout": 5,
+        }.get
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = self._idp_response()
+            mock_open_url.return_value = mock_resp
+            plugin.connection.send.return_value = self._retrieve_response()
+            plugin.send_request("/retrieve", op="showConfig", path=[])
+        self.assertEqual(mock_open_url.call_args[1]["timeout"], 5)
 
     def test_oidc_raises_when_access_token_missing(self):
         plugin = self._plugin()

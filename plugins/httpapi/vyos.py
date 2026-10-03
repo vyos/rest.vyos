@@ -25,6 +25,7 @@ options:
     type: str
     vars:
       - name: ansible_httpapi_api_key
+      - name: ansible_vyos_api_key
     env:
       - name: ANSIBLE_HTTPAPI_API_KEY
       - name: VYOS_API_KEY
@@ -65,6 +66,18 @@ options:
     ini:
       - section: httpapi
         key: oidc_client_secret
+  oidc_timeout:
+    description: >-
+      Timeout, in seconds, for the token request made to the OIDC
+      provider. An unavailable or stalled identity provider would
+      otherwise hang the Ansible task indefinitely.
+    type: int
+    default: 10
+    vars:
+      - name: ansible_httpapi_oidc_timeout
+    ini:
+      - section: httpapi
+        key: oidc_timeout
 """
 
 import json
@@ -180,12 +193,16 @@ class HttpApi(HttpApiBase):
                 "client_secret": self.get_option("oidc_client_secret"),
             },
         )
+        timeout = self.get_option("oidc_timeout")
+        if timeout is None:
+            timeout = 10
         try:
             response = open_url(
                 token_url,
                 data=body,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 method="POST",
+                timeout=timeout,
             )
             payload = json.loads(response.read())
         except Exception as exc:

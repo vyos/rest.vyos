@@ -52,6 +52,7 @@ Parameters
                                 <div>env:ANSIBLE_HTTPAPI_API_KEY</div>
                                 <div>env:VYOS_API_KEY</div>
                                 <div>var: ansible_httpapi_api_key</div>
+                                <div>var: ansible_vyos_api_key</div>
                     </td>
                 <td>
                         <div>VyOS API key. Required for auth_method <code>key</code>, <code>header</code>, and <code>bearer</code>.</div>
@@ -125,6 +126,28 @@ Parameters
                     </td>
                 <td>
                         <div>OIDC client secret for the client_credentials grant.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_timeout</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                    </div>
+                </td>
+                <td>
+                        <b>Default:</b><br/><div style="color: blue">10</div>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_timeout = 10</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_timeout</div>
+                    </td>
+                <td>
+                        <div>Timeout, in seconds, for the token request made to the OIDC provider. An unavailable or stalled identity provider would otherwise hang the Ansible task indefinitely.</div>
                 </td>
             </tr>
             <tr>
