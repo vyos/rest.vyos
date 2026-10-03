@@ -33,10 +33,10 @@ class TestHttpApiInit(unittest.TestCase):
     def _plugin(self, auth_method="key", api_key="testkey"):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "api_key": api_key,
             "auth_method": auth_method,
-        }.get(opt)
+        }.get
         return plugin
 
     def test_bearer_token_initially_none(self):
@@ -87,10 +87,10 @@ class TestSendRequestKeyMethod(unittest.TestCase):
     def _plugin(self, auth_method="key", api_key="testkey"):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "api_key": api_key,
             "auth_method": auth_method,
-        }.get(opt)
+        }.get
         return plugin
 
     def test_key_method_sends_form_field(self):
@@ -118,10 +118,10 @@ class TestSendRequestHeaderMethod(unittest.TestCase):
     def _plugin(self, api_key="testkey"):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "api_key": api_key,
             "auth_method": "header",
-        }.get(opt)
+        }.get
         return plugin
 
     def test_header_method_sends_x_api_key_header(self):
@@ -148,10 +148,10 @@ class TestSendRequestBearerMethod(unittest.TestCase):
     def _plugin(self, api_key="testkey"):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "api_key": api_key,
             "auth_method": "bearer",
-        }.get(opt)
+        }.get
         return plugin
 
     def _token_response(self, token="jwt123", expires_in=3600):
@@ -249,9 +249,9 @@ class TestSendRequestMtlsMethod(unittest.TestCase):
     def _plugin(self):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "auth_method": "mtls",
-        }.get(opt)
+        }.get
         return plugin
 
     def test_mtls_sends_no_api_key(self):
@@ -294,12 +294,12 @@ class TestSendRequestOidcMethod(unittest.TestCase):
     ):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = lambda opt: {
+        plugin.get_option = {
             "auth_method": "oidc",
             "oidc_token_url": token_url,
             "oidc_client_id": client_id,
             "oidc_client_secret": client_secret,
-        }.get(opt)
+        }.get
         return plugin
 
     def _idp_response(self, token="oidctoken123", expires_in=3600):
@@ -323,11 +323,10 @@ class TestSendRequestOidcMethod(unittest.TestCase):
 
     def test_oidc_fetches_token_from_idp(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
             mock_resp = MagicMock()
             mock_resp.read.return_value = self._idp_response()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open_url.return_value = mock_resp
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
 
@@ -339,27 +338,25 @@ class TestSendRequestOidcMethod(unittest.TestCase):
 
     def test_oidc_caches_token(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
             mock_resp = MagicMock()
             mock_resp.read.return_value = self._idp_response()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open_url.return_value = mock_resp
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
-            # urlopen should only be called once
-            self.assertEqual(mock_urlopen.call_count, 1)
+            # open_url should only be called once
+            self.assertEqual(mock_open_url.call_count, 1)
 
     def test_oidc_refreshes_expired_token(self):
         plugin = self._plugin()
         plugin._oidc_token = "oldtoken"
         plugin._oidc_token_expiry = time.time() - 100
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
             mock_resp = MagicMock()
             mock_resp.read.return_value = self._idp_response(token="newtoken")
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open_url.return_value = mock_resp
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertEqual(plugin._oidc_token, "newtoken")
@@ -372,19 +369,18 @@ class TestSendRequestOidcMethod(unittest.TestCase):
 
     def test_oidc_raises_when_idp_unreachable(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = Exception("Connection refused")
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
+            mock_open_url.side_effect = Exception("Connection refused")
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("OIDC token fetch failed", str(ctx.exception))
 
     def test_oidc_raises_when_access_token_missing(self):
         plugin = self._plugin()
-        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.urlopen") as mock_urlopen:
+        with patch("ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url") as mock_open_url:
             mock_resp = MagicMock()
             mock_resp.read.return_value = json.dumps({"error": "invalid_client"}).encode()
-            mock_urlopen.return_value.__enter__ = MagicMock(return_value=mock_resp)
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+            mock_open_url.return_value = mock_resp
             with self.assertRaises(ConnectionError) as ctx:
                 plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("access_token", str(ctx.exception))

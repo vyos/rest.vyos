@@ -1,18 +1,13 @@
-import json
-import os
-import time
+# -*- coding: utf-8 -*-
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+from __future__ import absolute_import, division, print_function
 
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
-from ansible.errors import AnsibleConnectionFailure
-from ansible.module_utils.connection import ConnectionError
-from ansible.plugins.httpapi import HttpApiBase
-
+__metaclass__ = type
 
 DOCUMENTATION = r"""
 ---
-httpapi: vyos
+name: vyos
 short_description: VyOS REST API
 description:
   - HTTPAPI plugin for interacting with VyOS REST API.
@@ -72,6 +67,17 @@ options:
         key: oidc_client_secret
 """
 
+import json
+import os
+import time
+
+from urllib.parse import urlencode
+
+from ansible.errors import AnsibleConnectionFailure
+from ansible.module_utils.connection import ConnectionError
+from ansible.module_utils.urls import open_url
+from ansible.plugins.httpapi import HttpApiBase
+
 
 class HttpApi(HttpApiBase):
 
@@ -88,12 +94,12 @@ class HttpApi(HttpApiBase):
         self._oidc_token = None
         self._oidc_token_expiry = 0
 
-    def handle_httperror(self, exception):
-        if getattr(exception, "code", None) == 401:
+    def handle_httperror(self, exc):
+        if getattr(exc, "code", None) == 401:
             raise AnsibleConnectionFailure(
-                "Authentication to the VyOS REST API failed: {0}".format(exception),
+                "Authentication to the VyOS REST API failed: {0}".format(exc),
             )
-        return exception
+        return exc
 
     # -----------------------------------------------------------------
     # API key resolution -- shared by the key, header, and bearer
@@ -140,9 +146,9 @@ class HttpApi(HttpApiBase):
         response = self._parse_response(raw_response)
         if not response.get("success"):
             raise ConnectionError(response.get("error") or "VyOS token request failed")
-        data = response.get("data") or {}
-        token = data.get("token")
-        expires_in = data.get("expires_in", 3600)
+        token_data = response.get("data") or {}
+        token = token_data.get("token")
+        expires_in = token_data.get("expires_in", 3600)
         self._bearer_token = token
         self._bearer_token_expiry = time.time() + expires_in
         return token
@@ -155,7 +161,10 @@ class HttpApi(HttpApiBase):
     # -----------------------------------------------------------------
     # OIDC token: fetched from an external IdP via the
     # client_credentials grant, cached the same way as the bearer
-    # token.
+    # token. Uses ansible.module_utils.urls.open_url rather than
+    # urllib.request.urlopen directly, per Ansible's own sanity
+    # requirement (open_url adds proxy support and consistent TLS
+    # validation across the whole ecosystem).
     # -----------------------------------------------------------------
 
     def _fetch_oidc_token(self):
@@ -170,15 +179,15 @@ class HttpApi(HttpApiBase):
                 "client_id": self.get_option("oidc_client_id"),
                 "client_secret": self.get_option("oidc_client_secret"),
             },
-        ).encode("utf-8")
-        request = Request(
-            token_url,
-            data=body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urlopen(request) as resp:
-                payload = json.loads(resp.read())
+            response = open_url(
+                token_url,
+                data=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                method="POST",
+            )
+            payload = json.loads(response.read())
         except Exception as exc:
             raise ConnectionError("OIDC token fetch failed: {0}".format(exc))
 
@@ -202,14 +211,24 @@ class HttpApi(HttpApiBase):
     # material attached to the request (body field vs. header, and
     # which header) differs by method; the request/response envelope
     # itself is identical.
+    #
+    # The first parameter is named "data" (not e.g. "url_path") to
+    # match HttpApiBase.send_request's own signature -- pylint's
+    # arguments-renamed check flags an override that renames a base-
+    # class parameter, since that silently breaks any caller using the
+    # keyword form. It still carries a URL path string in this
+    # plugin's own usage; the **op_kwargs that follow are this
+    # resource's own operation details (op, path, value, ...), kept
+    # separate so they don't collide with the "data" name.
     # -----------------------------------------------------------------
 
-    def send_request(self, url_path, **data):
+    def send_request(self, data, **op_kwargs):
+        url_path = data
         auth_method = self.get_option("auth_method") or "key"
 
         form_data = {}
-        if data:
-            form_data["data"] = json.dumps(data)
+        if op_kwargs:
+            form_data["data"] = json.dumps(op_kwargs)
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
