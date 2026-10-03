@@ -601,6 +601,18 @@ class TestBuildCommands(VyOSModuleTestCase):
             cmds,
         )
 
+    def test_merged_never_reenables_an_unlisted_vif(self):
+        """CodeRabbit regression: merged's re-enable logic previously
+        scanned every disabled VIF on the device, not just ones the
+        task actually lists -- so a VLAN the administrator
+        deliberately disabled would be silently re-enabled by a task
+        that never even mentions "vifs" at all. merged must leave an
+        unlisted VIF completely untouched, same as any other unlisted
+        field."""
+        raw_have = _FIXTURES["vif_disabled_on_device"]
+        cmds = build_commands([{"name": "eth0", "description": "x"}], raw_have, "merged")
+        self.assertFalse(any("200" in c[1] for c in cmds))
+
     def test_merged_new_interface_with_vrf_and_vif(self):
         config = [
             {

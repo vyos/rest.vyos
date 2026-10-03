@@ -161,6 +161,7 @@ from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
 
 _BASE = ["interfaces"]
 
+
 _IFACE_TYPE_PREFIX = {
     "eth": "ethernet",
     "bond": "bonding",
@@ -202,6 +203,7 @@ def _iface_base(name, raw_have):
 _DEVICE_RENAMES = {
     "vifs": "vif",
 }
+
 
 _ENABLED_FIELD = "enabled"
 _DISABLE_DEVICE_KEY = "disable"
@@ -391,7 +393,18 @@ def _scoped_purge_commands(name, have_entry, raw_have):
     return _purge_commands({}, have_device, base)
 
 
-def _enabled_leaves(device):
+def _enabled_leaves(device, allowed_vlan_ids=None):
+    """allowed_vlan_ids restricts the VIF portion to VLAN IDs the task
+    actually listed. The interface itself needs no such restriction --
+    it's always "listed" by virtue of appearing in want at all -- but
+    an unlisted VIF was never mentioned by the task, and merged must
+    never touch it. Confirmed real bug otherwise: a VIF the task
+    doesn't reference at all (or a listed interface whose vifs simply
+    omits it) would still have its stale "disable" leaf removed,
+    silently re-enabling a VLAN the administrator deliberately
+    disabled. Pass None (the want side, where every VIF present
+    already is one the task listed) to skip this restriction.
+    """
     result = {}
     if _DISABLE_DEVICE_KEY in device:
         result[_DISABLE_DEVICE_KEY] = device[_DISABLE_DEVICE_KEY]
@@ -401,6 +414,7 @@ def _enabled_leaves(device):
             vlan_id: {_DISABLE_DEVICE_KEY: v[_DISABLE_DEVICE_KEY]}
             for vlan_id, v in vif.items()
             if _DISABLE_DEVICE_KEY in v
+            and (allowed_vlan_ids is None or vlan_id in allowed_vlan_ids)
         }
         if vif_result:
             result["vif"] = vif_result
@@ -441,7 +455,10 @@ def build_commands(config, raw_have, state):
             commands += _purge_commands(want_device, have_device, base)
         else:
             want_enabled = _enabled_leaves(want_device)
-            have_enabled = _enabled_leaves(have_device)
+            have_enabled = _enabled_leaves(
+                have_device,
+                allowed_vlan_ids=(want_device.get("vif") or {}).keys(),
+            )
             commands += _purge_commands(want_enabled, have_enabled, base)
         commands += dict_op(want_device, have_device, base, op="set")
 
