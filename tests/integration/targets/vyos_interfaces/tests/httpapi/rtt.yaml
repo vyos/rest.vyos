@@ -1,0 +1,107 @@
+---
+- debug:
+    msg: START vyos_interfaces round trip integration tests on connection={{ ansible_connection }}
+
+- include_tasks: _remove_config.yaml
+
+- block:
+    - name: RTT - Apply base configuration
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth0
+            description: Ansible test interface
+            mtu: 1450
+            vifs:
+              - vlan_id: 200
+                description: management vlan
+        state: merged
+
+    - name: RTT - Gather
+      register: gathered
+      vyos.rest.vyos_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - >-
+            gathered.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='description')
+            | first == 'Ansible test interface'
+          - >-
+            gathered.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='mtu')
+            | first == 1450
+          - >-
+            gathered.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='vifs')
+            | first
+            | selectattr('vlan_id', 'equalto', 200)
+            | map(attribute='description')
+            | first == 'management vlan'
+
+    - name: RTT - Modify description and disable the VIF
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth0
+            description: Ansible test interface updated
+            mtu: 1450
+            vifs:
+              - vlan_id: 200
+                description: management vlan
+                enabled: false
+        state: replaced
+
+    - name: RTT - Gather after modify
+      register: gathered2
+      vyos.rest.vyos_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - >-
+            gathered2.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='description')
+            | first == 'Ansible test interface updated'
+          - >-
+            gathered2.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='vifs')
+            | first
+            | selectattr('vlan_id', 'equalto', 200)
+            | map(attribute='enabled', default=true)
+            | first == false
+
+    - name: RTT - Re-enable the VIF
+      vyos.rest.vyos_interfaces:
+        config:
+          - name: eth0
+            description: Ansible test interface updated
+            mtu: 1450
+            vifs:
+              - vlan_id: 200
+                description: management vlan
+                enabled: true
+        state: replaced
+
+    - name: RTT - Gather after re-enable
+      register: gathered3
+      vyos.rest.vyos_interfaces:
+        state: gathered
+
+    - assert:
+        that:
+          - >-
+            gathered3.gathered
+            | selectattr('name', 'equalto', 'eth0')
+            | map(attribute='vifs')
+            | first
+            | selectattr('vlan_id', 'equalto', 200)
+            | map(attribute='enabled', default=true)
+            | first == true
+
+  always:
+    - include_tasks: _remove_config.yaml
