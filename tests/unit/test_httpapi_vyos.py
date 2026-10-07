@@ -288,18 +288,21 @@ class TestSendRequestMtlsMethod(unittest.TestCase):
 class TestSendRequestOidcMethod(unittest.TestCase):
     def _plugin(
         self,
-        token_url="http://idp/token",
+        token_url="https://idp/token",
         client_id="vyos-api",
         client_secret="secret",
+        **extra,
     ):
         conn = MagicMock()
         plugin = HttpApi(conn)
-        plugin.get_option = {
+        options = {
             "auth_method": "oidc",
             "oidc_token_url": token_url,
             "oidc_client_id": client_id,
             "oidc_client_secret": client_secret,
-        }.get
+        }
+        options.update(extra)
+        plugin.get_option = options.get
         return plugin
 
     def _idp_response(self, token="oidctoken123", expires_in=3600):
@@ -382,7 +385,7 @@ class TestSendRequestOidcMethod(unittest.TestCase):
         plugin = self._plugin()
         plugin.get_option = {
             "auth_method": "oidc",
-            "oidc_token_url": "http://idp/token",
+            "oidc_token_url": "https://idp/token",
             "oidc_client_id": "vyos-api",
             "oidc_client_secret": "secret",
             "oidc_timeout": 5,
@@ -394,6 +397,68 @@ class TestSendRequestOidcMethod(unittest.TestCase):
             plugin.connection.send.return_value = self._retrieve_response()
             plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertEqual(mock_open_url.call_args[1]["timeout"], 5)
+
+    def _run_token_fetch(self, plugin):
+        """Run one request with open_url and the plugin's display
+        mocked; returns (mock_open_url, mock_display)."""
+        target = "ansible_collections.vyos.rest.plugins.httpapi.vyos"
+        with patch(target + ".open_url") as mock_open_url, patch(
+            target + ".display",
+        ) as mock_display:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = self._idp_response()
+            mock_open_url.return_value = mock_resp
+            plugin.connection.send.return_value = self._retrieve_response()
+            plugin.send_request("/retrieve", op="showConfig", path=[])
+        return mock_open_url, mock_display
+
+    def test_oidc_https_endpoint_accepted_without_warning(self):
+        plugin = self._plugin(token_url="https://idp/token")
+        mock_open_url, mock_display = self._run_token_fetch(plugin)
+        self.assertEqual(mock_open_url.call_count, 1)
+        mock_display.warning.assert_not_called()
+
+    def test_oidc_rejects_plain_http_by_default(self):
+        """The request carries client_secret and the response a bearer
+        token, so a plain http endpoint must fail closed -- before any
+        request is made."""
+        plugin = self._plugin(token_url="http://idp/token")
+        target = "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url"
+        with patch(target) as mock_open_url:
+            with self.assertRaises(ConnectionError) as ctx:
+                plugin.send_request("/retrieve", op="showConfig", path=[])
+        self.assertIn("https", str(ctx.exception))
+        self.assertIn("oidc_allow_insecure_http", str(ctx.exception))
+        mock_open_url.assert_not_called()
+
+    def test_oidc_plain_http_allowed_with_opt_in_and_warns(self):
+        plugin = self._plugin(token_url="http://idp/token", oidc_allow_insecure_http=True)
+        mock_open_url, mock_display = self._run_token_fetch(plugin)
+        self.assertEqual(mock_open_url.call_count, 1)
+        self.assertEqual(mock_display.warning.call_count, 1)
+        self.assertIn("cleartext", mock_display.warning.call_args[0][0])
+
+    def test_oidc_rejects_other_schemes_even_with_opt_in(self):
+        """The opt-in only relaxes http. file:, ftp: and a missing scheme
+        are never followed."""
+        for url in ("file:///etc/passwd", "ftp://idp/token", "idp/token"):
+            plugin = self._plugin(token_url=url, oidc_allow_insecure_http=True)
+            target = "ansible_collections.vyos.rest.plugins.httpapi.vyos.open_url"
+            with patch(target) as mock_open_url:
+                with self.assertRaises(ConnectionError) as ctx:
+                    plugin.send_request("/retrieve", op="showConfig", path=[])
+            self.assertIn("https", str(ctx.exception), url)
+            mock_open_url.assert_not_called()
+
+    def test_oidc_validates_certs_by_default(self):
+        plugin = self._plugin()
+        mock_open_url, _display = self._run_token_fetch(plugin)
+        self.assertIs(mock_open_url.call_args[1]["validate_certs"], True)
+
+    def test_oidc_cert_validation_can_be_disabled_for_lab(self):
+        plugin = self._plugin(oidc_validate_certs=False)
+        mock_open_url, _display = self._run_token_fetch(plugin)
+        self.assertIs(mock_open_url.call_args[1]["validate_certs"], False)
 
     def test_oidc_raises_when_access_token_missing(self):
         plugin = self._plugin()

@@ -18,7 +18,7 @@ description:
     and cached), C(mtls) (mutual TLS, no application-level credential),
     and C(oidc) (a bearer token obtained from an external OpenID Connect
     provider via the client_credentials grant, fetched and cached).
-author: Evgeny Molotkov (@eomnom62)
+author: VyOS Community (@vyos)
 options:
   api_key:
     description: VyOS API key. Required for auth_method C(key), C(header), and C(bearer).
@@ -78,18 +78,52 @@ options:
     ini:
       - section: httpapi
         key: oidc_timeout
+  oidc_allow_insecure_http:
+    description:
+      - >-
+        By default the OIDC token endpoint must use C(https), because the
+        request carries the client secret and the response carries a bearer
+        token. Set this to C(true) to allow a plain C(http) endpoint.
+      - >-
+        Intended for isolated lab setups only. With this enabled the client
+        secret and the access token travel in cleartext and can be captured
+        and replayed by anyone on the network path.
+    type: bool
+    default: false
+    vars:
+      - name: ansible_httpapi_oidc_allow_insecure_http
+    ini:
+      - section: httpapi
+        key: oidc_allow_insecure_http
+  oidc_validate_certs:
+    description:
+      - Validate the TLS certificate of the OIDC token endpoint.
+      - >-
+        Set to C(false) only for a lab identity provider that uses a
+        self-signed certificate.
+    type: bool
+    default: true
+    vars:
+      - name: ansible_httpapi_oidc_validate_certs
+    ini:
+      - section: httpapi
+        key: oidc_validate_certs
 """
 
 import json
 import os
 import time
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from ansible.errors import AnsibleConnectionFailure
 from ansible.module_utils.connection import ConnectionError
 from ansible.module_utils.urls import open_url
 from ansible.plugins.httpapi import HttpApiBase
+from ansible.utils.display import Display
+
+
+display = Display()
 
 
 class HttpApi(HttpApiBase):
@@ -180,12 +214,40 @@ class HttpApi(HttpApiBase):
     # validation across the whole ecosystem).
     # -----------------------------------------------------------------
 
+    def _check_oidc_scheme(self, token_url):
+        """The token request carries client_secret and the response
+        carries a bearer token, so fail closed unless the endpoint is
+        https. Plain http is allowed only through the explicit
+        oidc_allow_insecure_http opt-in (lab use), with a warning. Any
+        other scheme (file:, ftp:, ...) is never accepted: open_url
+        would otherwise follow it.
+        """
+        scheme = urlparse(token_url).scheme
+        if scheme == "https":
+            return
+        if scheme == "http":
+            if self.get_option("oidc_allow_insecure_http"):
+                display.warning(
+                    "oidc_token_url uses plain http: the OIDC client secret and the "
+                    "access token are sent in cleartext. Use https outside a lab.",
+                )
+                return
+            raise ConnectionError(
+                "oidc_token_url must use https because it carries the client secret "
+                "and the access token. For a lab identity provider set "
+                "oidc_allow_insecure_http=true.",
+            )
+        raise ConnectionError(
+            "oidc_token_url must be an https URL (got scheme '{0}').".format(scheme),
+        )
+
     def _fetch_oidc_token(self):
         token_url = self.get_option("oidc_token_url")
         if not token_url:
             raise ConnectionError(
                 "oidc_token_url is required when auth_method=oidc.",
             )
+        self._check_oidc_scheme(token_url)
         body = urlencode(
             {
                 "grant_type": "client_credentials",
@@ -196,6 +258,9 @@ class HttpApi(HttpApiBase):
         timeout = self.get_option("oidc_timeout")
         if timeout is None:
             timeout = 10
+        validate_certs = self.get_option("oidc_validate_certs")
+        if validate_certs is None:
+            validate_certs = True
         try:
             response = open_url(
                 token_url,
@@ -203,6 +268,7 @@ class HttpApi(HttpApiBase):
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 method="POST",
                 timeout=timeout,
+                validate_certs=validate_certs,
             )
             payload = json.loads(response.read())
         except Exception as exc:
