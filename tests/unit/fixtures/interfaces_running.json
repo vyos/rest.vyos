@@ -1,15 +1,147 @@
 {
-  "ethernet": {
-    "eth0": {
-      "address": "dhcp",
-      "description": "Management",
-      "duplex": "auto",
-      "hw-id": "52:54:00:65:5a:24",
-      "mtu": "1500",
-      "speed": "auto"
+  "default": {
+    "ethernet": {
+      "eth0": {
+        "description": "mgmt",
+        "mtu": "1500",
+        "duplex": "auto",
+        "speed": "auto",
+        "vrf": "mgmt",
+        "vif": { "200": { "description": "vif200", "mtu": "1400" } }
+      },
+      "eth1": {
+        "disable": {}
+      }
+    },
+    "bonding": {
+      "bond0": { "description": "lag" }
+    },
+    "loopback": {
+      "lo": {}
     }
   },
-  "loopback": {
-    "lo": {}
+
+  "iface_with_address_mtu_description": {
+    "ethernet": {
+      "eth0": {
+        "address": ["192.168.122.6/24"],
+        "description": "mgmt",
+        "mtu": "1500"
+      }
+    }
+  },
+  "iface_address_only": {
+    "ethernet": { "eth0": { "address": ["192.168.122.6/24"] } }
+  },
+  "two_ifaces_one_with_address": {
+    "ethernet": {
+      "eth0": {},
+      "eth1": { "address": ["10.0.0.1/24"], "description": "old" }
+    }
+  },
+  "iface_address_and_description": {
+    "ethernet": { "eth0": { "address": ["10.0.0.1/24"], "description": "old" } }
+  },
+
+  "vif_address_base": {
+    "ethernet": {
+      "eth0": {
+        "description": "mgmt",
+        "vif": {
+          "200": {
+            "address": { "192.0.2.1/24": {} },
+            "description": "management vlan"
+          }
+        }
+      }
+    }
+  },
+  "vif_stale_disable_kept": {
+    "ethernet": {
+      "eth0": {
+        "description": "x",
+        "vif": { "200": { "description": "management vlan", "disable": {} } }
+      }
+    }
+  },
+  "vif_multi_mixed": {
+    "ethernet": {
+      "eth0": {
+        "description": "mgmt",
+        "vif": {
+          "100": { "description": "kept-vlan" },
+          "200": {
+            "address": { "192.0.2.1/24": {} },
+            "description": "removed-vlan"
+          },
+          "300": { "address": { "10.0.0.1/24": {} } }
+        }
+      }
+    }
+  },
+  "vif_mtu_with_address": {
+    "ethernet": {
+      "eth0": {
+        "vif": { "200": { "address": { "192.0.2.1/24": {} }, "mtu": "1400" } }
+      }
+    }
+  },
+  "vif_new_vif_base": {
+    "ethernet": { "eth0": { "description": "mgmt" } }
+  },
+
+  "description_mtu_only": {
+    "ethernet": { "eth0": { "description": "x", "mtu": "1500" } }
+  },
+  "iface_disabled_with_fields": {
+    "ethernet": {
+      "eth0": { "disable": {}, "mtu": "1500", "description": "keep" }
+    }
+  },
+  "vif_disabled_on_device": {
+    "ethernet": { "eth0": { "vif": { "200": { "disable": {} } } } }
+  },
+  "description_mtu_old_1400": {
+    "ethernet": { "eth0": { "description": "old", "mtu": "1400" } }
+  },
+  "description_mtu_duplex": {
+    "ethernet": {
+      "eth0": { "description": "old", "mtu": "1500", "duplex": "auto" }
+    }
+  },
+  "eth0_old_eth1_keepme": {
+    "ethernet": {
+      "eth0": { "description": "old" },
+      "eth1": { "description": "keep-me" }
+    }
+  },
+  "eth0_empty_eth1_described": {
+    "ethernet": { "eth0": {}, "eth1": { "description": "old" } }
+  },
+  "two_described_ifaces": {
+    "ethernet": {
+      "eth0": { "description": "a" },
+      "eth1": { "description": "b" }
+    }
+  },
+  "one_described_iface": {
+    "ethernet": { "eth0": { "description": "a", "mtu": "1500" } }
+  },
+  "eth0_truly_empty": {
+    "ethernet": { "eth0": {} }
+  },
+  "eth1_truly_empty": {
+    "ethernet": { "eth1": {} }
+  },
+
+  "bridge_ethbr0": {
+    "bridge": { "ethbr0": {} }
+  },
+  "ethernet_and_bonding": {
+    "ethernet": { "eth0": {} },
+    "bonding": { "bond0": {} }
+  },
+  "bonding_bond0_only": {
+    "bonding": { "bond0": {} }
   }
 }
