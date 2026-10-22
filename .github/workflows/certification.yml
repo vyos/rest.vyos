@@ -20,7 +20,9 @@ on:
     - cron: "0 6 * * *"
 
 concurrency:
-  group: cert-ver-${{ github.head_ref || github.run_id }}
+  # Keyed on the PR number, not head_ref: pull requests from different forks can use the
+  # same branch name, which would make their runs cancel each other.
+  group: cert-ver-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 # Files that are not related to the core functionality
