@@ -1,17 +1,5 @@
 ---
-requires_ansible: ">=2.15.0"
-
-# action_groups allow users to set shared connection params once using
-# module_defaults:
-#
-#   - hosts: vyos_devices
-#     module_defaults:
-#       group/vyos.rest.api:
-#         api_key: "{{ vyos_api_key }}"
-#         verify_ssl: false
-#
-# This sets hostname/api_key/port/verify_ssl/timeout for ALL modules in
-# the group without repeating them on every task.
+requires_ansible: ">=2.16.0"
 action_groups:
   api:
     - vyos_banner

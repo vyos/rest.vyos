@@ -8,7 +8,7 @@ name: rest
 description: Ansible Network Collection for REST-enabled VYOS devices.
 namespace: vyos
 readme: README.md
-repository: https://github.com/vyos/vyos.rest
+repository: https://github.com/vyos/rest.vyos
 issues: https://vyos.dev
 tags: [vyos, networking]
 version: 1.0.0
