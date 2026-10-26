@@ -5,10 +5,9 @@
 vyos.rest.vyos
 **************
 
-**HttpApi plugin for VyOS REST API**
+**VyOS REST API**
 
 
-Version added: 1.0.0
 
 .. contents::
    :local:
@@ -17,9 +16,8 @@ Version added: 1.0.0
 
 Synopsis
 --------
-- This HttpApi plugin provides methods to connect to VyOS devices via their HTTPS REST API.
-- Use with ``ansible_connection=ansible.netcommon.httpapi`` and ``ansible_network_os=vyos.rest.vyos``.
-- The VyOS REST API must be enabled with ``set service https api keys id ansible key YOUR_KEY``, ``set service https api rest``, then ``commit && save``.
+- HTTPAPI plugin for interacting with VyOS REST API.
+- Supports multiple authentication methods against the VyOS REST API -- ``key`` (API key in the request body), ``header`` (API key as an ``X-API-Key`` header), ``bearer`` (a VyOS-issued bearer token, fetched and cached), ``mtls`` (mutual TLS, no application-level credential), and ``oidc`` (a bearer token obtained from an external OpenID Connect provider via the client_credentials grant, fetched and cached).
 
 
 
@@ -48,13 +46,181 @@ Parameters
                 <td>
                 </td>
                     <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>api_key = VALUE</p>
+                            </div>
+                                <div>env:ANSIBLE_HTTPAPI_API_KEY</div>
                                 <div>env:VYOS_API_KEY</div>
                                 <div>var: ansible_httpapi_api_key</div>
                                 <div>var: ansible_vyos_api_key</div>
                     </td>
                 <td>
-                        <div>The API key configured on the VyOS device.</div>
-                        <div>Set <code>ansible_httpapi_api_key</code> in inventory or the <code>VYOS_API_KEY</code> environment variable.</div>
+                        <div>VyOS API key. Required for auth_method <code>key</code>, <code>header</code>, and <code>bearer</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>auth_method</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li><div style="color: blue"><b>key</b>&nbsp;&larr;</div></li>
+                                    <li>header</li>
+                                    <li>bearer</li>
+                                    <li>mtls</li>
+                                    <li>oidc</li>
+                        </ul>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>auth_method = key</p>
+                            </div>
+                                <div>var: ansible_httpapi_auth_method</div>
+                    </td>
+                <td>
+                        <div>Authentication method to use against the VyOS REST API.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_allow_insecure_http</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">boolean</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li><div style="color: blue"><b>no</b>&nbsp;&larr;</div></li>
+                                    <li>yes</li>
+                        </ul>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_allow_insecure_http = no</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_allow_insecure_http</div>
+                    </td>
+                <td>
+                        <div>By default the OIDC token endpoint must use <code>https</code>, because the request carries the client secret and the response carries a bearer token. Set this to <code>true</code> to allow a plain <code>http</code> endpoint.</div>
+                        <div>Intended for isolated lab setups only. With this enabled the client secret and the access token travel in cleartext and can be captured and replayed by anyone on the network path.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_client_id</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_client_id = VALUE</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_client_id</div>
+                    </td>
+                <td>
+                        <div>OIDC client ID for the client_credentials grant.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_client_secret</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_client_secret = VALUE</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_client_secret</div>
+                    </td>
+                <td>
+                        <div>OIDC client secret for the client_credentials grant.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_timeout</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">integer</span>
+                    </div>
+                </td>
+                <td>
+                        <b>Default:</b><br/><div style="color: blue">10</div>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_timeout = 10</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_timeout</div>
+                    </td>
+                <td>
+                        <div>Timeout, in seconds, for the token request made to the OIDC provider. An unavailable or stalled identity provider would otherwise hang the Ansible task indefinitely.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_token_url</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">string</span>
+                    </div>
+                </td>
+                <td>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_token_url = VALUE</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_token_url</div>
+                    </td>
+                <td>
+                        <div>Token endpoint URL of the OIDC provider. Required for auth_method <code>oidc</code>.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>oidc_validate_certs</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">boolean</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li>no</li>
+                                    <li><div style="color: blue"><b>yes</b>&nbsp;&larr;</div></li>
+                        </ul>
+                </td>
+                    <td>
+                            <div> ini entries:
+                                    <p>[httpapi]<br>oidc_validate_certs = yes</p>
+                            </div>
+                                <div>var: ansible_httpapi_oidc_validate_certs</div>
+                    </td>
+                <td>
+                        <div>Validate the TLS certificate of the OIDC token endpoint.</div>
+                        <div>Set to <code>false</code> only for a lab identity provider that uses a self-signed certificate.</div>
                 </td>
             </tr>
     </table>
