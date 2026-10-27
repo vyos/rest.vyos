@@ -62,11 +62,9 @@ You can install the collection with the Ansible Galaxy CLI:
 
     ansible-galaxy collection install vyos.rest
 
-Red Hat customers should install this collection from
-[Red Hat Ansible Automation Hub](https://console.redhat.com/ansible/automation-hub/repo/published/vyos/rest/).
-Configure Automation Hub as a Galaxy server in `ansible.cfg` as described in
-[Configuring Ansible Automation Hub](https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/),
-then use the same commands as below. Red Hat does not support installing collections from GitHub.
+This collection is distributed through Ansible Galaxy and is not yet available from Red Hat Ansible Automation Hub.
+Red Hat does not support installing collections from GitHub.
+<!-- TODO: once the collection is published on Automation Hub, add its installation link and the "Configuring Ansible Automation Hub" reference -->
 
 To install a specific version, for example 1.0.0:
 
@@ -154,9 +152,10 @@ automation.
 
 ## Support
 
-As Red Hat Ansible Certified Content, this collection is entitled to support through Ansible Automation Platform (AAP) using the **Create issue** button in the top right corner
-of the collection page on Automation Hub.
-
 The collection is maintained by the VyOS team. <!-- TODO: VyOS commercial support statement/link -->
-If the collection was obtained from Galaxy or GitHub, community help is available through [GitHub issues](https://github.com/vyos/rest.vyos/issues), the [VyOS forum](https://forum.vyos.io/)
+Community help is available through [GitHub issues](https://github.com/vyos/rest.vyos/issues), the [VyOS forum](https://forum.vyos.io/)
 and the [Ansible Forum](https://forum.ansible.com/).
+
+Once this collection is certified and available on Red Hat Ansible Automation Hub, Red Hat customers can open support cases
+through Ansible Automation Platform (AAP) using the **Create issue** button on the collection page in Automation Hub.
+<!-- TODO: when certified, replace the paragraph above with the standard support text from Red Hat's README template -->
