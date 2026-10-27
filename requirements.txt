@@ -1,2 +1,4 @@
-paramiko
-scp
+# This collection needs no Python packages beyond ansible-core and the
+# collections declared in galaxy.yml. paramiko and scp belong to the SSH-based
+# vyos.vyos collection, not to this REST-based one. urllib3 is used when it is
+# installed (to silence insecure-request warnings) but is optional.

@@ -5,10 +5,12 @@ as an alternative to the SSH/CLI-based `vyos.vyos` collection.
 
 ## Requirements
 
-- VyOS 1.3 or later
-- Ansible >= 2.15.0
-- `ansible.netcommon` >= 2.5.1
-- `ansible.utils`
+- ansible-core >=2.16.0, see [Ansible version compatibility](#ansible-version-compatibility).
+- Python >=3.10 on the Ansible controller, as required by ansible-core 2.16.
+- [ansible.netcommon](https://galaxy.ansible.com/ui/repo/published/ansible/netcommon/) >=2.5.1, installed automatically as a dependency of this collection.
+- `ansible.utils`, installed automatically as a dependency of `ansible.netcommon`.
+- VyOS 1.3 or later with the REST API enabled and reachable over HTTPS with the `ansible.netcommon.httpapi` connection.
+- No additional Python packages are required by the collection's code.
 
 ## Configuring VyOS for REST API access
 
@@ -56,64 +58,77 @@ all:
 
 ## Installation
 
-```bash
-ansible-galaxy collection install vyos.rest
-```
+You can install the collection with the Ansible Galaxy CLI:
 
-Or from source:
+    ansible-galaxy collection install vyos.rest
 
-```bash
-git clone https://github.com/vyos/vyos.rest.git
-ansible-galaxy collection install vyos.rest/ --force
+This collection is distributed through Ansible Galaxy and is not yet available from Red Hat Ansible Automation Hub.
+Red Hat does not support installing collections from GitHub.
+<!-- TODO: once the collection is published on Automation Hub, add its installation link and the "Configuring Ansible Automation Hub" reference -->
+
+To install a specific version, for example 1.0.0:
+
+    ansible-galaxy collection install vyos.rest:==1.0.0
+
+To upgrade to the latest version:
+
+    ansible-galaxy collection install vyos.rest --upgrade
+
+You can also include it in a `requirements.yml` file and install it with `ansible-galaxy collection install -r requirements.yml`, using the format:
+
+```yaml
+---
+collections:
+  - name: vyos.rest
 ```
 
 <!--start collection content-->
 ### Httpapi plugins
 Name | Description
 --- | ---
-[vyos.rest.vyos](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_httpapi.rst)|VyOS REST API
+[vyos.rest.vyos](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_httpapi.rst)|HttpApi plugin for VyOS REST API
 
 ### Modules
 Name | Description
 --- | ---
-[vyos.rest.vyos_banner](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_banner_module.rst)|Manage multiline banners on VyOS devices via REST API.
-[vyos.rest.vyos_bgp_address_family](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_bgp_address_family_module.rst)|Manage BGP address-family configuration on VyOS devices using REST API
-[vyos.rest.vyos_bgp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_bgp_global_module.rst)|Manage BGP global configuration on VyOS devices using REST API
-[vyos.rest.vyos_command](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_command_module.rst)|Run show commands on VyOS devices using REST API
-[vyos.rest.vyos_config](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_config_module.rst)|Manage VyOS configuration using REST API
-[vyos.rest.vyos_configure](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_configure_module.rst)|Send raw set/delete commands to a VyOS device via REST API.
-[vyos.rest.vyos_facts](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_facts_module.rst)|Get facts about VyOS devices using REST API
-[vyos.rest.vyos_firewall_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_global_module.rst)|Manage global firewall configuration on VyOS devices using REST API
-[vyos.rest.vyos_firewall_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_interfaces_module.rst)|Manage firewall hook filters on VyOS devices using REST API
-[vyos.rest.vyos_firewall_rules](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_firewall_rules_module.rst)|Manage firewall rule sets on VyOS devices using REST API
-[vyos.rest.vyos_ha](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ha_module.rst)|Manage VRRP and load balancer configuration on VyOS via REST API
-[vyos.rest.vyos_hostname](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_hostname_module.rst)|Manage the system hostname on a VyOS device via the REST API.
-[vyos.rest.vyos_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_interfaces_module.rst)|Manage interface configuration on VyOS devices via REST API.
-[vyos.rest.vyos_l3_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_l3_interfaces_module.rst)|Manage L3 interface configuration on VyOS devices via REST API.
-[vyos.rest.vyos_lag_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lag_interfaces_module.rst)|Manage LAG interface configuration on VyOS devices via REST API.
-[vyos.rest.vyos_lldp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_global_module.rst)|Manage LLDP global configuration on VyOS via REST API.
-[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_lldp_interfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
-[vyos.rest.vyos_logging_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_logging_global_module.rst)|Manage syslog configuration on VyOS devices using REST API
-[vyos.rest.vyos_nat](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_nat_module.rst)|Manage NAT configuration on VyOS devices using REST API
-[vyos.rest.vyos_ntp_global](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
-[vyos.rest.vyos_ospf_interfaces](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospf_interfaces_module.rst)|Manage OSPF interface configuration on VyOS devices using REST API
-[vyos.rest.vyos_ospfv2](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv2_module.rst)|Manage OSPFv2 configuration on VyOS devices using REST API
-[vyos.rest.vyos_ospfv3](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_ospfv3_module.rst)|Manage OSPFv3 configuration on VyOS devices using REST API
-[vyos.rest.vyos_prefix_lists](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_prefix_lists_module.rst)|Manage prefix-list configuration on VyOS devices using REST API
-[vyos.rest.vyos_route_maps](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
-[vyos.rest.vyos_snmp_server](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
-[vyos.rest.vyos_static_routes](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_static_routes_module.rst)|Manage static routes on VyOS devices via REST API.
-[vyos.rest.vyos_system](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_system_module.rst)|Manage system settings on VyOS devices using REST API
-[vyos.rest.vyos_user](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_user_module.rst)|Manage user accounts on VyOS devices using REST API
-[vyos.rest.vyos_vlan](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_vlan_module.rst)|Manage VLAN (vif) configuration on VyOS devices using REST API
-[vyos.rest.vyos_vrf](https://github.com/vyos/vyos.rest/blob/main/docs/vyos.rest.vyos_vrf_module.rst)|Manage VRF configuration on VyOS devices using REST API
+[vyos.rest.vyos_banner](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_banner_module.rst)|Manage multiline banners on VyOS devices via REST API.
+[vyos.rest.vyos_bgp_address_family](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_bgp_address_family_module.rst)|Manage BGP address-family configuration on VyOS devices using REST API
+[vyos.rest.vyos_bgp_global](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_bgp_global_module.rst)|Manage BGP global configuration on VyOS devices using REST API
+[vyos.rest.vyos_command](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_command_module.rst)|Run show commands on VyOS devices using REST API
+[vyos.rest.vyos_config](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_config_module.rst)|Manage VyOS configuration using REST API
+[vyos.rest.vyos_configure](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_configure_module.rst)|Send raw set/delete commands to a VyOS device via REST API.
+[vyos.rest.vyos_facts](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_facts_module.rst)|Get facts about VyOS devices using REST API
+[vyos.rest.vyos_firewall_global](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_firewall_global_module.rst)|Manage global firewall configuration on VyOS devices using REST API
+[vyos.rest.vyos_firewall_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_firewall_interfaces_module.rst)|Manage firewall hook filters on VyOS devices using REST API
+[vyos.rest.vyos_firewall_rules](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_firewall_rules_module.rst)|Manage firewall rule sets on VyOS devices using REST API
+[vyos.rest.vyos_ha](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_ha_module.rst)|Manage VRRP and load balancer configuration on VyOS via REST API
+[vyos.rest.vyos_hostname](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_hostname_module.rst)|Manage the system hostname on a VyOS device via the REST API.
+[vyos.rest.vyos_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_interfaces_module.rst)|Manage interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_l3_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_l3_interfaces_module.rst)|Manage L3 interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_lag_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_lag_interfaces_module.rst)|Manage LAG interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_lldp_global](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_lldp_global_module.rst)|Manage LLDP global configuration on VyOS via REST API.
+[vyos.rest.vyos_lldp_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_lldp_interfaces_module.rst)|Manage LLDP interface configuration on VyOS devices via REST API.
+[vyos.rest.vyos_logging_global](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_logging_global_module.rst)|Manage syslog configuration on VyOS devices using REST API
+[vyos.rest.vyos_nat](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_nat_module.rst)|Manage NAT configuration on VyOS devices using REST API
+[vyos.rest.vyos_ntp_global](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_ntp_global_module.rst)|Manage NTP configuration on VyOS devices using REST API
+[vyos.rest.vyos_ospf_interfaces](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_ospf_interfaces_module.rst)|Manage OSPF interface configuration on VyOS devices using REST API
+[vyos.rest.vyos_ospfv2](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_ospfv2_module.rst)|Manage OSPFv2 configuration on VyOS devices using REST API
+[vyos.rest.vyos_ospfv3](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_ospfv3_module.rst)|Manage OSPFv3 configuration on VyOS devices using REST API
+[vyos.rest.vyos_prefix_lists](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_prefix_lists_module.rst)|Manage prefix-list configuration on VyOS devices using REST API
+[vyos.rest.vyos_route_maps](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_route_maps_module.rst)|Manage route-map configuration on VyOS devices using REST API
+[vyos.rest.vyos_snmp_server](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_snmp_server_module.rst)|Manage SNMP server configuration on VyOS devices using REST API
+[vyos.rest.vyos_static_routes](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_static_routes_module.rst)|Manage static routes on VyOS devices via REST API.
+[vyos.rest.vyos_system](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_system_module.rst)|Manage system settings on VyOS devices using REST API
+[vyos.rest.vyos_user](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_user_module.rst)|Manage user accounts on VyOS devices using REST API
+[vyos.rest.vyos_vlan](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_vlan_module.rst)|Manage VLAN (vif) configuration on VyOS devices using REST API
+[vyos.rest.vyos_vrf](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_vrf_module.rst)|Manage VRF configuration on VyOS devices using REST API
 
 <!--end collection content-->
 
 <!--start requires_ansible-->
 ## Ansible version compatibility
 
-This collection has been tested against the following Ansible versions: **>=2.15.0**.
+This collection has been tested against the following Ansible versions: **>=2.16.0**.
 
 Plugins and modules within a collection may be tested with only specific Ansible versions.
 A collection may contain metadata that identifies these versions.
@@ -134,3 +149,13 @@ automation.
 | Connection plugin | `ansible.netcommon.network_cli` | `ansible.netcommon.httpapi` |
 | VyOS requirement | Any | VyOS 1.3+ with REST API enabled |
 | Atomic commits | Per-command | Batch (single commit) |
+
+## Support
+
+The collection is maintained by the VyOS team. <!-- TODO: VyOS commercial support statement/link -->
+Community help is available through [GitHub issues](https://github.com/vyos/rest.vyos/issues), the [VyOS forum](https://forum.vyos.io/)
+and the [Ansible Forum](https://forum.ansible.com/).
+
+Once this collection is certified and available on Red Hat Ansible Automation Hub, Red Hat customers can open support cases
+through Ansible Automation Platform (AAP) using the **Create issue** button on the collection page in Automation Hub.
+<!-- TODO: when certified, replace the paragraph above with the standard support text from Red Hat's README template -->
