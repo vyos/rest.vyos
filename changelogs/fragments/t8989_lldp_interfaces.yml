@@ -1,3 +1,0 @@
----
-minor_changes:
-  - vyos_lldp_interfaces - Refactor lldp_interface module to comply with dict_op paradigm.

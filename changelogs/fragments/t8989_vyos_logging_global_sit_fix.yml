@@ -1,3 +1,0 @@
----
-minor_changes:
-  - vyos_logging_global - Fix RTT integration test.

@@ -86,7 +86,7 @@ collections:
 ### Httpapi plugins
 Name | Description
 --- | ---
-[vyos.rest.vyos](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_httpapi.rst)|HttpApi plugin for VyOS REST API
+[vyos.rest.vyos](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_httpapi.rst)|VyOS REST API
 
 ### Modules
 Name | Description
@@ -150,6 +150,10 @@ automation.
 | VyOS requirement | Any | VyOS 1.3+ with REST API enabled |
 | Atomic commits | Per-command | Batch (single commit) |
 
+## Release notes
+
+Release notes are available [here](https://github.com/vyos/rest.vyos/blob/main/CHANGELOG.rst).
+
 ## Support
 
 The collection is maintained by the VyOS team. <!-- TODO: VyOS commercial support statement/link -->
@@ -159,3 +163,9 @@ and the [Ansible Forum](https://forum.ansible.com/).
 Once this collection is certified and available on Red Hat Ansible Automation Hub, Red Hat customers can open support cases
 through Ansible Automation Platform (AAP) using the **Create issue** button on the collection page in Automation Hub.
 <!-- TODO: when certified, replace the paragraph above with the standard support text from Red Hat's README template -->
+
+## Licensing
+
+GNU General Public License v3.0 or later.
+
+See [LICENSE](https://www.gnu.org/licenses/gpl-3.0.txt) to see the full text.

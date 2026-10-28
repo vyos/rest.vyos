@@ -1,3 +1,0 @@
----
-minor_changes:
-  - vyos_statc_routes - Added static_routes module, documenatation and tests..
