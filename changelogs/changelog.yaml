@@ -58,7 +58,7 @@ releases:
         - vyos_prefix_lists - Add new module and tests.
         - vyos_route_maps - Add new module and tests.
         - vyos_snmp_server - Add new module and tests.
-        - vyos_statc_routes - Added static_routes module, documenatation and tests..
+        - vyos_static_routes - Added static_routes module, documenatation and tests..
         - vyos_static_routes - Add new module and tests.
         - vyos_static_routes - Refactor to convert to dict_op.
         - vyos_system - Add new module and tests.
