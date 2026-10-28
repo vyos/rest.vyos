@@ -1,3 +1,0 @@
----
-minor_changes:
-  - vyos_l3_interfaces - Refactor the module to comply with dict_op paradigm.

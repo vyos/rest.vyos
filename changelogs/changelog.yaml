@@ -1,70 +1,195 @@
 ancestor: null
 releases:
   1.0.0:
+    changes:
+      bugfixes:
+        - vyos_hostname - Added method to VyOS helper; fixed bugs in the module and
+          in UAT/SIT tests.
+      minor_changes:
+        - Added / Modified the items to meet AAP requirements.
+        - module_utils/vyos.py - Fix cast_by_spec to handle int-typed leaves returned
+          as collapsed lists (including empty list -> None).
+        - plugins/module_utils/vyos.py - Add VyOSModule.get_value() wrapper for the
+          "returnValue" retrieve operation.
+        - vyos httpapi plugin - add support for four additional authentication methods
+          against the VyOS REST API - ``header`` (API key sent as an ``X-API-Key`` header),
+          ``bearer`` (a VyOS-issued bearer token, fetched once and cached until it expires),
+          ``mtls`` (mutual TLS, with no application-level credential sent at all), and
+          ``oidc`` (a bearer token obtained from an external OpenID Connect provider
+          via the client_credentials grant, likewise fetched and cached) - selectable
+          via the new ``auth_method`` option. The existing API-key-in-the-request-body
+          behaviour remains the default, so no change is required for existing inventories.
+        - vyos httpapi plugin - the OIDC token endpoint must use ``https``, because
+          the request carries the client secret and the response carries a bearer token.
+          A plain ``http`` endpoint (for example a lab identity provider) is accepted
+          only with the new ``oidc_allow_insecure_http`` option, which logs a warning,
+          and other URL schemes are never accepted. Certificate validation of the token
+          endpoint can be turned off for a self-signed lab provider with ``oidc_validate_certs``,
+          and the request is bounded by ``oidc_timeout``.
+        - vyos_banner - Add new module and tests.
+        - vyos_banner - Fix SIT overridden, merged and rtt.
+        - vyos_bgp_address_family - Add new module and tests.
+        - vyos_bgp_global - Add new module and tests.
+        - vyos_command - Add new module and tests.
+        - vyos_config - Add new module and tests.
+        - vyos_facts - Add new module and tests.
+        - vyos_firewall_global - Add new module and tests.
+        - vyos_firewall_interfaces - Add new module and tests.
+        - vyos_firewall_rules - Add new module and tests.
+        - vyos_ha - Add new module and tests.
+        - vyos_hostname - Add new module and tests.
+        - vyos_interfaces - Add support for L2 interface configuration
+        - vyos_interfaces - Refactor the module to comply with the dict_op paradigm.
+        - vyos_l3_interfaces - Add support for L3 interfaces configuration
+        - vyos_l3_interfaces - Refactor the module to comply with dict_op paradigm.
+        - vyos_lag_interfaces - Refactor the module to comply with dict_op paradigm.
+        - vyos_lldp_global - Add new module and tests.
+        - vyos_lldp_interfaces - Refactor lldp_interface module to comply with dict_op
+          paradigm.
+        - vyos_logging_global - Add new module and tests.
+        - vyos_logging_global - Fix RTT integration test.
+        - vyos_nat - Add new module and tests.
+        - vyos_ntp_global - Add new module and tests.
+        - vyos_ospf_interfaces - Refactor module to dict_op arch, add more tests.
+        - vyos_ospfv2 - add support for ``areas[].virtual_link``, ``max_metric``, ``mpls_te``,
+          ``timers``, and ``passive_interface_exclude``.
+        - vyos_ospfv2 - refactor command generation onto ``dict_op``.
+        - vyos_ospfv3 - Refactor module to dict_op style.
+        - vyos_prefix_lists - Add new module and tests.
+        - vyos_route_maps - Add new module and tests.
+        - vyos_snmp_server - Add new module and tests.
+        - vyos_statc_routes - Added static_routes module, documenatation and tests..
+        - vyos_static_routes - Add new module and tests.
+        - vyos_static_routes - Refactor to convert to dict_op.
+        - vyos_system - Add new module and tests.
+        - vyos_user - Add new module and tests.
+        - vyos_vlan - Add new module and tests.
+        - vyos_vrf - Add new module and tests.
+      release_summary:
+        Initial release of the ``vyos.rest`` collection. It manages
+        VyOS devices through the HTTPS REST API using ``ansible.netcommon.httpapi``,
+        as the REST-based counterpart of the SSH/CLI-based ``vyos.vyos`` collection.
+    fragments:
+      - 1.0.0.yml
+      - py312-devel-tox.yml
+      - t8989-vyos_interfaces.yml
+      - t8989_aap_prereq.yml
+      - t8989_auth_methods.yml
+      - t8989_banner_sit_fix.yml
+      - t8989_hostname_rework.yml
+      - t8989_interface_dict_op.yml
+      - t8989_l3_interface_dict_op.yml
+      - t8989_lag_interfaces_dict_op.yml
+      - t8989_lldp_interfaces.yml
+      - t8989_module_utils_vyos.yml
+      - t8989_ospf_interfaces_dict_op.yml
+      - t8989_ospfv3_dict_op.yml
+      - t8989_ospv2_dict_op.yml
+      - t8989_prefix_lists.yml
+      - t8989_static_routes.yml
+      - t8989_static_routes_dict_op.yml
+      - t8989_vrf.yml
+      - t8989_vyos_get_value.yml
+      - t8989_vyos_logging_global_sit_fix.yml
+      - t8989_wave4.yml
     modules:
-      - description: Manage multiline banners on VyOS devices
+      - description: Manage multiline banners on VyOS devices via REST API.
         name: vyos_banner
         namespace: ""
-      - description: Run one or more commands on VyOS devices
+      - description:
+          Manage BGP address\-family configuration on VyOS devices using
+          REST API
+        name: vyos_bgp_address_family
+        namespace: ""
+      - description: Manage BGP global configuration on VyOS devices using REST API
+        name: vyos_bgp_global
+        namespace: ""
+      - description: Run show commands on VyOS devices using REST API
         name: vyos_command
         namespace: ""
-      - description: Manage VyOS configuration on remote device
+      - description: Manage VyOS configuration using REST API
         name: vyos_config
         namespace: ""
-      - description: Get facts about vyos devices.
+      - description: Send raw set/delete commands to a VyOS device via REST API.
+        name: vyos_configure
+        namespace: ""
+      - description: Get facts about VyOS devices using REST API
         name: vyos_facts
         namespace: ""
-      - description: FIREWALL global resource module
+      - description:
+          Manage global firewall configuration on VyOS devices using REST
+          API
         name: vyos_firewall_global
         namespace: ""
-      - description: FIREWALL interfaces resource module
+      - description: Manage firewall hook filters on VyOS devices using REST API
         name: vyos_firewall_interfaces
         namespace: ""
-      - description: FIREWALL rules resource module
+      - description: Manage firewall rule sets on VyOS devices using REST API
         name: vyos_firewall_rules
         namespace: ""
-      - description: Interfaces resource module
+      - description: Manage VRRP and load balancer configuration on VyOS via REST API
+        name: vyos_ha
+        namespace: ""
+      - description: Manage the system hostname on a VyOS device via the REST API.
+        name: vyos_hostname
+        namespace: ""
+      - description: Manage interface configuration on VyOS devices via REST API.
         name: vyos_interfaces
         namespace: ""
-      - description: L3 interfaces resource module
+      - description: Manage L3 interface configuration on VyOS devices via REST API.
         name: vyos_l3_interfaces
         namespace: ""
-      - description: LAG interfaces resource module
+      - description: Manage LAG interface configuration on VyOS devices via REST API.
         name: vyos_lag_interfaces
         namespace: ""
-      - description: LLDP global resource module
+      - description: Manage LLDP global configuration on VyOS via REST API.
         name: vyos_lldp_global
         namespace: ""
-      - description: LLDP interfaces resource module
+      - description: Manage LLDP interface configuration on VyOS devices via REST API.
         name: vyos_lldp_interfaces
         namespace: ""
-      - description: Manage logging on network devices
-        name: vyos_logging
+      - description: Manage syslog configuration on VyOS devices using REST API
+        name: vyos_logging_global
         namespace: ""
-      - description: OSPFv2 resource module
+      - description: Manage NAT configuration on VyOS devices using REST API
+        name: vyos_nat
+        namespace: ""
+      - description: Manage NTP configuration on VyOS devices using REST API
+        name: vyos_ntp_global
+        namespace: ""
+      - description:
+          Manage OSPF interface configuration on VyOS devices using REST
+          API
+        name: vyos_ospf_interfaces
+        namespace: ""
+      - description: Manage OSPFv2 configuration on VyOS devices using REST API
         name: vyos_ospfv2
         namespace: ""
-      - description: OSPFV3 resource module
+      - description: Manage OSPFv3 configuration on VyOS devices using REST API
         name: vyos_ospfv3
         namespace: ""
-      - description: Tests reachability using ping from VyOS network devices
-        name: vyos_ping
+      - description: Manage prefix\-list configuration on VyOS devices using REST API
+        name: vyos_prefix_lists
         namespace: ""
-      - description: Static routes resource module
+      - description: Manage route\-map configuration on VyOS devices using REST API
+        name: vyos_route_maps
+        namespace: ""
+      - description: Manage SNMP server configuration on VyOS devices using REST API
+        name: vyos_snmp_server
+        namespace: ""
+      - description: Manage static routes on VyOS devices via REST API.
         name: vyos_static_routes
         namespace: ""
-      - description: Run `set system` commands on VyOS devices
+      - description: Manage system settings on VyOS devices using REST API
         name: vyos_system
         namespace: ""
-      - description: Manage the collection of local users on VyOS device
+      - description: Manage user accounts on VyOS devices using REST API
         name: vyos_user
         namespace: ""
-      - description: Manage VLANs on VyOS network devices
+      - description: Manage VLAN (vif) configuration on VyOS devices using REST API
         name: vyos_vlan
         namespace: ""
-    plugins:
-      vyos:
-        - description: HTTPAPI plugin for interacting with VyOS REST API.
-          name: vyos
-          namespace: null
-    release_date: "2026-03-31"
+      - description: Manage VRF configuration on VyOS devices using REST API
+        name: vyos_vrf
+        namespace: ""
+    release_date: "2026-10-29"

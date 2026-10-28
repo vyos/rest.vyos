@@ -1,3 +1,0 @@
----
-minor_changes:
-  - vyos_static_routes - Refactor to convert to dict_op.
