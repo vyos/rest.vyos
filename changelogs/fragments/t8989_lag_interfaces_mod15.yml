@@ -1,0 +1,3 @@
+---
+bugfixes:
+  - vyos_lag_interfaces - Fixed httpapi helper for SIT.
