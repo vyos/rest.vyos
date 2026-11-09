@@ -86,7 +86,7 @@ collections:
 ### Httpapi plugins
 Name | Description
 --- | ---
-[vyos.rest.vyos](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_httpapi.rst)|HttpApi plugin for VyOS REST API
+[vyos.rest.vyos](https://github.com/vyos/rest.vyos/blob/main/docs/vyos.rest.vyos_httpapi.rst)|VyOS REST API
 
 ### Modules
 Name | Description

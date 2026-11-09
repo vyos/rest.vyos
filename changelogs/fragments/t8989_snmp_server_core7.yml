@@ -1,0 +1,4 @@
+---
+bugfixes:
+  - vyos_command - fail the task when the device rejects a command, instead of returning an ``ERROR:`` entry in ``stdout``.
+  - vyos_command - a command the device rejects is no longer retried.
