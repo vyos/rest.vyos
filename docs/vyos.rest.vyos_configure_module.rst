@@ -51,6 +51,7 @@ Parameters
                 <td>
                         <div>List of CLI-style configuration commands.</div>
                         <div>Each command must start with <code>set</code> or <code>delete</code>.</div>
+                        <div>Quote a value that contains spaces, as in the CLI, for example <code>set interfaces ethernet eth0 description &quot;WAN link&quot;</code>.</div>
                 </td>
             </tr>
             <tr>
@@ -70,6 +71,7 @@ Parameters
                 </td>
                 <td>
                         <div>Whether to save the configuration after applying commands.</div>
+                        <div>The task fails if the configuration cannot be saved, even though the commands were applied.</div>
                 </td>
             </tr>
     </table>
