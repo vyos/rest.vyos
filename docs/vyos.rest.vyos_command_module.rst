@@ -134,6 +134,7 @@ Notes
    - ``ansible_network_os`` must be set to ``vyos.rest.vyos``.
    - Only ``show`` commands are supported via the REST API.
    - Commands are passed as path lists to the ``/show`` endpoint.
+   - A command the device rejects fails the task at once and is not retried. ``stdout`` then holds the output of the commands that ran before it.
 
 
 
@@ -191,6 +192,21 @@ Common return values are documented `here <https://docs.ansible.com/ansible/late
             <th>Returned</th>
             <th width="100%">Description</th>
         </tr>
+            <tr>
+                <td colspan="1">
+                    <div class="ansibleOptionAnchor" id="return-"></div>
+                    <b>failed_command</b>
+                    <a class="ansibleOptionLink" href="#return-" title="Permalink to this return value"></a>
+                    <div style="font-size: small">
+                      <span style="color: purple">raw</span>
+                    </div>
+                </td>
+                <td>failed, when a command was rejected</td>
+                <td>
+                            <div>The command the device rejected.</div>
+                    <br/>
+                </td>
+            </tr>
             <tr>
                 <td colspan="1">
                     <div class="ansibleOptionAnchor" id="return-"></div>

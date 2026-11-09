@@ -59,6 +59,8 @@ notes:
   - C(ansible_network_os) must be set to C(vyos.rest.vyos).
   - Only C(show) commands are supported via the REST API.
   - Commands are passed as path lists to the C(/show) endpoint.
+  - A command the device rejects fails the task at once and is not retried. C(stdout) then holds
+    the output of the commands that ran before it.
 """
 
 EXAMPLES = r"""
@@ -112,12 +114,16 @@ failed_conditions:
   description: List of conditions that failed.
   returned: failed
   type: list
+failed_command:
+  description: The command the device rejected.
+  returned: failed, when a command was rejected
+  type: raw
 """
 
 import time
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
+from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule, VyOSRestError
 
 
 def parse_command(cmd):
@@ -129,16 +135,31 @@ def parse_command(cmd):
     return list(cmd)
 
 
+class CommandFailed(Exception):
+    """The device rejected a command. Carries the output collected before it."""
+
+    def __init__(self, command, error, stdout):
+        super(CommandFailed, self).__init__("%s: %s" % (command, error))
+        self.command = command
+        self.error = error
+        self.stdout = stdout
+
+
 def run_commands(vyos, commands):
-    """Run show commands and return stdout list."""
+    """Run show commands and return stdout list.
+
+    Raises CommandFailed, with the output of the commands that ran before it, when the
+    device rejects one. Any other exception is a bug and propagates.
+    """
+
     stdout = []
     for cmd in commands:
         path = parse_command(cmd)
         try:
             result = vyos.show(path)
-            stdout.append(result if result else "")
-        except Exception as e:
-            stdout.append("ERROR: %s" % str(e))
+        except VyOSRestError as exc:
+            raise CommandFailed(cmd, str(exc), stdout)
+        stdout.append(result if result else "")
     return stdout
 
 
@@ -197,7 +218,14 @@ def main():
     failed_conditions = []
 
     for attempt in range(retries):
-        stdout = run_commands(vyos, commands)
+        try:
+            stdout = run_commands(vyos, commands)
+        except CommandFailed as exc:
+            module.fail_json(
+                msg="command failed: %s: %s" % (exc.command, exc.error),
+                failed_command=exc.command,
+                stdout=exc.stdout,
+            )
 
         if not wait_for:
             break
