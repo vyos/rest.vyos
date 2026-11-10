@@ -16,6 +16,7 @@ import unittest
 
 from io import BytesIO
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs
 
 from ansible.errors import AnsibleConnectionFailure
 from ansible.module_utils.connection import ConnectionError
@@ -112,6 +113,37 @@ class TestSendRequestKeyMethod(unittest.TestCase):
         with self.assertRaises(ConnectionError) as ctx:
             plugin.send_request("/retrieve", op="showConfig", path=[])
         self.assertIn("Invalid key", str(ctx.exception))
+
+
+class TestSendRequestBatch(unittest.TestCase):
+    """configure_batch sends {"_raw_list": [...]}; the API expects the bare list of commands."""
+
+    commands = [
+        {"op": "set", "path": ["interfaces", "bonding", "bond0", "mode", "active-backup"]},
+        {"op": "delete", "path": ["interfaces", "bonding", "bond1"]},
+    ]
+
+    def _send(self, auth_method="key", **payload):
+        plugin = HttpApi(MagicMock())
+        plugin.get_option = {"api_key": "testkey", "auth_method": auth_method}.get
+        plugin.connection.send.return_value = _make_response(
+            {"success": True, "data": None, "error": None},
+        )
+        plugin.send_request("/configure", **payload)
+        return parse_qs(plugin.connection.send.call_args[1]["data"])
+
+    def test_a_batch_is_sent_as_a_bare_list(self):
+        form = self._send(_raw_list=self.commands)
+        self.assertEqual(json.loads(form["data"][0]), self.commands)
+
+    def test_a_batch_is_sent_as_a_bare_list_with_header_auth(self):
+        form = self._send(auth_method="header", _raw_list=self.commands)
+        self.assertEqual(json.loads(form["data"][0]), self.commands)
+        self.assertNotIn("key", form)
+
+    def test_a_single_command_is_still_sent_as_an_object(self):
+        form = self._send(op="showConfig", path=["system"])
+        self.assertEqual(json.loads(form["data"][0]), {"op": "showConfig", "path": ["system"]})
 
 
 class TestSendRequestHeaderMethod(unittest.TestCase):

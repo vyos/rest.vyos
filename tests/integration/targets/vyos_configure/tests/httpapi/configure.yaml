@@ -28,6 +28,52 @@
           - result.changed == true
           - result.commands | length == 2
 
+    - name: Set a description that contains spaces (quoted)
+      register: result
+      vyos.rest.vyos_configure:
+        commands:
+          - set interfaces loopback lo description "vyos_configure quoting test"
+
+    - assert:
+        that:
+          - result.changed == true
+          - result.commands[0][1] == ["interfaces", "loopback", "lo", "description", "vyos_configure quoting test"]
+
+    - name: Read the description back from the device
+      register: shown
+      vyos.rest.vyos_command:
+        commands:
+          - - configuration
+            - commands
+
+    - assert:
+        that:
+          - "'vyos_configure quoting test' in shown.stdout[0]"
+
+    - name: Delete the description
+      vyos.rest.vyos_configure:
+        commands:
+          - delete interfaces loopback lo description
+
+    - name: Apply and save in one task
+      register: result
+      vyos.rest.vyos_configure:
+        commands:
+          - set interfaces loopback lo description "vyos_configure save test"
+        save: true
+
+    - assert:
+        that:
+          - result is not failed
+          - result.changed == true
+
+    - name: Remove it again and save, so the saved configuration is clean
+      vyos.rest.vyos_configure:
+        commands:
+          - delete interfaces loopback lo description
+          - delete interfaces loopback lo description
+        save: true
+
     - name: Delete loopback addresses
       register: result
       vyos.rest.vyos_configure:
