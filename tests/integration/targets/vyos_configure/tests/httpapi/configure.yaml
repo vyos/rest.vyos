@@ -71,7 +71,6 @@
       vyos.rest.vyos_configure:
         commands:
           - delete interfaces loopback lo description
-          - delete interfaces loopback lo description
         save: true
 
     - name: Delete loopback addresses
@@ -95,4 +94,5 @@
           - delete interfaces loopback lo address 192.0.2.100/32
           - delete interfaces loopback lo address 192.0.2.101/32
           - delete interfaces loopback lo address 192.0.2.102/32
+          - delete interfaces loopback lo description
       ignore_errors: true
