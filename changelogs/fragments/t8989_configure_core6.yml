@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - httpapi plugin - send a batch of commands as the bare list the VyOS API expects. Every module that applies configuration failed without it.
+  - vyos_configure - parse a quoted value as one argument, so ``description "WAN link"`` is no longer split and the quotes no longer end up in the value.
+  - vyos_configure - fail the task when ``save`` is true and the configuration could not be saved.

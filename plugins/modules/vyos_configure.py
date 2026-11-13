@@ -25,12 +25,15 @@ options:
     description:
       - List of CLI-style configuration commands.
       - Each command must start with C(set) or C(delete).
+      - Quote a value that contains spaces, as in the CLI, for example
+        C(set interfaces ethernet eth0 description "WAN link").
     type: list
     elements: str
     required: true
   save:
     description:
       - Whether to save the configuration after applying commands.
+      - The task fails if the configuration cannot be saved, even though the commands were applied.
     type: bool
     default: false
 seealso:
@@ -69,6 +72,8 @@ response:
   type: dict
 """
 
+import shlex
+
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.vyos.rest.plugins.module_utils.vyos import VyOSModule
 
@@ -79,18 +84,18 @@ def _parse_command(line):
     Examples:
         "set interfaces loopback lo address 20.1.1.1/32"
             -> ("set", ["interfaces", "loopback", "lo", "address", "20.1.1.1/32"])
+        'set interfaces ethernet eth0 description "WAN link"'
+            -> ("set", ["interfaces", "ethernet", "eth0", "description", "WAN link"])
         "delete service snmp"
             -> ("delete", ["service", "snmp"])
+
+    Returns None when the line is not a set or delete command with a path.
+    Raises ValueError when a quote is not closed.
     """
-    line = line.strip()
-    if line.startswith("set "):
-        parts = line[4:].split()
-        return ("set", parts)
-    elif line.startswith("delete "):
-        parts = line[7:].split()
-        return ("delete", parts)
-    else:
+    tokens = shlex.split(line)
+    if len(tokens) < 2 or tokens[0] not in ("set", "delete"):
         return None
+    return (tokens[0], tokens[1:])
 
 
 def main():
@@ -108,7 +113,12 @@ def main():
 
     commands = []
     for line in commands_raw:
-        parsed = _parse_command(line)
+        parsed = None
+        try:
+            parsed = _parse_command(line)
+        except ValueError as exc:
+            module.fail_json(msg="Invalid command '{c}': {e}".format(c=line, e=exc))
+
         if parsed is None:
             module.fail_json(
                 msg="Invalid command '{c}' — must start with 'set' or 'delete'".format(c=line),
@@ -123,8 +133,13 @@ def main():
 
     response = vyos.apply_commands(commands)
 
-    if do_save:
-        vyos.save_config()
+    if do_save and not vyos.save_config():
+        module.fail_json(
+            msg="The commands were applied but saving the configuration failed",
+            changed=True,
+            commands=commands,
+            response=response,
+        )
 
     module.exit_json(
         changed=True,
