@@ -6,8 +6,9 @@ __metaclass__ = type
 
 import unittest
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from ansible_collections.vyos.rest.plugins.modules import vyos_snmp_server as snmp_module
 from ansible_collections.vyos.rest.plugins.modules.vyos_snmp_server import (
     _DEVICE_RENAMES,
     ARGUMENT_SPEC,
@@ -16,6 +17,7 @@ from ansible_collections.vyos.rest.plugins.modules.vyos_snmp_server import (
     _device_to_spec,
     _keyed_list_from_device,
     _keyed_list_to_device,
+    _secret_values,
     _single_from_device,
     _single_to_device,
     _spec_to_device,
@@ -638,6 +640,100 @@ class TestBuildCommands(VyOSModuleTestCase):
         raw_have = {"trap-target": {"203.0.113.5": {"community": "public"}}}
         config = {"trap_target": {"address": "203.0.113.5", "community": "public"}}
         self.assertEqual(build_commands(config, raw_have, "merged"), [])
+
+
+def _walk(options, name):
+    """Every option called ``name`` anywhere in an argspec."""
+    for key, opt in (options or {}).items():
+        if key == name:
+            yield opt
+        for found in _walk(opt.get("options"), name):
+            yield found
+
+
+def _fixture_secrets(raw):
+    """The secret values in the running-config fixture."""
+    v3 = raw["v3"]
+    return {
+        "switches",
+        "bridges",
+        raw["trap-target"]["203.0.113.5"]["community"],
+        v3["user"]["admin_user"]["auth"]["encrypted-password"],
+        v3["user"]["admin_user"]["privacy"]["encrypted-password"],
+        v3["trap-target"]["198.51.100.5"]["auth"]["encrypted-password"],
+    }
+
+
+class TestSecretsAreMasked(unittest.TestCase):
+    """SEC-1 / SEC-2: secrets read back from the device are masked in the module output.
+
+    Ansible masks no_log parameters it was given, but not values read from the device, so
+    the module registers those values itself. Which options are secret comes from the
+    argspec's own no_log flags.
+    """
+
+    options = ARGUMENT_SPEC["config"]["options"]
+
+    def test_the_snmpv3_keys_are_flagged_no_log(self):
+        flags = [opt.get("no_log") for opt in _walk(self.options, "encrypted_key")]
+        self.assertGreaterEqual(len(flags), 3)
+        self.assertTrue(all(flags))
+
+    def test_community_names_and_the_trap_community_are_flagged_no_log(self):
+        self.assertIs(self.options["communities"]["options"]["name"]["no_log"], True)
+        self.assertIs(self.options["trap_target"]["options"]["community"]["no_log"], True)
+
+    def test_tsm_key_does_not_exist_in_vyos_and_is_gone(self):
+        self.assertEqual(list(_walk(self.options, "tsm_key")), [])
+        self.assertNotIn("tsm_key", snmp_module.DOCUMENTATION)
+
+    def test_secret_values_are_taken_from_the_flagged_options_only(self):
+        raw = load_fixture("snmp_server_running.json")
+        found = _secret_values(_device_to_argspec(raw), self.options)
+        self.assertEqual(found, _fixture_secrets(raw))
+        self.assertNotIn(raw["contact"], found)
+
+    def test_empty_and_non_string_values_are_ignored(self):
+        have = {
+            "communities": [{"name": "", "authorization_type": "ro"}],
+            "listen_addresses": [{"port": 161}],
+        }
+        self.assertEqual(_secret_values(have, self.options), set())
+
+    def run_main(self, state, include_secrets=False):
+        module = MagicMock()
+        module.params = {"state": state, "config": None, "include_secrets": include_secrets}
+        module.check_mode = False
+        module.no_log_values = set()
+        module.exit_json.side_effect = SystemExit
+        vyos = MagicMock()
+        vyos.get_config.return_value = load_fixture("snmp_server_running.json")
+        with patch.object(snmp_module, "AnsibleModule", return_value=module):
+            with patch.object(snmp_module, "VyOSModule", return_value=vyos):
+                try:
+                    snmp_module.main()
+                except SystemExit:
+                    pass
+        return module
+
+    def test_gathered_masks_the_device_secrets_by_default(self):
+        module = self.run_main("gathered")
+        self.assertEqual(
+            module.no_log_values,
+            _fixture_secrets(load_fixture("snmp_server_running.json")),
+        )
+        module.exit_json.assert_called_once()
+
+    def test_include_secrets_returns_them_in_gathered(self):
+        module = self.run_main("gathered", include_secrets=True)
+        self.assertEqual(module.no_log_values, set())
+
+    def test_before_and_after_stay_masked_even_with_include_secrets(self):
+        module = self.run_main("merged", include_secrets=True)
+        self.assertEqual(
+            module.no_log_values,
+            _fixture_secrets(load_fixture("snmp_server_running.json")),
+        )
 
 
 if __name__ == "__main__":

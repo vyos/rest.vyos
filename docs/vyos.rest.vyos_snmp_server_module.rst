@@ -861,24 +861,6 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>tsm_key</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>TSM fingerprint of the certificate mapped to this user.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>user</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -1072,6 +1054,28 @@ Parameters
             </tr>
 
 
+            <tr>
+                <td colspan="5">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>include_secrets</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">boolean</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li><div style="color: blue"><b>no</b>&nbsp;&larr;</div></li>
+                                    <li>yes</li>
+                        </ul>
+                </td>
+                <td>
+                        <div>Include the secrets read from the device in the <code>gathered</code> result.</div>
+                        <div>The secrets are the SNMPv3 authentication and privacy keys, the community names and the trap-target community.</div>
+                        <div>They are always masked in <code>before</code> and <code>after</code>, and in <code>gathered</code> unless this is true.</div>
+                        <div>Masking replaces every occurrence of a secret value in the returned data.</div>
+                </td>
+            </tr>
             <tr>
                 <td colspan="5">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>

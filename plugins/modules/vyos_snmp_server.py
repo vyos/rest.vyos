@@ -160,9 +160,6 @@ options:
                 description: Access mode for this user.
                 type: str
                 choices: ['ro', 'rw']
-              tsm_key:
-                description: TSM fingerprint of the certificate mapped to this user.
-                type: str
           trap_targets:
             description: SNMPv3 trap target configuration.
             type: list
@@ -230,6 +227,14 @@ options:
               mask:
                 description: OID mask for the view.
                 type: str
+  include_secrets:
+    description:
+      - Include the secrets read from the device in the C(gathered) result.
+      - The secrets are the SNMPv3 authentication and privacy keys, the community names and the trap-target community.
+      - They are always masked in C(before) and C(after), and in C(gathered) unless this is true.
+      - Masking replaces every occurrence of a secret value in the returned data.
+    type: bool
+    default: false
   state:
     description:
       - Desired state of SNMP configuration.
@@ -715,7 +720,7 @@ def build_commands(config, raw_have, state):
 def _auth_privacy_spec():
     return dict(
         type=dict(type="str"),
-        encrypted_key=dict(type="str", no_log=False),
+        encrypted_key=dict(type="str", no_log=True),
         plaintext_key=dict(type="str", no_log=True),
     )
 
@@ -728,7 +733,7 @@ ARGUMENT_SPEC = dict(
                 type="list",
                 elements="dict",
                 options=dict(
-                    name=dict(type="str", required=True),
+                    name=dict(type="str", required=True, no_log=True),
                     clients=dict(type="list", elements="str"),
                     networks=dict(type="list", elements="str"),
                     authorization_type=dict(type="str", choices=["ro", "rw"]),
@@ -751,7 +756,7 @@ ARGUMENT_SPEC = dict(
                 type="dict",
                 options=dict(
                     address=dict(type="str", required=True),
-                    community=dict(type="str"),
+                    community=dict(type="str", no_log=True),
                     port=dict(type="int"),
                 ),
             ),
@@ -778,7 +783,6 @@ ARGUMENT_SPEC = dict(
                             privacy=dict(type="dict", options=_auth_privacy_spec()),
                             group=dict(type="str"),
                             mode=dict(type="str", choices=["ro", "rw"]),
-                            tsm_key=dict(type="str", no_log=True),
                         ),
                     ),
                     trap_targets=dict(
@@ -807,6 +811,7 @@ ARGUMENT_SPEC = dict(
             ),
         ),
     ),
+    include_secrets=dict(type="bool", default=False),
     state=dict(
         type="str",
         default="merged",
@@ -818,6 +823,23 @@ _TOP_OPTIONS = ARGUMENT_SPEC["config"]["options"]
 _TRAP_TARGET_OPTIONS = _TOP_OPTIONS["trap_target"]["options"]
 
 
+def _secret_values(data, options):
+    """Values of every option the argspec flags no_log, found in an argspec-shaped result."""
+    found = set()
+    if isinstance(data, list):
+        for item in data:
+            found |= _secret_values(item, options)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            spec = (options or {}).get(key) or {}
+            if spec.get("no_log") and isinstance(value, (str, int)) and not isinstance(value, bool):
+                if value != "":
+                    found.add(str(value))
+            else:
+                found |= _secret_values(value, spec.get("options"))
+    return found
+
+
 def main():
     module = AnsibleModule(argument_spec=ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
@@ -826,6 +848,11 @@ def main():
 
     raw_have = get_running_config(vyos)
     have = _device_to_argspec(raw_have)
+
+    # Secrets read back from the device are not parameters, so Ansible would not mask them.
+    # Register them so they are masked in everything the module returns.
+    if state != "gathered" or not module.params["include_secrets"]:
+        module.no_log_values.update(_secret_values(have, ARGUMENT_SPEC["config"]["options"]))
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
