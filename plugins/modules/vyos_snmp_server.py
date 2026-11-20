@@ -54,10 +54,9 @@ options:
         description: System location.
         type: str
       smux_peer:
-        description: >-
-          Register a subtree for SMUX-based processing. The device supports
-          multiple values here; this module manages a single value only.
-        type: str
+        description: Subtrees to register for SMUX-based processing.
+        type: list
+        elements: str
       trap_source:
         description: SNMP trap source address.
         type: str
@@ -238,6 +237,12 @@ options:
   state:
     description:
       - Desired state of SNMP configuration.
+      - With C(deleted) and no C(config), all SNMP configuration is removed.
+      - With C(deleted) and a C(config), only what it names is removed, and only if it exists.
+      - A named community, listen address, trap target, or SNMPv3 group, user, view or trap
+        target is removed as a whole entry, whatever other values are given for it.
+      - A named single-value field such as C(contact) is removed whatever value is given.
+        For C(smux_peer) only the listed peers are removed.
     type: str
     default: merged
     choices:
@@ -246,6 +251,11 @@ options:
       - overridden
       - deleted
       - gathered
+notes:
+  - The device keeps only a hash of a key set with C(plaintext_key), so the key can never be read back.
+    A task that sets it reports C(changed) on every run.
+  - For idempotent runs supply C(encrypted_key) instead. Use C(gathered) with C(include_secrets) to read it.
+
 """
 
 EXAMPLES = r"""
@@ -688,12 +698,38 @@ def _protect_credentials_from_purge(want, have):
         _protect_credentials_from_purge(want_val, have_val)
 
 
+def _named_deletes(want, have, path):
+    """Delete commands for what ``want`` names and ``have`` contains, and nothing else."""
+    commands = []
+    for key, wanted in want.items():
+        if key not in have:
+            continue
+        current, here = have[key], path + [key]
+        if key.replace("-", "_") in _VERBATIM_KEYS:
+            commands += [("delete", here + [name]) for name in wanted if name in (current or {})]
+        elif isinstance(wanted, dict):
+            if isinstance(current, dict):
+                commands += _named_deletes(wanted, current, here)
+        elif isinstance(wanted, list):
+            present = current if isinstance(current, list) else [current]
+            commands += [("delete", here + [item]) for item in wanted if item in present]
+        else:
+            commands.append(("delete", here))
+    return commands
+
+
 def build_commands(config, raw_have, state):
     raw_have = raw_have or {}
     config = config or {}
 
     if state == "deleted":
-        return [("delete", _BASE)] if raw_have else []
+        if not raw_have:
+            return []
+        if all(value is None for value in config.values()):
+            return [("delete", _BASE)]
+        # A config names what to remove; whatever it does not name stays.
+        norm_have = _want_to_device(_device_to_argspec(raw_have))
+        return _named_deletes(_want_to_device(config), norm_have, _BASE)
 
     want = _want_to_device(config)
     # Rather than a generic key-name-based normalize_have, round-trip
@@ -747,7 +783,7 @@ ARGUMENT_SPEC = dict(
             contact=dict(type="str"),
             description=dict(type="str"),
             location=dict(type="str"),
-            smux_peer=dict(type="str"),
+            smux_peer=dict(type="list", elements="str"),
             trap_source=dict(type="str"),
             listen_addresses=dict(
                 type="list",

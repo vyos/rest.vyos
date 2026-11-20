@@ -251,13 +251,14 @@ Parameters
                     <b>smux_peer</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">string</span>
+                        <span style="color: purple">list</span>
+                         / <span style="color: purple">elements=string</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>Register a subtree for SMUX-based processing. The device supports multiple values here; this module manages a single value only.</div>
+                        <div>Subtrees to register for SMUX-based processing.</div>
                 </td>
             </tr>
             <tr>
@@ -1096,11 +1097,22 @@ Parameters
                 </td>
                 <td>
                         <div>Desired state of SNMP configuration.</div>
+                        <div>With <code>deleted</code> and no <code>config</code>, all SNMP configuration is removed.</div>
+                        <div>With <code>deleted</code> and a <code>config</code>, only what it names is removed, and only if it exists.</div>
+                        <div>A named community, listen address, trap target, or SNMPv3 group, user, view or trap target is removed as a whole entry, whatever other values are given for it.</div>
+                        <div>A named single-value field such as <code>contact</code> is removed whatever value is given. For <code>smux_peer</code> only the listed peers are removed.</div>
                 </td>
             </tr>
     </table>
     <br/>
 
+
+Notes
+-----
+
+.. note::
+   - The device keeps only a hash of a key set with ``plaintext_key``, so the key can never be read back. A task that sets it reports ``changed`` on every run.
+   - For idempotent runs supply ``encrypted_key`` instead. Use ``gathered`` with ``include_secrets`` to read it.
 
 
 

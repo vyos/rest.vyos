@@ -762,7 +762,7 @@ class TestKebabCaseKeysInPaths(unittest.TestCase):
         self.assertEqual(cmds, [("set", _BASE + ["trap-source", "192.0.2.9"])])
 
     def test_updating_smux_peer_uses_the_device_name(self):
-        cmds = build_commands({"smux_peer": "1.3.6.1.4.1.9999"}, self.on_device, "merged")
+        cmds = build_commands({"smux_peer": ["1.3.6.1.4.1.9999"]}, self.on_device, "merged")
         self.assertEqual(cmds, [("set", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
 
     def test_purging_removes_them_by_device_name(self):
@@ -772,13 +772,141 @@ class TestKebabCaseKeysInPaths(unittest.TestCase):
         self.assertEqual(len(cmds), 2)
 
     def test_unchanged_values_are_idempotent(self):
-        config = {"trap_source": "192.0.2.1", "smux_peer": "1.3.6.1.4.1.2021"}
+        config = {"trap_source": "192.0.2.1", "smux_peer": ["1.3.6.1.4.1.2021"]}
         self.assertEqual(build_commands(config, self.on_device, "merged"), [])
 
     def test_every_option_with_an_underscore_has_a_device_name(self):
         # trap_target is converted separately, see _want_to_device
         unnamed = {n for n in _option_names(ARGUMENT_SPEC["config"]["options"]) if "_" in n}
         self.assertEqual(unnamed - set(_DEVICE_RENAMES) - {"trap_target"}, set())
+
+
+class TestSmuxPeerIsAList(unittest.TestCase):
+    """MOD-14: smux-peer is <multi/> in the VyOS schema, so the option is a list."""
+
+    def test_it_is_a_list_of_strings(self):
+        spec = ARGUMENT_SPEC["config"]["options"]["smux_peer"]
+        self.assertEqual((spec["type"], spec["elements"]), ("list", "str"))
+
+    def test_a_single_device_value_is_returned_as_a_one_item_list(self):
+        have = _device_to_argspec({"smux-peer": "1.3.6.1.4.1.2021"})
+        self.assertEqual(have["smux_peer"], ["1.3.6.1.4.1.2021"])
+
+    def test_several_device_values_are_returned_sorted(self):
+        have = _device_to_argspec({"smux-peer": ["1.3.6.1.4.1.9999", "1.3.6.1.4.1.2021"]})
+        self.assertEqual(have["smux_peer"], ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"])
+
+    def test_merged_adds_a_second_peer_and_leaves_the_first(self):
+        config = {"smux_peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        cmds = build_commands(config, {"smux-peer": "1.3.6.1.4.1.2021"}, "merged")
+        self.assertEqual(cmds, [("set", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
+
+    def test_overridden_removes_a_peer_that_is_not_listed(self):
+        raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        cmds = build_commands({"smux_peer": ["1.3.6.1.4.1.2021"]}, raw, "overridden")
+        self.assertEqual(cmds, [("delete", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
+
+    def test_unchanged_peers_are_idempotent(self):
+        raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        config = {"smux_peer": ["1.3.6.1.4.1.9999", "1.3.6.1.4.1.2021"]}
+        self.assertEqual(build_commands(config, raw, "merged"), [])
+
+
+class TestDeletedHonoursConfig(unittest.TestCase):
+    """MOD-1: ``deleted`` removed all of service snmp whatever the config named."""
+
+    raw = load_fixture("snmp_server_running.json")
+
+    def deleted(self, config, raw=None):
+        return build_commands(config, self.raw if raw is None else raw, "deleted")
+
+    def test_without_a_config_everything_is_removed(self):
+        self.assertEqual(self.deleted({}), [("delete", _BASE)])
+        self.assertEqual(self.deleted({"contact": None, "snmp_v3": None}), [("delete", _BASE)])
+
+    def test_naming_one_field_removes_only_that_field(self):
+        self.assertEqual(
+            self.deleted({"contact": self.raw["contact"]}),
+            [("delete", _BASE + ["contact"])],
+        )
+
+    def test_the_value_given_for_a_single_value_field_is_ignored(self):
+        self.assertEqual(
+            self.deleted({"contact": "someone.else@example.com"}),
+            [("delete", _BASE + ["contact"])],
+        )
+
+    def test_a_named_community_is_removed_whole_and_the_others_stay(self):
+        self.assertEqual(
+            self.deleted({"communities": [{"name": "switches"}]}),
+            [("delete", _BASE + ["community", "switches"])],
+        )
+
+    def test_extra_values_given_for_a_community_do_not_narrow_the_delete(self):
+        config = {"communities": [{"name": "switches", "authorization_type": "ro"}]}
+        self.assertEqual(self.deleted(config), [("delete", _BASE + ["community", "switches"])])
+
+    def test_a_name_the_device_does_not_have_changes_nothing(self):
+        self.assertEqual(self.deleted({"communities": [{"name": "nope"}]}), [])
+
+    def test_a_named_snmpv3_user_is_removed_whole(self):
+        config = {"snmp_v3": {"users": [{"user": "admin_user"}]}}
+        self.assertEqual(self.deleted(config), [("delete", _BASE + ["v3", "user", "admin_user"])])
+
+    def test_a_named_snmpv3_group_is_removed_whole(self):
+        raw = {"v3": {"group": {"admins": {"mode": "rw"}, "ops": {}}}}
+        config = {"snmp_v3": {"groups": [{"group": "admins"}]}}
+        self.assertEqual(self.deleted(config, raw), [("delete", _BASE + ["v3", "group", "admins"])])
+
+    def test_the_snmpv3_engine_id_is_removed_when_named(self):
+        config = {"snmp_v3": {"engine_id": "000000000000000000000002"}}
+        self.assertEqual(self.deleted(config), [("delete", _BASE + ["v3", "engineid"])])
+
+    def test_the_trap_target_is_removed_by_address(self):
+        config = {"trap_target": {"address": "203.0.113.5"}}
+        self.assertEqual(self.deleted(config), [("delete", _BASE + ["trap-target", "203.0.113.5"])])
+
+    def test_a_named_listen_address_is_removed_and_the_other_stays(self):
+        raw = {"listen-address": {"20.1.1.1": {}, "100.1.2.1": {"port": "33"}}}
+        config = {"listen_addresses": [{"address": "100.1.2.1"}]}
+        self.assertEqual(
+            self.deleted(config, raw),
+            [("delete", _BASE + ["listen-address", "100.1.2.1"])],
+        )
+
+    def test_only_the_listed_smux_peers_are_removed(self):
+        raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        config = {"smux_peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.5555"]}
+        self.assertEqual(
+            self.deleted(config, raw),
+            [("delete", _BASE + ["smux-peer", "1.3.6.1.4.1.2021"])],
+        )
+
+    def test_an_empty_section_names_nothing_and_removes_nothing(self):
+        self.assertEqual(self.deleted({"communities": None, "snmp_v3": {}}), [])
+
+    def test_nothing_is_deleted_when_the_device_has_no_snmp_config(self):
+        self.assertEqual(self.deleted({"contact": "x"}, {}), [])
+
+
+class TestPlaintextKeyIsSetOnEveryRun(VyOSModuleTestCase):
+    """MOD-15: the device stores only a hash, so a plaintext_key can never be read back."""
+
+    def user(self, **authentication):
+        return {"snmp_v3": {"users": [{"user": "admin_user", "authentication": authentication}]}}
+
+    def test_a_plaintext_key_is_set_again_on_every_run(self):
+        config = self.user(type="sha", plaintext_key="abc1234567")
+        cmds = build_commands(config, self.fixture, "merged")
+        path = ["v3", "user", "admin_user", "auth", "plaintext-password", "abc1234567"]
+        self.assertIn(("set", _BASE + path), cmds)
+
+    def test_an_encrypted_key_that_matches_the_device_is_idempotent(self):
+        config = self.user(type="sha", encrypted_key="abc123")
+        self.assertEqual(build_commands(config, self.fixture, "merged"), [])
+
+    def test_the_documentation_says_so(self):
+        self.assertIn("reports C(changed) on every run", snmp_module.DOCUMENTATION)
 
 
 if __name__ == "__main__":
