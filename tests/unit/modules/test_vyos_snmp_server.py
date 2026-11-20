@@ -647,8 +647,7 @@ def _walk(options, name):
     for key, opt in (options or {}).items():
         if key == name:
             yield opt
-        for found in _walk(opt.get("options"), name):
-            yield found
+        yield from _walk(opt.get("options"), name)
 
 
 def _fixture_secrets(raw):
