@@ -54,10 +54,9 @@ options:
         description: System location.
         type: str
       smux_peer:
-        description: >-
-          Register a subtree for SMUX-based processing. The device supports
-          multiple values here; this module manages a single value only.
-        type: str
+        description: Subtrees to register for SMUX-based processing.
+        type: list
+        elements: str
       trap_source:
         description: SNMP trap source address.
         type: str
@@ -160,9 +159,6 @@ options:
                 description: Access mode for this user.
                 type: str
                 choices: ['ro', 'rw']
-              tsm_key:
-                description: TSM fingerprint of the certificate mapped to this user.
-                type: str
           trap_targets:
             description: SNMPv3 trap target configuration.
             type: list
@@ -230,9 +226,23 @@ options:
               mask:
                 description: OID mask for the view.
                 type: str
+  include_secrets:
+    description:
+      - Include the secrets read from the device in the C(gathered) result.
+      - The secrets are the SNMPv3 authentication and privacy keys, the community names and the trap-target community.
+      - They are always masked in C(before) and C(after), and in C(gathered) unless this is true.
+      - Masking replaces every occurrence of a secret value in the returned data.
+    type: bool
+    default: false
   state:
     description:
       - Desired state of SNMP configuration.
+      - With C(deleted) and no C(config), all SNMP configuration is removed.
+      - With C(deleted) and a C(config), only what it names is removed, and only if it exists.
+      - A named community, listen address, trap target, or SNMPv3 group, user, view or trap
+        target is removed as a whole entry, whatever other values are given for it.
+      - A named single-value field such as C(contact) is removed whatever value is given.
+        For C(smux_peer) only the listed peers are removed.
     type: str
     default: merged
     choices:
@@ -241,6 +251,11 @@ options:
       - overridden
       - deleted
       - gathered
+notes:
+  - The device keeps only a hash of a key set with C(plaintext_key), so the key can never be read back.
+    A task that sets it reports C(changed) on every run.
+  - For idempotent runs supply C(encrypted_key) instead. Use C(gathered) with C(include_secrets) to read it.
+
 """
 
 EXAMPLES = r"""
@@ -353,6 +368,11 @@ _DEVICE_RENAMES = {
     "users": "user",
     "views": "view",
     "trap_targets": "trap-target",
+    # Plain kebab<->snake names, listed because dict_op builds the path from the key found in
+    # have: left snake_case, every update or purge of an existing field emitted an invalid
+    # path such as "trap_source" (CORE-5).
+    "trap_source": "trap-source",
+    "smux_peer": "smux-peer",
 }
 
 
@@ -678,12 +698,38 @@ def _protect_credentials_from_purge(want, have):
         _protect_credentials_from_purge(want_val, have_val)
 
 
+def _named_deletes(want, have, path):
+    """Delete commands for what ``want`` names and ``have`` contains, and nothing else."""
+    commands = []
+    for key, wanted in want.items():
+        if key not in have:
+            continue
+        current, here = have[key], path + [key]
+        if key.replace("-", "_") in _VERBATIM_KEYS:
+            commands += [("delete", here + [name]) for name in wanted if name in (current or {})]
+        elif isinstance(wanted, dict):
+            if isinstance(current, dict):
+                commands += _named_deletes(wanted, current, here)
+        elif isinstance(wanted, list):
+            present = current if isinstance(current, list) else [current]
+            commands += [("delete", here + [item]) for item in wanted if item in present]
+        else:
+            commands.append(("delete", here))
+    return commands
+
+
 def build_commands(config, raw_have, state):
     raw_have = raw_have or {}
     config = config or {}
 
     if state == "deleted":
-        return [("delete", _BASE)] if raw_have else []
+        if not raw_have:
+            return []
+        if all(value is None for value in config.values()):
+            return [("delete", _BASE)]
+        # A config names what to remove; whatever it does not name stays.
+        norm_have = _want_to_device(_device_to_argspec(raw_have))
+        return _named_deletes(_want_to_device(config), norm_have, _BASE)
 
     want = _want_to_device(config)
     # Rather than a generic key-name-based normalize_have, round-trip
@@ -715,7 +761,7 @@ def build_commands(config, raw_have, state):
 def _auth_privacy_spec():
     return dict(
         type=dict(type="str"),
-        encrypted_key=dict(type="str", no_log=False),
+        encrypted_key=dict(type="str", no_log=True),
         plaintext_key=dict(type="str", no_log=True),
     )
 
@@ -728,7 +774,7 @@ ARGUMENT_SPEC = dict(
                 type="list",
                 elements="dict",
                 options=dict(
-                    name=dict(type="str", required=True),
+                    name=dict(type="str", required=True, no_log=True),
                     clients=dict(type="list", elements="str"),
                     networks=dict(type="list", elements="str"),
                     authorization_type=dict(type="str", choices=["ro", "rw"]),
@@ -737,7 +783,7 @@ ARGUMENT_SPEC = dict(
             contact=dict(type="str"),
             description=dict(type="str"),
             location=dict(type="str"),
-            smux_peer=dict(type="str"),
+            smux_peer=dict(type="list", elements="str"),
             trap_source=dict(type="str"),
             listen_addresses=dict(
                 type="list",
@@ -751,7 +797,7 @@ ARGUMENT_SPEC = dict(
                 type="dict",
                 options=dict(
                     address=dict(type="str", required=True),
-                    community=dict(type="str"),
+                    community=dict(type="str", no_log=True),
                     port=dict(type="int"),
                 ),
             ),
@@ -778,7 +824,6 @@ ARGUMENT_SPEC = dict(
                             privacy=dict(type="dict", options=_auth_privacy_spec()),
                             group=dict(type="str"),
                             mode=dict(type="str", choices=["ro", "rw"]),
-                            tsm_key=dict(type="str", no_log=True),
                         ),
                     ),
                     trap_targets=dict(
@@ -807,6 +852,7 @@ ARGUMENT_SPEC = dict(
             ),
         ),
     ),
+    include_secrets=dict(type="bool", default=False),
     state=dict(
         type="str",
         default="merged",
@@ -818,6 +864,23 @@ _TOP_OPTIONS = ARGUMENT_SPEC["config"]["options"]
 _TRAP_TARGET_OPTIONS = _TOP_OPTIONS["trap_target"]["options"]
 
 
+def _secret_values(data, options):
+    """Values of every option the argspec flags no_log, found in an argspec-shaped result."""
+    found = set()
+    if isinstance(data, list):
+        for item in data:
+            found |= _secret_values(item, options)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            spec = (options or {}).get(key) or {}
+            if spec.get("no_log") and isinstance(value, (str, int)) and not isinstance(value, bool):
+                if value != "":
+                    found.add(str(value))
+            else:
+                found |= _secret_values(value, spec.get("options"))
+    return found
+
+
 def main():
     module = AnsibleModule(argument_spec=ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
@@ -826,6 +889,11 @@ def main():
 
     raw_have = get_running_config(vyos)
     have = _device_to_argspec(raw_have)
+
+    # Secrets read back from the device are not parameters, so Ansible would not mask them.
+    # Register them so they are masked in everything the module returns.
+    if state != "gathered" or not module.params["include_secrets"]:
+        module.no_log_values.update(_secret_values(have, ARGUMENT_SPEC["config"]["options"]))
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)

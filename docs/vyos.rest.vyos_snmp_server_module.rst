@@ -251,13 +251,14 @@ Parameters
                     <b>smux_peer</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
-                        <span style="color: purple">string</span>
+                        <span style="color: purple">list</span>
+                         / <span style="color: purple">elements=string</span>
                     </div>
                 </td>
                 <td>
                 </td>
                 <td>
-                        <div>Register a subtree for SMUX-based processing. The device supports multiple values here; this module manages a single value only.</div>
+                        <div>Subtrees to register for SMUX-based processing.</div>
                 </td>
             </tr>
             <tr>
@@ -861,24 +862,6 @@ Parameters
                     <td class="elbow-placeholder"></td>
                 <td colspan="2">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
-                    <b>tsm_key</b>
-                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
-                    <div style="font-size: small">
-                        <span style="color: purple">string</span>
-                    </div>
-                </td>
-                <td>
-                </td>
-                <td>
-                        <div>TSM fingerprint of the certificate mapped to this user.</div>
-                </td>
-            </tr>
-            <tr>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                    <td class="elbow-placeholder"></td>
-                <td colspan="2">
-                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>user</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -1075,6 +1058,28 @@ Parameters
             <tr>
                 <td colspan="5">
                     <div class="ansibleOptionAnchor" id="parameter-"></div>
+                    <b>include_secrets</b>
+                    <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
+                    <div style="font-size: small">
+                        <span style="color: purple">boolean</span>
+                    </div>
+                </td>
+                <td>
+                        <ul style="margin: 0; padding: 0"><b>Choices:</b>
+                                    <li><div style="color: blue"><b>no</b>&nbsp;&larr;</div></li>
+                                    <li>yes</li>
+                        </ul>
+                </td>
+                <td>
+                        <div>Include the secrets read from the device in the <code>gathered</code> result.</div>
+                        <div>The secrets are the SNMPv3 authentication and privacy keys, the community names and the trap-target community.</div>
+                        <div>They are always masked in <code>before</code> and <code>after</code>, and in <code>gathered</code> unless this is true.</div>
+                        <div>Masking replaces every occurrence of a secret value in the returned data.</div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="5">
+                    <div class="ansibleOptionAnchor" id="parameter-"></div>
                     <b>state</b>
                     <a class="ansibleOptionLink" href="#parameter-" title="Permalink to this option"></a>
                     <div style="font-size: small">
@@ -1092,11 +1097,22 @@ Parameters
                 </td>
                 <td>
                         <div>Desired state of SNMP configuration.</div>
+                        <div>With <code>deleted</code> and no <code>config</code>, all SNMP configuration is removed.</div>
+                        <div>With <code>deleted</code> and a <code>config</code>, only what it names is removed, and only if it exists.</div>
+                        <div>A named community, listen address, trap target, or SNMPv3 group, user, view or trap target is removed as a whole entry, whatever other values are given for it.</div>
+                        <div>A named single-value field such as <code>contact</code> is removed whatever value is given. For <code>smux_peer</code> only the listed peers are removed.</div>
                 </td>
             </tr>
     </table>
     <br/>
 
+
+Notes
+-----
+
+.. note::
+   - The device keeps only a hash of a key set with ``plaintext_key``, so the key can never be read back. A task that sets it reports ``changed`` on every run.
+   - For idempotent runs supply ``encrypted_key`` instead. Use ``gathered`` with ``include_secrets`` to read it.
 
 
 

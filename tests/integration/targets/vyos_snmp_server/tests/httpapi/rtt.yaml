@@ -44,6 +44,7 @@
       register: gathered
       vyos.rest.vyos_snmp_server:
         state: gathered
+        include_secrets: true
 
     - name: RTT - Assert base configuration present
       assert:
@@ -94,6 +95,7 @@
       register: gathered2
       vyos.rest.vyos_snmp_server:
         state: gathered
+        include_secrets: true
 
     - name: RTT - Assert stale community removed and trap target added
       assert:
