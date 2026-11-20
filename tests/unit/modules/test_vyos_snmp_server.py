@@ -735,5 +735,51 @@ class TestSecretsAreMasked(unittest.TestCase):
         )
 
 
+def _option_names(options):
+    """Every option name anywhere in an argspec."""
+    for key, opt in (options or {}).items():
+        yield key
+        yield from _option_names(opt.get("options"))
+
+
+class TestKebabCaseKeysInPaths(unittest.TestCase):
+    """CORE-5: dict_op builds an API path from the key found in ``have``.
+
+    ``have`` goes through the same converters as ``want``, so an option without a
+    _DEVICE_RENAMES entry stays snake_case, and once the field exists on the device every
+    update or purge emitted a path VyOS rejects. Creating it worked, because dict_op
+    translates a key that is missing from ``have``.
+    """
+
+    on_device = {"trap-source": "192.0.2.1", "smux-peer": "1.3.6.1.4.1.2021"}
+
+    def test_creating_a_field_uses_the_device_name(self):
+        cmds = build_commands({"trap_source": "192.0.2.1"}, {}, "merged")
+        self.assertEqual(cmds, [("set", _BASE + ["trap-source", "192.0.2.1"])])
+
+    def test_updating_trap_source_uses_the_device_name(self):
+        cmds = build_commands({"trap_source": "192.0.2.9"}, self.on_device, "merged")
+        self.assertEqual(cmds, [("set", _BASE + ["trap-source", "192.0.2.9"])])
+
+    def test_updating_smux_peer_uses_the_device_name(self):
+        cmds = build_commands({"smux_peer": "1.3.6.1.4.1.9999"}, self.on_device, "merged")
+        self.assertEqual(cmds, [("set", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
+
+    def test_purging_removes_them_by_device_name(self):
+        cmds = build_commands({}, self.on_device, "overridden")
+        self.assertIn(("delete", _BASE + ["trap-source"]), cmds)
+        self.assertIn(("delete", _BASE + ["smux-peer"]), cmds)
+        self.assertEqual(len(cmds), 2)
+
+    def test_unchanged_values_are_idempotent(self):
+        config = {"trap_source": "192.0.2.1", "smux_peer": "1.3.6.1.4.1.2021"}
+        self.assertEqual(build_commands(config, self.on_device, "merged"), [])
+
+    def test_every_option_with_an_underscore_has_a_device_name(self):
+        # trap_target is converted separately, see _want_to_device
+        unnamed = {n for n in _option_names(ARGUMENT_SPEC["config"]["options"]) if "_" in n}
+        self.assertEqual(unnamed - set(_DEVICE_RENAMES) - {"trap_target"}, set())
+
+
 if __name__ == "__main__":
     unittest.main()

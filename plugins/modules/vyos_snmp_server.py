@@ -358,6 +358,11 @@ _DEVICE_RENAMES = {
     "users": "user",
     "views": "view",
     "trap_targets": "trap-target",
+    # Plain kebab<->snake names, listed because dict_op builds the path from the key found in
+    # have: left snake_case, every update or purge of an existing field emitted an invalid
+    # path such as "trap_source" (CORE-5).
+    "trap_source": "trap-source",
+    "smux_peer": "smux-peer",
 }
 
 
