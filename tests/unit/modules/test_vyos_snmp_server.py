@@ -806,6 +806,27 @@ class TestSmuxPeerIsAList(unittest.TestCase):
         cmds = build_commands({"smux_peer": ["1.3.6.1.4.1.2021"]}, raw, "overridden")
         self.assertEqual(cmds, [("delete", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
 
+    def test_replaced_removes_a_peer_that_is_not_listed_and_leaves_other_sections(self):
+        raw = {
+            "smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"],
+            "contact": "admin@example.com",
+        }
+        cmds = build_commands({"smux_peer": ["1.3.6.1.4.1.2021"]}, raw, "replaced")
+        self.assertEqual(cmds, [("delete", _BASE + ["smux-peer", "1.3.6.1.4.1.9999"])])
+
+    def test_replaced_with_the_same_peers_is_idempotent(self):
+        raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        config = {"smux_peer": ["1.3.6.1.4.1.9999", "1.3.6.1.4.1.2021"]}
+        self.assertEqual(build_commands(config, raw, "replaced"), [])
+
+    def test_replaced_adds_a_missing_peer_when_the_device_has_none(self):
+        cmds = build_commands({"smux_peer": ["1.3.6.1.4.1.2021"]}, {}, "replaced")
+        self.assertEqual(cmds, [("set", _BASE + ["smux-peer", "1.3.6.1.4.1.2021"])])
+
+    def test_merged_stays_additive_and_keeps_peers_that_are_not_listed(self):
+        raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
+        self.assertEqual(build_commands({"smux_peer": ["1.3.6.1.4.1.2021"]}, raw, "merged"), [])
+
     def test_unchanged_peers_are_idempotent(self):
         raw = {"smux-peer": ["1.3.6.1.4.1.2021", "1.3.6.1.4.1.9999"]}
         config = {"smux_peer": ["1.3.6.1.4.1.9999", "1.3.6.1.4.1.2021"]}
@@ -866,6 +887,23 @@ class TestDeletedHonoursConfig(unittest.TestCase):
         config = {"trap_target": {"address": "203.0.113.5"}}
         self.assertEqual(self.deleted(config), [("delete", _BASE + ["trap-target", "203.0.113.5"])])
 
+    def test_any_configured_trap_target_can_be_removed_not_only_the_first(self):
+        raw = {
+            "trap-target": {"192.0.2.10": {"community": "c1"}, "192.0.2.20": {"community": "c2"}},
+        }
+        config = {"trap_target": {"address": "192.0.2.20"}}
+        self.assertEqual(
+            self.deleted(config, raw),
+            [("delete", _BASE + ["trap-target", "192.0.2.20"])],
+        )
+
+    def test_a_trap_target_the_device_does_not_have_changes_nothing(self):
+        raw = {
+            "trap-target": {"192.0.2.10": {"community": "c1"}, "192.0.2.20": {"community": "c2"}},
+        }
+        config = {"trap_target": {"address": "192.0.2.30"}}
+        self.assertEqual(self.deleted(config, raw), [])
+
     def test_a_named_listen_address_is_removed_and_the_other_stays(self):
         raw = {"listen-address": {"20.1.1.1": {}, "100.1.2.1": {"port": "33"}}}
         config = {"listen_addresses": [{"address": "100.1.2.1"}]}
@@ -907,6 +945,106 @@ class TestPlaintextKeyIsSetOnEveryRun(VyOSModuleTestCase):
 
     def test_the_documentation_says_so(self):
         self.assertIn("reports C(changed) on every run", snmp_module.DOCUMENTATION)
+
+
+def _run_snmp_main(state, include_secrets=False, config=None, device=None, after=None):
+    """Run main() against a fake device and return the mocked AnsibleModule."""
+    module = MagicMock()
+    module.params = {"state": state, "config": config, "include_secrets": include_secrets}
+    module.check_mode = False
+    module.no_log_values = set()
+    module.exit_json.side_effect = SystemExit
+    vyos = MagicMock()
+    device = load_fixture("snmp_server_running.json") if device is None else device
+    vyos.get_config.side_effect = [device] if after is None else [device, after]
+    with patch.object(snmp_module, "AnsibleModule", return_value=module):
+        with patch.object(snmp_module, "VyOSModule", return_value=vyos):
+            try:
+                snmp_module.main()
+            except SystemExit:
+                pass
+    return module
+
+
+class TestSecretsAreRegisteredWithTheController(unittest.TestCase):
+    """ansible-core 2.22 masks only what is registered through ansible.module_utils.secrets;
+    before 2.22 the module masks its own result from module.no_log_values."""
+
+    def test_gathered_registers_the_secrets_with_the_new_api(self):
+        with patch.object(snmp_module, "register_secrets") as register:
+            module = _run_snmp_main("gathered")
+        register.assert_called_once()
+        expected = _fixture_secrets(load_fixture("snmp_server_running.json"))
+        self.assertEqual(set(register.call_args[0][0]), expected)
+        self.assertEqual(module.no_log_values, expected)
+
+    def test_include_secrets_registers_nothing(self):
+        with patch.object(snmp_module, "register_secrets") as register:
+            module = _run_snmp_main("gathered", include_secrets=True)
+        register.assert_not_called()
+        self.assertEqual(module.no_log_values, set())
+
+    def test_it_still_masks_where_the_new_api_does_not_exist(self):
+        with patch.object(snmp_module, "register_secrets", None):
+            module = _run_snmp_main("gathered")
+        self.assertEqual(
+            module.no_log_values,
+            _fixture_secrets(load_fixture("snmp_server_running.json")),
+        )
+
+
+class TestSecretsInTheAfterSnapshot(unittest.TestCase):
+    """A commit can make the device generate secrets, such as the hash of a new key. They exist
+    only in what is read back after the commit, so that has to be registered as well."""
+
+    engine = "000000000000000000000002"
+    before = {"v3": {"engineid": engine}}
+    after = {
+        "v3": {
+            "engineid": engine,
+            "user": {
+                "newuser": {
+                    "auth": {"type": "sha", "encrypted-password": "NEW-HASH-A"},
+                    "privacy": {"type": "aes", "encrypted-password": "NEW-HASH-P"},
+                },
+            },
+        },
+    }
+    config = {
+        "snmp_v3": {
+            "users": [
+                {
+                    "user": "newuser",
+                    "authentication": {"type": "sha", "plaintext_key": "typed-A"},
+                    "privacy": {"type": "aes", "plaintext_key": "typed-P"},
+                },
+            ],
+        },
+    }
+
+    def run_merge(self):
+        with patch.object(snmp_module, "register_secrets") as register:
+            module = _run_snmp_main(
+                "merged",
+                config=self.config,
+                device=self.before,
+                after=self.after,
+            )
+        return module, register
+
+    def test_secrets_that_only_exist_after_the_commit_are_masked(self):
+        module, _register = self.run_merge()
+        self.assertEqual(module.no_log_values, {"NEW-HASH-A", "NEW-HASH-P"})
+
+    def test_they_are_registered_with_the_new_api_too(self):
+        _module, register = self.run_merge()
+        register.assert_called_once()
+        self.assertEqual(set(register.call_args[0][0]), {"NEW-HASH-A", "NEW-HASH-P"})
+
+    def test_after_is_returned_from_the_snapshot_that_was_registered(self):
+        module, _register = self.run_merge()
+        returned = module.exit_json.call_args[1]["after"]["snmp_v3"]["users"][0]
+        self.assertEqual(returned["authentication"]["encrypted_key"], "NEW-HASH-A")
 
 
 if __name__ == "__main__":

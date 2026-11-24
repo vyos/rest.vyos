@@ -328,6 +328,11 @@ from ansible_collections.vyos.rest.plugins.module_utils.vyos import (
 )
 
 
+try:
+    from ansible.module_utils.secrets import register_secrets
+except ImportError:  # ansible-core before 2.22 masks the result from module.no_log_values alone
+    register_secrets = None
+
 _BASE = ["service", "snmp"]
 
 # ---------------------------------------------------------------------------
@@ -729,6 +734,10 @@ def build_commands(config, raw_have, state):
             return [("delete", _BASE)]
         # A config names what to remove; whatever it does not name stays.
         norm_have = _want_to_device(_device_to_argspec(raw_have))
+        # The module models a single trap target, so norm_have keeps only the first one.
+        # Whether a named target exists is a question about the device, which can have several.
+        if raw_have.get("trap-target"):
+            norm_have["trap-target"] = to_tag_dict(raw_have["trap-target"])
         return _named_deletes(_want_to_device(config), norm_have, _BASE)
 
     want = _want_to_device(config)
@@ -750,6 +759,11 @@ def build_commands(config, raw_have, state):
         commands += dict_op(want, norm_have, _BASE, op="purge")
     elif state == "replaced":
         for section, section_want in want.items():
+            if isinstance(section_want, list):
+                # A list-valued section, such as smux-peer, is replaced as a whole.
+                section_have = {section: norm_have.get(section, [])}
+                commands += dict_op({section: section_want}, section_have, _BASE, op="purge")
+                continue
             if not isinstance(section_want, dict):
                 continue
             section_have = norm_have.get(section, {})
@@ -881,6 +895,21 @@ def _secret_values(data, options):
     return found
 
 
+def _mask_secrets(module, values):
+    """Mask values read from the device in everything the module returns.
+
+    They are not parameters, so ansible-core does not know them. Before 2.22 the module
+    masks its own result from module.no_log_values. From 2.22 the controller masks what
+    is registered through ansible.module_utils.secrets, and module.no_log_values only
+    feeds the logs.
+    """
+    if not values:
+        return
+    module.no_log_values.update(values)
+    if register_secrets is not None:
+        register_secrets(values)
+
+
 def main():
     module = AnsibleModule(argument_spec=ARGUMENT_SPEC, supports_check_mode=True)
     vyos = VyOSModule(module)
@@ -893,7 +922,7 @@ def main():
     # Secrets read back from the device are not parameters, so Ansible would not mask them.
     # Register them so they are masked in everything the module returns.
     if state != "gathered" or not module.params["include_secrets"]:
-        module.no_log_values.update(_secret_values(have, ARGUMENT_SPEC["config"]["options"]))
+        _mask_secrets(module, _secret_values(have, ARGUMENT_SPEC["config"]["options"]))
 
     if state == "gathered":
         module.exit_json(changed=False, gathered=have)
@@ -906,10 +935,15 @@ def main():
     if commands:
         response = vyos.apply_commands(commands)
         saved = vyos.save_config()
+        after = _device_to_argspec(get_running_config(vyos))
+        # The commit can make the device generate secrets, such as the hash of a new key.
+        # They exist only in what is read back now.
+        _mask_secrets(module, _secret_values(after, ARGUMENT_SPEC["config"]["options"]))
+
         module.exit_json(
             changed=True,
             before=have,
-            after=_device_to_argspec(get_running_config(vyos)),
+            after=after,
             commands=commands,
             saved=saved,
             response=response,

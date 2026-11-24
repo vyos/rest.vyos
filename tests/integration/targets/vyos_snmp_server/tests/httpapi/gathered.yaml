@@ -51,8 +51,6 @@
           - "'switches' not in (masked.gathered | to_json)"
           - "'bridges' not in (masked.gathered | to_json)"
           - masked.gathered.contact == "admin@example.com"
-          - (masked.gathered.snmp_v3.users | first).authentication.encrypted_key == "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"
-          - (masked.gathered.snmp_v3.users | first).privacy.encrypted_key == "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"
 
     - name: Gather with include_secrets
       register: unmasked
@@ -65,8 +63,10 @@
         that:
           - "'switches' in unmasked.gathered.communities | map(attribute='name')"
           - "'bridges' in unmasked.gathered.communities | map(attribute='name')"
-          - (unmasked.gathered.snmp_v3.users | first).authentication.encrypted_key not in ["", "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"]
-          - (unmasked.gathered.snmp_v3.users | first).privacy.encrypted_key not in ["", "VALUE_SPECIFIED_IN_NO_LOG_PARAMETER"]
+          - (unmasked.gathered.snmp_v3.users | first).authentication.encrypted_key | length > 0
+          - (masked.gathered.snmp_v3.users | first).authentication.encrypted_key != (unmasked.gathered.snmp_v3.users | first).authentication.encrypted_key
+          - (unmasked.gathered.snmp_v3.users | first).privacy.encrypted_key | length > 0
+          - (masked.gathered.snmp_v3.users | first).privacy.encrypted_key != (unmasked.gathered.snmp_v3.users | first).privacy.encrypted_key
 
   always:
     - include_tasks: _remove_config.yaml
