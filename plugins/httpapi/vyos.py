@@ -310,7 +310,10 @@ class HttpApi(HttpApiBase):
         auth_method = self.get_option("auth_method") or "key"
 
         form_data = {}
-        if op_kwargs:
+        if "_raw_list" in op_kwargs:
+            # A batch of commands: the API takes the bare list, not an object wrapping it.
+            form_data["data"] = json.dumps(op_kwargs["_raw_list"])
+        elif op_kwargs:
             form_data["data"] = json.dumps(op_kwargs)
 
         headers = {"Content-Type": "application/x-www-form-urlencoded"}

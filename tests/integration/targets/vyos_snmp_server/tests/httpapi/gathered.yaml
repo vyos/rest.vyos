@@ -15,5 +15,58 @@
           - result.changed == false
           - result.gathered is defined
 
+    - name: Add an SNMPv3 user, so that the keys can be checked too
+      vyos.rest.vyos_snmp_server:
+        config:
+          snmp_v3:
+            engine_id: "000000000000000000000002"
+            groups:
+              - group: admins
+                mode: rw
+                seclevel: priv
+                view: all
+            users:
+              - user: admin_user
+                group: admins
+                authentication:
+                  type: sha
+                  plaintext_key: authpass123
+                privacy:
+                  type: aes
+                  plaintext_key: privpass123
+            views:
+              - view: all
+                oid: "1.3.6.1.2.1.1"
+                mask: "ff.ff"
+        state: merged
+
+    - name: Gather with the secrets masked (the default)
+      register: masked
+      vyos.rest.vyos_snmp_server:
+        state: gathered
+
+    - name: Assert the secrets are masked and the rest is visible
+      assert:
+        that:
+          - "'switches' not in (masked.gathered | to_json)"
+          - "'bridges' not in (masked.gathered | to_json)"
+          - masked.gathered.contact == "admin@example.com"
+
+    - name: Gather with include_secrets
+      register: unmasked
+      vyos.rest.vyos_snmp_server:
+        state: gathered
+        include_secrets: true
+
+    - name: Assert the real values are returned when asked for
+      assert:
+        that:
+          - "'switches' in unmasked.gathered.communities | map(attribute='name')"
+          - "'bridges' in unmasked.gathered.communities | map(attribute='name')"
+          - (unmasked.gathered.snmp_v3.users | first).authentication.encrypted_key | length > 0
+          - (masked.gathered.snmp_v3.users | first).authentication.encrypted_key != (unmasked.gathered.snmp_v3.users | first).authentication.encrypted_key
+          - (unmasked.gathered.snmp_v3.users | first).privacy.encrypted_key | length > 0
+          - (masked.gathered.snmp_v3.users | first).privacy.encrypted_key != (unmasked.gathered.snmp_v3.users | first).privacy.encrypted_key
+
   always:
     - include_tasks: _remove_config.yaml
